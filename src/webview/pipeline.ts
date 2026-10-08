@@ -16,6 +16,8 @@ export interface PipelineCallbacks {
   changed(): void;
   notify(message: string): void;
   copy(text: string): void;
+  /** Adds autocompletion to the body of stage `index`. */
+  attachCompletion(field: HTMLTextAreaElement, stage: PipelineStage, index: number): void;
 }
 
 export class PipelineEditor {
@@ -378,6 +380,7 @@ export class PipelineEditor {
       }
     });
     body.classList.toggle('invalid', !isValidBody(stage));
+    this.cb.attachCompletion(body, stage, i);
 
     card.append(head, body);
     requestAnimationFrame(() => autosize(body));

@@ -25,6 +25,9 @@ import {
 } from '../shared/columns';
 import { CellEditor } from './cellEditor';
 import { ColumnMenu, ColumnsPanel, LayoutActions } from './columnsUi';
+import { Completer } from './autocomplete';
+import { CompletionKind, FieldHint, fieldHints } from '../shared/complete';
+import { analyzeSchema } from '../shared/schema';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: WebviewMessage): void;
@@ -85,6 +88,9 @@ const columnsByKey = new Map<string, ColumnNode>();
 let reselect: { row: number; path: string; elem?: string } | null = null;
 let readOnly = false;
 let collectionName = '';
+/** Stage whose output the grid shows (aggregate mode), or -1 for documents of the collection. */
+let docsUpto = -1;
+let requestedUpto = -1;
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const filterInput = el<HTMLTextAreaElement>('filter');
@@ -132,6 +138,7 @@ function run(resetSkip = false): void {
 
   vscode.setState(state);
   currentRequest++;
+  requestedUpto = -1;
   setLoading(true);
   vscode.postMessage({
     type: 'query',
@@ -166,6 +173,7 @@ function runAggregate(): void {
   pipeline.markError(null);
   savePipelineState();
   currentRequest++;
+  requestedUpto = pipeline.upto;
   setLoading(true);
   vscode.postMessage({
     type: 'aggregate',
@@ -254,9 +262,16 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       el('modeIndexes').title = m.view ? 'Views use the indexes of their source collection' : 'Indexes of the collection';
       if (m.view && state.mode === 'indexes') setMode('find', false);
       run();
+      fieldsOfCollection();
       break;
     case 'refresh':
+      fieldsState = 'none';
       run();
+      break;
+    case 'fields':
+      collectionFields = m.fields;
+      fieldsState = 'loaded';
+      completer.refresh();
       break;
     case 'history':
       history.update(m.recent, m.saved);
@@ -291,6 +306,7 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       setLoading(false);
       showError(null);
       docs = m.docs as Record<string, unknown>[];
+      docsUpto = requestedUpto;
       count = m.count;
       el('empty').textContent =
         m.note ?? (state.mode === 'aggregate' ? 'The pipeline returned no documents.' : 'No documents match this query.');
@@ -1138,11 +1154,52 @@ const history = new HistoryPopover({
 // ---------------------------------------------------------------------------
 // Aggregation pipeline
 
+// ---------------------------------------------------------------------------
+// Autocompletion
+
+const completer = new Completer();
+let collectionFields: FieldHint[] = [];
+let fieldsState: 'none' | 'loading' | 'loaded' = 'none';
+let resultFields: { docs: unknown[]; hints: FieldHint[] } | null = null;
+
+/** Fields of a sample of the collection, loaded on first use (and again after the documents changed). */
+function fieldsOfCollection(): FieldHint[] {
+  if (fieldsState === 'none') {
+    fieldsState = 'loading';
+    vscode.postMessage({ type: 'loadFields' });
+  }
+  return collectionFields;
+}
+
+/** Fields at the input of stage `index`: the grid's documents when they are the previous stage's output. */
+function fieldsBefore(index: number): FieldHint[] {
+  if (index > 0 && state.mode === 'aggregate' && docsUpto === index - 1 && docs.length) {
+    if (resultFields?.docs !== docs) resultFields = { docs, hints: fieldHints(analyzeSchema(docs)) };
+    return resultFields.hints;
+  }
+  return fieldsOfCollection();
+}
+
+const completeWith = (field: HTMLTextAreaElement | HTMLInputElement, kind: CompletionKind) => {
+  completer.attach(field, { kind: () => kind, fields: fieldsOfCollection });
+  field.addEventListener('focus', fieldsOfCollection);
+};
+completeWith(filterInput, 'filter');
+completeWith(sortInput, 'sort');
+completeWith(projectionInput, 'project');
+completeWith(el<HTMLTextAreaElement>('pipelineText'), 'pipeline');
+completeWith(el<HTMLTextAreaElement>('bulkUpdate'), 'update');
+completeWith(el<HTMLInputElement>('indexKeys'), 'index');
+
 const pipeline = new PipelineEditor({
   run: () => run(true),
   changed: savePipelineState,
   notify: showError,
   copy: (text) => vscode.postMessage({ type: 'copy', text }),
+  attachCompletion: (field, stage, index) => {
+    completer.attach(field, { kind: () => ({ stage: stage.op }), fields: () => fieldsBefore(index) });
+    field.addEventListener('focus', () => fieldsBefore(index));
+  },
 });
 el('modeFind').addEventListener('click', () => state.mode !== 'find' && setMode('find'));
 el('modeIndexes').addEventListener('click', () => state.mode !== 'indexes' && setMode('indexes'));

@@ -1,6 +1,7 @@
 // Message protocol between the collection webview and the extension host.
 // Documents and _id values travel as relaxed EJSON plain values.
 import type { SchemaSummary } from './schema';
+import type { FieldHint } from './complete';
 import type { ColumnLayout } from './columns';
 import type { PipelineStage } from './pipeline';
 import type { ExplainSummary } from './explain';
@@ -109,6 +110,8 @@ export type WebviewMessage =
   | { type: 'hideIndex'; name: string; hidden: boolean }
   | { type: 'bulkCount'; requestId: number; filter: string }
   | { type: 'analyzeSchema'; requestId: number; filter: string; size: number }
+  /** Field names and frequent values for autocompletion. */
+  | { type: 'loadFields' }
   | { type: 'saveView'; stages: PipelineStage[]; upto: number }
   | { type: 'editValidation' }
   | BulkRequest
@@ -146,6 +149,7 @@ export type HostMessage =
   | { type: 'indexes'; indexes: IndexInfo[]; error?: string }
   | { type: 'indexResult'; requestId: number; ok: boolean; message?: string }
   | { type: 'bulkCount'; requestId: number; count?: number; error?: string }
+  | { type: 'fields'; fields: FieldHint[] }
   | { type: 'schema'; requestId: number; schema?: SchemaSummary; total?: number; durationMs?: number; error?: string }
   /** `ok: false` without a message: the confirmation was cancelled. */
   | { type: 'bulkResult'; requestId: number; ok: boolean; message?: string };

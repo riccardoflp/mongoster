@@ -173,7 +173,7 @@ export function parseQuery(text: string): unknown {
 // ---------------------------------------------------------------------------
 // Formatting: relaxed-EJSON plain value -> mongosh-like string
 
-function formatKey(k: string): string {
+export function formatKey(k: string): string {
   return /^[A-Za-z_$][\w$]*$/.test(k) ? k : q(k);
 }
 

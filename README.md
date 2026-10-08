@@ -17,6 +17,11 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - `Drop…` su collezioni e view, `Drop Database…` sul database: per collezioni e database va digitato il nome per confermare, e il messaggio dice quanti documenti, indici o collezioni verranno eliminati. Le tab delle collezioni eliminate si chiudono.
 - **Tabella** per collezione: una colonna per campo, valori colorati per tipo, paginazione, conteggio totale.
 - **Filter / Sort / Project** in sintassi mongosh: `{ _id: ObjectId("…"), name: /mario/i, createdAt: { $gte: ISODate("2024-01-01") } }`. `Ctrl+Enter` esegue.
+- **Autocompletamento** mentre scrivi in Filter, Sort, Project, negli stage della pipeline (anche come testo), in `Update many` e nelle chiavi di un nuovo indice:
+  - nomi dei campi, anche annidati (`address.city`, tra virgolette quando serve), presi da un campione di 500 documenti, con tipo e percentuale di documenti che li hanno; dal secondo stage in poi, se la tabella mostra l'output dello stage precedente, i campi sono quelli di quell'output;
+  - operatori adatti al punto in cui sei: `$and`/`$or`/`$expr` in cima al filtro, `$gte`/`$in`/`$elemMatch`/`$exists`… dentro un campo, stage della pipeline, accumulatori in `$group`, espressioni e riferimenti `"$campo"` in `$project`/`$addFields`, operatori di update (`$set`, `$inc`, `$push`…);
+  - valori più frequenti del campo (`status: ` → `"active"`, `"pending"`…), anche dentro `$in: [...]`, oltre a `1`/`-1` per l'ordinamento e i tipi per `$type`;
+  - `Tab` o `Invio` inseriscono il suggerimento (gli operatori con lo scheletro del valore, es. `$in: [|]`), `↑/↓` scorrono, `Esc` chiude, `Ctrl+Spazio` apre i suggerimenti dove sei.
 - **Drag & drop verso il filtro**:
   - trascina una **cella** → `= equals`, `≠ not equal`, e per numeri/date/stringhe `≥ from` / `≤ to` (si combinano in un range sullo stesso campo); per gli array `∈ in`;
   - trascina l'**intestazione di una colonna** → `exists`, `missing`, `is null`.
@@ -118,4 +123,5 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/shared/pipeline.ts` – modello degli stage di aggregazione, modelli e conversione testo ⇄ stage
 - `src/shared/explain.ts` – riassunto dell'output di explain e suggerimento dell'indice
 - `src/shared/schema.ts` – analisi dello schema di un campione di documenti e `$jsonSchema` generato
-- `src/webview/main.ts`, `src/webview/history.ts`, `src/webview/pipeline.ts`, `src/webview/indexes.ts`, `src/webview/explainView.ts`, `src/webview/bulk.ts`, `src/webview/schemaView.ts`, `src/webview/columnsUi.ts`, `media/webview.css` – UI della tabella, cronologia, editor della pipeline, indici, explain, update/delete many, schema e colonne
+- `src/shared/complete.ts` – autocompletamento: contesto del cursore nel testo mongosh, campi, operatori e valori suggeriti
+- `src/webview/main.ts`, `src/webview/history.ts`, `src/webview/pipeline.ts`, `src/webview/indexes.ts`, `src/webview/explainView.ts`, `src/webview/bulk.ts`, `src/webview/schemaView.ts`, `src/webview/columnsUi.ts`, `src/webview/autocomplete.ts`, `media/webview.css` – UI della tabella, cronologia, editor della pipeline, indici, explain, update/delete many, schema, colonne e suggerimenti

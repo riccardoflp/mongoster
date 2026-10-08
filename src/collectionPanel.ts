@@ -11,10 +11,13 @@ import { exportDocuments } from './transfer';
 import type { AggregateRequest, BulkRequest, HostMessage, IndexInfo, QueryRequest, QuerySource, UpdateFieldRequest, WebviewMessage } from './shared/messages';
 import { suggestIndex, summarizeExplain } from './shared/explain';
 import { analyzeSchema } from './shared/schema';
+import { fieldHints } from './shared/complete';
 import { collectionNameError } from './manage';
 import type { ColumnLayout } from './shared/columns';
 
 const { EJSON } = BSON;
+/** Documents sampled for the autocompletion of field names and values. */
+const FIELD_SAMPLE = 500;
 
 export interface CollectionTarget extends CollectionRef {
   connectionName: string;
@@ -226,6 +229,9 @@ export class CollectionPanel {
       case 'analyzeSchema':
         await this.analyzeSchema(m.requestId, m.filter, m.size);
         break;
+      case 'loadFields':
+        await this.loadFields();
+        break;
       case 'saveView':
         await this.saveView(m.stages, m.upto);
         break;
@@ -368,6 +374,18 @@ export class CollectionPanel {
     const open = await vscode.window.showInformationMessage(`Created view ${this.target.database}.${name}.`, 'Open View');
     if (open === 'Open View') {
       CollectionPanel.show(this.context, this.connections, this.documents, { ...this.target, collection: name, view: true, readOnly: true });
+    }
+  }
+
+  /** Field names and frequent values of a random sample, for autocompletion. */
+  private async loadFields(): Promise<void> {
+    try {
+      const docs = await (await this.coll())
+        .aggregate([{ $sample: { size: FIELD_SAMPLE } }], { promoteValues: false, maxTimeMS: 20_000 })
+        .toArray();
+      this.post({ type: 'fields', fields: fieldHints(analyzeSchema(docs.map((d) => EJSON.serialize(d, { relaxed: false })))) });
+    } catch {
+      this.post({ type: 'fields', fields: [] });
     }
   }
 
