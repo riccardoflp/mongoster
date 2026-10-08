@@ -180,6 +180,24 @@
         "title": "Edit View Definition…",
         "category": "Mongoster",
         "icon": "$(edit)"
+      },
+      {
+        "command": "mongoster.newPlayground",
+        "title": "New Playground",
+        "category": "Mongoster",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "mongoster.runPlayground",
+        "title": "Run Playground",
+        "category": "Mongoster",
+        "icon": "$(play)"
+      },
+      {
+        "command": "mongoster.changePlaygroundConnection",
+        "title": "Change Playground Connection…",
+        "category": "Mongoster",
+        "icon": "$(database)"
       }
     ],
     "menus": {
@@ -193,6 +211,11 @@
           "command": "mongoster.refresh",
           "when": "view == mongoster.connections",
           "group": "navigation@2"
+        },
+        {
+          "command": "mongoster.newPlayground",
+          "when": "view == mongoster.connections",
+          "group": "navigation@1.5"
         }
       ],
       "view/item/context": [
@@ -325,6 +348,11 @@
           "command": "mongoster.editView",
           "when": "view == mongoster.connections && viewItem =~ /^view/",
           "group": "3_manage@1"
+        },
+        {
+          "command": "mongoster.newPlayground",
+          "when": "view == mongoster.connections && viewItem =~ /^(connection|database|collection|view)/",
+          "group": "0_create@9"
         }
       ],
       "commandPalette": [
@@ -411,9 +439,32 @@
         {
           "command": "mongoster.editView",
           "when": "false"
+        },
+        {
+          "command": "mongoster.runPlayground",
+          "when": "resourceFilename =~ /\\.mongodb\\.js$/"
+        },
+        {
+          "command": "mongoster.changePlaygroundConnection",
+          "when": "resourceFilename =~ /\\.mongodb\\.js$/"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "mongoster.runPlayground",
+          "when": "resourceFilename =~ /\\.mongodb\\.js$/",
+          "group": "navigation@1"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "mongoster.runPlayground",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "editorTextFocus && resourceFilename =~ /\\.mongodb\\.js$/"
+      }
+    ]
   },
   "scripts": {
     "build": "node esbuild.mjs",
@@ -422,6 +473,7 @@
     "package": "node esbuild.mjs --production && vsce package --no-dependencies"
   },
   "dependencies": {
+    "acorn": "^8.19.0",
     "json5": "^2.2.3",
     "mongodb": "^6.10.0"
   },

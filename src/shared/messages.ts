@@ -153,3 +153,31 @@ export type HostMessage =
   | { type: 'schema'; requestId: number; schema?: SchemaSummary; total?: number; durationMs?: number; error?: string }
   /** `ok: false` without a message: the confirmation was cancelled. */
   | { type: 'bulkResult'; requestId: number; ok: boolean; message?: string };
+
+// ---------------------------------------------------------------------------
+// Playground result tab
+
+export type PlaygroundHostMessage =
+  | { type: 'running'; title: string; target: string }
+  | {
+      type: 'result';
+      title: string;
+      /** "connection › database" */
+      target: string;
+      durationMs: number;
+      kind: 'documents' | 'value' | 'none';
+      /** Relaxed EJSON. */
+      value?: unknown;
+      /** A cursor had more documents than `limit`. */
+      more?: boolean;
+      limit: number;
+      /** Lines written by print(), printjson() and console.log(). */
+      output: string[];
+      error?: { message: string; line?: number };
+    };
+
+export type PlaygroundViewMessage =
+  | { type: 'ready' }
+  | { type: 'copy'; text: string }
+  | { type: 'openJson'; text: string }
+  | { type: 'goToLine'; line: number };

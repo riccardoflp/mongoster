@@ -86,6 +86,13 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
 - **Explain**: il pulsante `Explain` (in `Find` e nell'editor della pipeline) mostra come MongoDB esegue la query: indice usato o `COLLSCAN`, ordinamento in memoria, documenti e chiavi esaminati rispetto a quelli restituiti, tempo, piano di esecuzione a albero; `Raw` mostra l'output completo.
   - Se la query legge tutta la collezione o ordina in memoria propone un indice (prima i campi in uguaglianza, poi l'ordinamento, poi i range); `Create…` apre la scheda `Indexes` con l'indice già compilato.
   - Per le pipeline spiega fino allo stage mostrato; quelle con `$out`/`$merge` non si spiegano.
+- **Playground**: file `.mongodb.js` con la sintassi di mongosh. `New Playground` (icona nella barra della vista, o clic destro su una connessione, un database o una collezione) ne apre uno già impostato su quella connessione e quel database.
+  - `Ctrl+Enter` (o `▶ Run` in cima al file, o il pulsante ▶ della tab) esegue tutto il file, oppure solo le righe selezionate; il risultato si apre accanto: i documenti come tabella o come testo mongosh (`Table` / `JSON`), `Copy` e `Open in Editor`.
+  - Come in mongosh non serve `await`: `const u = db.users.findOne({ … }); u.name` funziona. Viene mostrato il valore dell'ultima espressione (di un cursore i primi 200 documenti); `print()`, `printjson()` e `console.log()` scrivono nell'output del risultato e nel canale `Mongoster Playground`.
+  - Disponibili `db.<collezione>` (o `db.getCollection("…")`) con `find`/`aggregate` (cursori con `sort`, `limit`, `skip`, `project`, `toArray`, `forEach`, `map`, `count`, `explain`…), `findOne`, `countDocuments`, `distinct`, `insert*`, `update*`, `replaceOne`, `delete*`, `findOneAnd*`, `bulkWrite`, indici, `drop`; `use("db")`, `db.getSiblingDB()`, `db.runCommand()`, `db.adminCommand()`, `db.getCollectionNames()`, `db.stats()`; `ObjectId()`, `ISODate()`, `NumberLong()`, `NumberDecimal()`, `UUID()`, `Timestamp()` e gli altri tipi BSON.
+  - La connessione e il database di default si vedono (e si cambiano) nella CodeLens in cima al file e nella barra di stato; `use("…")` nello script ha la precedenza. Con una connessione in sola lettura i metodi che scrivono, `$out`/`$merge` e i comandi che modificano vengono rifiutati.
+  - Gli errori indicano la riga (clic per andarci); `Cancel` sulla notifica smette di attendere il risultato (le operazioni già inviate possono completarsi sul server).
+  - Autocompletamento nel file: dopo `db.` le collezioni e i metodi del database, dopo `db.users.` i metodi della collezione, dopo `find(...).` quelli del cursore; dentro `find`, `aggregate`, `updateMany`, `sort`… gli stessi suggerimenti di campi, operatori e valori della tabella.
 - Le **view** sono in sola lettura, come le collezioni delle connessioni in sola lettura (badge `view` / `read-only` accanto al nome).
 - `Ctrl+C` su una cella selezionata copia il valore.
 
@@ -114,6 +121,7 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/queryHistory.ts` – cronologia e query salvate per collezione
 - `src/documentFs.ts` – file system virtuale `mongoster://` per aprire, modificare e salvare i documenti
 - `src/definitionFs.ts` – file system virtuale `mongoster-def://` per le definizioni delle view e le regole di validazione
+- `src/playground/` – playground: riscrittura dello script (`rewrite.ts`, con `acorn`), runtime stile mongosh (`shell.ts`), contesto del cursore per l'autocompletamento (`context.ts`), comandi, CodeLens e completion (`playground.ts`), tab del risultato (`resultPanel.ts`, `src/webview/playground.ts`, `media/playground.css`)
 - `src/queries.ts` – testo di filtri e pipeline → argomenti del driver
 - `src/transfer.ts` – export (JSON, JSON Lines, CSV) e import
 - `src/manage.ts` – creazione, rinomina ed eliminazione di database e collezioni

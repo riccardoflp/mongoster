@@ -1,0 +1,209 @@
+:root {
+  --border: var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+  --muted: var(--vscode-descriptionForeground, #8b8b8b);
+  --mono: var(--vscode-editor-font-family, Consolas, monospace);
+  --c-string: var(--vscode-debugTokenExpression-string, #ce9178);
+  --c-number: var(--vscode-debugTokenExpression-number, #b5cea8);
+  --c-bool: var(--vscode-debugTokenExpression-boolean, #569cd6);
+  --c-oid: var(--vscode-terminal-ansiMagenta, #c586c0);
+  --c-date: var(--vscode-terminal-ansiCyan, #4ec9b0);
+  --c-regex: var(--vscode-terminal-ansiYellow, #d7ba7d);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size, 13px);
+  overflow: hidden;
+}
+
+.hidden {
+  display: none !important;
+}
+
+button {
+  font: inherit;
+  border: none;
+  border-radius: 2px;
+  padding: 3px 10px;
+  cursor: pointer;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+button.secondary {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.link {
+  background: none;
+  padding: 0;
+  color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+  flex-wrap: wrap;
+}
+
+.meta {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+body.running .meta::before {
+  content: '⟳ ';
+}
+
+.spacer {
+  flex: 1;
+}
+
+.tabs {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.tabs button {
+  background: transparent;
+  color: var(--vscode-foreground);
+  border-radius: 0;
+  padding: 2px 10px;
+}
+
+.tabs button[aria-selected='true'] {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.error {
+  flex: none;
+  padding: 6px 10px;
+  color: var(--vscode-errorForeground, #f48771);
+  background: var(--vscode-inputValidation-errorBackground, rgba(90, 29, 29, 0.6));
+  border-bottom: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+  font-family: var(--mono);
+  white-space: pre-wrap;
+}
+
+.output {
+  flex: none;
+  max-height: 35%;
+  overflow: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.output-title {
+  padding: 4px 10px 0;
+  color: var(--muted);
+  font-size: 0.9em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.output pre,
+pre.text {
+  margin: 0;
+  padding: 6px 10px;
+  font-family: var(--mono);
+  font-size: var(--vscode-editor-font-size, 13px);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.result {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.note {
+  color: var(--muted);
+  padding: 4px 10px;
+  margin: 6px 0;
+}
+
+table {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: var(--vscode-editor-font-size, 13px);
+}
+
+th,
+td {
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 2px 8px;
+  white-space: nowrap;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+th {
+  position: sticky;
+  top: 0;
+  background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-editor-background));
+  font-weight: 600;
+  z-index: 1;
+}
+
+td.num,
+th:first-child {
+  color: var(--muted);
+  text-align: right;
+}
+
+tbody tr:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+td.missing {
+  background: repeating-linear-gradient(135deg, transparent 0 4px, rgba(128, 128, 128, 0.08) 4px 8px);
+}
+
+.v-string { color: var(--c-string); }
+.v-number,
+.v-numberlong,
+.v-numberdecimal,
+.v-numberint,
+.v-numberdouble { color: var(--c-number); }
+.v-boolean { color: var(--c-bool); }
+.v-null,
+.v-undefined { color: var(--muted); font-style: italic; }
+.v-oid { color: var(--c-oid); }
+.v-date,
+.v-timestamp { color: var(--c-date); }
+.v-regularexpression { color: var(--c-regex); }

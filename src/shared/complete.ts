@@ -13,7 +13,18 @@ export interface FieldHint {
 }
 
 /** What the text is: decides which keys and values make sense where. */
-export type CompletionKind = 'filter' | 'sort' | 'project' | 'update' | 'index' | 'pipeline' | { stage: string };
+export type CompletionKind =
+  | 'filter'
+  | 'sort'
+  | 'project'
+  | 'update'
+  | 'index'
+  | 'pipeline'
+  /** One stage object: { $match: … }. */
+  | 'stageObject'
+  /** A field name as a string, e.g. distinct("…"). */
+  | 'field'
+  | { stage: string };
 
 export interface CompletionItem {
   label: string;
@@ -278,6 +289,10 @@ function rootContext(kind: CompletionKind): Ctx {
       return { k: 'update' };
     case 'pipeline':
       return { k: 'pipeline' };
+    case 'stageObject':
+      return { k: 'stageObj' };
+    case 'field':
+      return { k: 'fieldName' };
   }
 }
 

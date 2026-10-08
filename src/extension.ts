@@ -6,6 +6,7 @@ import { Manager } from './manage';
 import { exportDocuments, importDocuments } from './transfer';
 import { CollectionRef, DOC_SCHEME, DocumentFileSystem } from './documentFs';
 import { DEF_SCHEME, DefinitionFileSystem } from './definitionFs';
+import { Playgrounds } from './playground/playground';
 
 export function activate(context: vscode.ExtensionContext): void {
   const connections = new ConnectionManager(context);
@@ -36,6 +37,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     connections,
+    new Playgrounds(context, connections),
     vscode.window.createTreeView('mongoster.connections', { treeDataProvider: tree, showCollapseAll: true }),
     vscode.workspace.registerFileSystemProvider(DOC_SCHEME, documents, { isCaseSensitive: true }),
     documents.onDidSave((ref) => CollectionPanel.refresh(ref)),
