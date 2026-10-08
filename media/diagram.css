@@ -1,0 +1,192 @@
+/* Relationship diagram tab: monitor.css provides the base (bar, toolbar, buttons, inputs). */
+
+.diagram-tools {
+  gap: 6px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+button.icon {
+  width: 28px;
+  padding: 3px 0;
+  font-weight: 600;
+}
+
+.diagram-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.diagram {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.diagram.dragging {
+  cursor: grabbing;
+}
+
+.empty {
+  position: absolute;
+  inset: 40% 0 auto;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* boxes */
+
+.node {
+  cursor: pointer;
+  outline: none;
+}
+
+.node .box {
+  fill: var(--vscode-editorWidget-background, #252526);
+  stroke: var(--vscode-editorWidget-border, var(--border));
+  stroke-width: 1;
+}
+
+.node .head,
+.node .head-fill {
+  fill: var(--vscode-sideBarSectionHeader-background, rgba(128, 128, 128, 0.18));
+}
+
+.node.view .head,
+.node.view .head-fill {
+  fill: var(--vscode-terminal-ansiMagenta, #c586c0);
+  fill-opacity: 0.18;
+}
+
+.node.view .box {
+  stroke-dasharray: 5 3;
+}
+
+.node.selected .box,
+.node:focus-visible .box {
+  stroke: var(--vscode-focusBorder, #007fd4);
+  stroke-width: 2;
+}
+
+.node text {
+  fill: var(--vscode-foreground);
+  font-size: 12px;
+}
+
+.node .name {
+  font-weight: 600;
+}
+
+.node .count,
+.node .type,
+.node .more {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.node .field {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.node .field.key {
+  fill: var(--vscode-textLink-foreground, #3794ff);
+}
+
+.node .field.target {
+  font-weight: 600;
+}
+
+.node.faded,
+.edge.faded {
+  opacity: 0.25;
+}
+
+/* links */
+
+.edge {
+  cursor: pointer;
+}
+
+.edge .line {
+  fill: none;
+  stroke: var(--vscode-editorLineNumber-foreground, #858585);
+  stroke-width: 1.5;
+}
+
+.edge .hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 10;
+}
+
+.edge.view .line {
+  stroke-dasharray: 5 4;
+}
+
+.edge.dbref .line {
+  stroke-dasharray: 2 3;
+}
+
+.edge:hover .line,
+.edge.active .line {
+  stroke: var(--vscode-focusBorder, #007fd4);
+  stroke-width: 2.2;
+}
+
+.edge .many {
+  fill: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.arrow {
+  fill: var(--vscode-editorLineNumber-foreground, #858585);
+}
+
+/* relations list */
+
+.relations {
+  flex: none;
+  max-height: 30%;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  padding: 4px 10px;
+}
+
+.relations summary {
+  cursor: pointer;
+  padding: 2px 0;
+  color: var(--muted);
+}
+
+.relations ul {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+}
+
+.relations li {
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+.relations li:hover,
+.relations li.active {
+  background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.15));
+}
+
+.relations li.none {
+  cursor: default;
+  color: var(--muted);
+  font-family: inherit;
+}

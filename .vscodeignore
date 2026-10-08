@@ -10,6 +10,7 @@
 !dist/watch.js
 !dist/search.js
 !dist/advisor.js
+!dist/diagram.js
 !dist/connectionEditor.js
 !dist/chartjs.js
 !media/**

@@ -17,6 +17,7 @@ import { Backups } from './backup';
 import { WatchPanel, WatchScope } from './watch';
 import { SearchPanel, SearchScope } from './search';
 import { AdvisorPanel, AdvisorScope } from './advisor';
+import { DiagramPanel, DiagramScope } from './relations';
 import { ConnectionEditor, SaveConnection } from './connectionEditor';
 import type { QueryText } from './shared/messages';
 
@@ -65,6 +66,7 @@ export function activate(context: vscode.ExtensionContext): void {
       WatchPanel.connectionChanged(info);
       SearchPanel.connectionChanged(info);
       AdvisorPanel.connectionChanged(info);
+      DiagramPanel.connectionChanged(info);
       ComparePanel.connectionChanged(info);
       UsersPanel.connectionChanged(info);
       GridFSPanel.connectionChanged(info);
@@ -227,6 +229,7 @@ export function activate(context: vscode.ExtensionContext): void {
         WatchPanel.close(node.info.id);
         SearchPanel.close(node.info.id);
         AdvisorPanel.close(node.info.id);
+        DiagramPanel.close(node.info.id);
         ComparePanel.close(node.info.id);
         UsersPanel.close(node.info.id);
         GridFSPanel.close(node.info.id);
@@ -277,6 +280,18 @@ export function activate(context: vscode.ExtensionContext): void {
               : arg;
       const info = connections.get(scope.connectionId);
       if (info) AdvisorPanel.show(context, connections, info, scope);
+    }),
+
+    vscode.commands.registerCommand('mongoster.relationDiagram', (arg?: DatabaseNode | CollectionNode | DiagramScope) => {
+      if (!arg) return;
+      const scope: DiagramScope =
+        arg instanceof DatabaseNode
+          ? { connectionId: arg.connection.id, database: arg.database }
+          : arg instanceof CollectionNode
+            ? { connectionId: arg.connection.id, database: arg.database, collection: arg.collection }
+            : arg;
+      const info = connections.get(scope.connectionId);
+      if (info) DiagramPanel.show(context, connections, info, scope);
     }),
 
     vscode.commands.registerCommand('mongoster.openMonitor', (node?: ConnectionNode) =>

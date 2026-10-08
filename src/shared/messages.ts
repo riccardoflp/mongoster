@@ -824,3 +824,18 @@ export type AdvisorViewMessage =
   | { type: 'openQuery'; id: string; query: number; explain: boolean }
   | { type: 'enableProfiler'; database: string }
   | { type: 'copy'; text: string };
+
+// ---- relationship diagram
+
+export type DiagramHostMessage =
+  | { type: 'init'; connectionName: string; color?: string; database: string; focus?: string }
+  | { type: 'progress'; requestId: number; text: string }
+  | { type: 'graph'; requestId: number; graph?: import('./relations').RelGraph; error?: string };
+
+export type DiagramViewMessage =
+  | { type: 'ready' }
+  | { type: 'analyze'; requestId: number; sample: number }
+  | { type: 'openCollection'; name: string }
+  | { type: 'copy'; text: string }
+  /** Saves the diagram as an SVG file, with the boxes where they are on screen. */
+  | { type: 'saveSvg'; boxes: import('./relations').Box[]; keysOnly: boolean };

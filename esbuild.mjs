@@ -116,6 +116,14 @@ const contexts = await Promise.all([
   }),
   esbuild.context({
     ...common,
+    entryPoints: ['src/webview/diagram.ts'],
+    outfile: 'dist/diagram.js',
+    platform: 'browser',
+    format: 'iife',
+    target: 'es2020',
+  }),
+  esbuild.context({
+    ...common,
     entryPoints: ['src/webview/connectionEditor.ts'],
     outfile: 'dist/connectionEditor.js',
     platform: 'browser',

@@ -260,6 +260,12 @@
         "icon": "$(lightbulb)"
       },
       {
+        "command": "mongoster.relationDiagram",
+        "title": "Relationship Diagram",
+        "category": "Mongoster",
+        "icon": "$(type-hierarchy)"
+      },
+      {
         "command": "mongoster.addConnectionWithOptions",
         "title": "Add Connection with TLS / SSH…",
         "category": "Mongoster",
@@ -512,6 +518,11 @@
           "group": "1_open@2"
         },
         {
+          "command": "mongoster.relationDiagram",
+          "when": "view == mongoster.connections && viewItem =~ /^(database|collection|view)/",
+          "group": "1_open@3"
+        },
+        {
           "command": "mongoster.uploadGridFS",
           "when": "view == mongoster.connections && viewItem =~ /^(database|bucket)(?!.*readonly)/",
           "group": "2_transfer@5"
@@ -708,6 +719,10 @@
         },
         {
           "command": "mongoster.indexAdvisor",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.relationDiagram",
           "when": "false"
         },
         {
