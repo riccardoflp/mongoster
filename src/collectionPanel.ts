@@ -6,9 +6,9 @@ import { errorMessage } from './tree';
 import { QueryHistory, sameQuery } from './queryHistory';
 import { parseQuery, relaxEjson, toShell } from './shared/query';
 import { PipelineStage, parseStageBody } from './shared/pipeline';
-import { StageError, buildPipeline, fromRelaxed, toBson } from './queries';
+import { StageError, buildPipeline, fromRelaxed, toBson, toUpdate } from './queries';
 import { exportDocuments } from './transfer';
-import type { AggregateRequest, HostMessage, IndexInfo, QueryRequest, QuerySource, UpdateFieldRequest, WebviewMessage } from './shared/messages';
+import type { AggregateRequest, BulkRequest, HostMessage, IndexInfo, QueryRequest, QuerySource, UpdateFieldRequest, WebviewMessage } from './shared/messages';
 import { suggestIndex, summarizeExplain } from './shared/explain';
 
 const { EJSON } = BSON;
@@ -21,6 +21,18 @@ export interface CollectionTarget extends CollectionRef {
 
 const panelKey = (ref: CollectionRef) => `${ref.connectionId}/${ref.database}/${ref.collection}`;
 export const expandedStateKey = (ref: CollectionRef) => `mongoster.expanded.${panelKey(ref)}`;
+
+/** Carries the recent and saved queries and the expanded columns of a renamed collection over to its new name. */
+export async function moveCollectionState(state: vscode.Memento, from: CollectionRef, to: CollectionRef): Promise<void> {
+  const keys = (ref: CollectionRef) => [...QueryHistory.stateKeys(panelKey(ref)), expandedStateKey(ref)];
+  const [fromKeys, toKeys] = [keys(from), keys(to)];
+  for (let i = 0; i < fromKeys.length; i++) {
+    const value = state.get(fromKeys[i]);
+    if (value === undefined) continue;
+    await state.update(toKeys[i], value);
+    await state.update(fromKeys[i], undefined);
+  }
+}
 
 /** One webview tab per collection, showing a queryable grid of documents. */
 export class CollectionPanel {
@@ -41,6 +53,13 @@ export class CollectionPanel {
     CollectionPanel.panels.set(key, new CollectionPanel(context, connections, documents, target, () => {
       CollectionPanel.panels.delete(key);
     }));
+  }
+
+  /** Closes the panels of the collections matching `which` (e.g. dropped ones); returns their targets. */
+  static close(which: (target: CollectionTarget) => boolean): CollectionTarget[] {
+    const closed = [...CollectionPanel.panels.values()].filter((p) => which(p.target));
+    closed.forEach((p) => p.panel.dispose());
+    return closed.map((p) => p.target);
   }
 
   /** Re-runs the current query of the collection's panel, if open (e.g. after a document was saved). */
@@ -144,6 +163,17 @@ export class CollectionPanel {
       case 'explain':
         await this.explain(m.requestId, m.source);
         break;
+      case 'bulkCount':
+        try {
+          const count = await (await this.coll()).countDocuments(toBson(m.filter, 'Filter') ?? {});
+          this.post({ type: 'bulkCount', requestId: m.requestId, count });
+        } catch (err) {
+          this.post({ type: 'bulkCount', requestId: m.requestId, error: errorMessage(err) });
+        }
+        break;
+      case 'bulkApply':
+        await this.bulkApply(m);
+        break;
       case 'loadIndexes':
         await this.postIndexes();
         break;
@@ -235,6 +265,40 @@ export class CollectionPanel {
       if (!res.matchedCount) return reply(false, `${key} changed again in the database: refresh and retry.`);
       reply(true);
       this.post({ type: 'refresh' });
+    } catch (err) {
+      reply(false, errorMessage(err));
+    }
+  }
+
+  private async bulkApply(m: BulkRequest): Promise<void> {
+    const reply = (ok: boolean, message?: string) => this.post({ type: 'bulkResult', requestId: m.requestId, ok, message });
+    if (this.target.readOnly) return reply(false, 'Views are read-only.');
+    try {
+      const filter = toBson(m.filter, 'Filter') ?? {};
+      const update = m.op === 'update' ? toUpdate(m.update ?? '') : undefined;
+      const coll = await this.coll();
+      if (!Object.keys(filter).length) {
+        const verb = m.op === 'update' ? 'Update' : 'Delete';
+        const total = await coll.countDocuments();
+        const answer = await vscode.window.showWarningMessage(
+          `${verb} all ${total.toLocaleString('en-US')} documents of ${this.target.collection}?`,
+          { modal: true, detail: 'The filter is empty, so every document of the collection is affected.' },
+          `${verb} All`,
+        );
+        if (answer !== `${verb} All`) return reply(false);
+      }
+      let message: string;
+      if (update) {
+        const res = await coll.updateMany(filter, update);
+        message = `Updated ${this.target.collection}: ${res.matchedCount.toLocaleString('en-US')} matched, ${res.modifiedCount.toLocaleString('en-US')} modified.`;
+      } else {
+        const res = await coll.deleteMany(filter);
+        message = `Deleted ${res.deletedCount.toLocaleString('en-US')} document${res.deletedCount === 1 ? '' : 's'} from ${this.target.collection}.`;
+      }
+      reply(true, message);
+      void vscode.window.showInformationMessage(message);
+      this.post({ type: 'refresh' });
+      void vscode.commands.executeCommand('mongoster.refresh');
     } catch (err) {
       reply(false, errorMessage(err));
     }
@@ -480,6 +544,8 @@ export class CollectionPanel {
         <button id="run" class="primary" title="Run query (Ctrl+Enter)">Find</button>
         <button id="reset" class="secondary" title="Clear filter, sort and projection">Reset</button>
         <button id="explainFind" class="secondary" title="Show how MongoDB runs this query: index used, documents examined">Explain</button>
+        <button id="updateMany" class="secondary editable" title="Update every document matching the filter">Update many…</button>
+        <button id="deleteMany" class="secondary editable danger" title="Delete every document matching the filter">Delete many…</button>
       </div>
       <div class="row options">
         <label for="sort">Sort</label>
@@ -557,6 +623,27 @@ export class CollectionPanel {
         <button id="docClose" class="icon" title="Close (Esc)">✕</button>
       </div>
       <div class="modal-body" id="docBody"></div>
+    </div>
+  </div>
+  <div id="bulkModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-box bulk-box">
+      <div class="modal-head">
+        <span id="bulkTitle" class="doc-title">Update many</span>
+        <span class="spacer"></span>
+        <button id="bulkClose" class="icon" title="Close (Esc)">✕</button>
+      </div>
+      <div class="bulk-body">
+        <span class="bulk-label">Filter</span>
+        <code id="bulkFilter" class="bulk-filter"></code>
+        <label for="bulkUpdate" class="bulk-label bulk-update">Update</label>
+        <textarea id="bulkUpdate" class="bulk-update" rows="4" spellcheck="false" placeholder="{ $set: { status: &quot;archived&quot; }, $inc: { version: 1 } }  —  or a pipeline [ { $set: … } ]"></textarea>
+        <div id="bulkCount" class="bulk-count"></div>
+        <div id="bulkError" class="bulk-error error hidden"></div>
+      </div>
+      <div class="bulk-actions">
+        <button id="bulkCancel" class="secondary">Cancel</button>
+        <button id="bulkApply" class="primary" title="Ctrl+Enter">Update</button>
+      </div>
     </div>
   </div>
   <div id="explainModal" class="modal hidden" role="dialog" aria-modal="true">

@@ -75,6 +75,16 @@ export interface SavedQuery extends QueryText {
   at: number;
 }
 
+/** "Update many" / "Delete many" on the documents matching `filter`. */
+export interface BulkRequest {
+  type: 'bulkApply';
+  requestId: number;
+  op: 'update' | 'delete';
+  filter: string;
+  /** Update operators or pipeline (mongosh syntax), for `op: 'update'`. */
+  update?: string;
+}
+
 export type WebviewMessage =
   | { type: 'ready' }
   | QueryRequest
@@ -94,6 +104,8 @@ export type WebviewMessage =
   | { type: 'createIndex'; requestId: number; keys: string; options: string }
   | { type: 'dropIndex'; name: string }
   | { type: 'hideIndex'; name: string; hidden: boolean }
+  | { type: 'bulkCount'; requestId: number; filter: string }
+  | BulkRequest
   | { type: 'export'; source: QuerySource; expanded: string[]; page: { skip: number; limit: number }; count: number | null };
 
 export type HostMessage =
@@ -114,4 +126,7 @@ export type HostMessage =
       error?: string;
     }
   | { type: 'indexes'; indexes: IndexInfo[]; error?: string }
-  | { type: 'indexResult'; requestId: number; ok: boolean; message?: string };
+  | { type: 'indexResult'; requestId: number; ok: boolean; message?: string }
+  | { type: 'bulkCount'; requestId: number; count?: number; error?: string }
+  /** `ok: false` without a message: the confirmation was cancelled. */
+  | { type: 'bulkResult'; requestId: number; ok: boolean; message?: string };

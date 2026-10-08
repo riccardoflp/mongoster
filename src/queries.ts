@@ -35,6 +35,24 @@ export function toBson(text: string, label: string): Document | undefined {
   return EJSON.deserialize(value, { relaxed: false }) as Document;
 }
 
+/** The changes of "Update many": update operators (`{ $set: … }`) or an update pipeline (`[ { $set: … } ]`). */
+export function toUpdate(text: string): Document | Document[] {
+  if (!text.trim()) throw new Error('Update: enter the changes, e.g. { $set: { field: "value" } }');
+  let value: unknown;
+  try {
+    value = parseQuery(text);
+  } catch (err) {
+    throw new Error(`Update: ${errorMessage(err)}`);
+  }
+  const operators = (v: unknown) => isPlainObject(v) && Object.keys(v).length > 0 && Object.keys(v).every((k) => k.startsWith('$'));
+  if (Array.isArray(value)) {
+    if (!value.length || !value.every(operators)) throw new Error('Update: a pipeline is a list of stages like { $set: { … } }');
+  } else if (!operators(value)) {
+    throw new Error('Update: use update operators like { $set: { field: "value" } } (a plain document would replace whole documents)');
+  }
+  return fromRelaxed(value) as Document | Document[];
+}
+
 /** The enabled stages up to `upto` as a driver pipeline; `write` is its final $out/$merge stage, if any. */
 export function buildPipeline(stages: PipelineStage[], upto: number): { pipeline: Document[]; write?: PipelineStage } {
   const active = stages

@@ -94,6 +94,35 @@
         "title": "Import Documents…",
         "category": "Mongoster",
         "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "mongoster.createDatabase",
+        "title": "Create Database…",
+        "category": "Mongoster",
+        "icon": "$(add)"
+      },
+      {
+        "command": "mongoster.createCollection",
+        "title": "Create Collection…",
+        "category": "Mongoster",
+        "icon": "$(add)"
+      },
+      {
+        "command": "mongoster.renameCollection",
+        "title": "Rename Collection…",
+        "category": "Mongoster"
+      },
+      {
+        "command": "mongoster.dropCollection",
+        "title": "Drop…",
+        "category": "Mongoster",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "mongoster.dropDatabase",
+        "title": "Drop Database…",
+        "category": "Mongoster",
+        "icon": "$(trash)"
       }
     ],
     "menus": {
@@ -149,6 +178,36 @@
           "command": "mongoster.exportCollection",
           "when": "view == mongoster.connections && viewItem =~ /^(collection|view)$/",
           "group": "2_transfer@2"
+        },
+        {
+          "command": "mongoster.createDatabase",
+          "when": "view == mongoster.connections && viewItem =~ /^connection/",
+          "group": "0_create@1"
+        },
+        {
+          "command": "mongoster.createCollection",
+          "when": "view == mongoster.connections && viewItem == database",
+          "group": "inline@1"
+        },
+        {
+          "command": "mongoster.createCollection",
+          "when": "view == mongoster.connections && viewItem == database",
+          "group": "0_create@1"
+        },
+        {
+          "command": "mongoster.dropDatabase",
+          "when": "view == mongoster.connections && viewItem == database",
+          "group": "9_drop@1"
+        },
+        {
+          "command": "mongoster.renameCollection",
+          "when": "view == mongoster.connections && viewItem == collection",
+          "group": "3_manage@1"
+        },
+        {
+          "command": "mongoster.dropCollection",
+          "when": "view == mongoster.connections && viewItem =~ /^(collection|view)$/",
+          "group": "9_drop@1"
         }
       ],
       "commandPalette": [
@@ -174,6 +233,26 @@
         },
         {
           "command": "mongoster.importDocuments",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.createDatabase",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.createCollection",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.renameCollection",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.dropCollection",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.dropDatabase",
           "when": "false"
         }
       ]

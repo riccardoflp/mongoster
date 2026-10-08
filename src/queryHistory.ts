@@ -14,8 +14,12 @@ export class QueryHistory {
     private readonly state: Memento,
     collectionKey: string,
   ) {
-    this.recentKey = `mongoster.history.${collectionKey}`;
-    this.savedKey = `mongoster.saved.${collectionKey}`;
+    [this.recentKey, this.savedKey] = QueryHistory.stateKeys(collectionKey);
+  }
+
+  /** The globalState keys of a collection's recent and saved queries. */
+  static stateKeys(collectionKey: string): [recent: string, saved: string] {
+    return [`mongoster.history.${collectionKey}`, `mongoster.saved.${collectionKey}`];
   }
 
   get recent(): SavedQuery[] {

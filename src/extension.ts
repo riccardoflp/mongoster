@@ -1,14 +1,16 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from './connections';
-import { CollectionNode, ConnectionNode, MongoTreeProvider, TreeNode, errorMessage } from './tree';
-import { CollectionPanel, expandedStateKey } from './collectionPanel';
+import { CollectionNode, ConnectionNode, DatabaseNode, MongoTreeProvider, TreeNode, errorMessage } from './tree';
+import { CollectionPanel, expandedStateKey, moveCollectionState } from './collectionPanel';
+import { Manager } from './manage';
 import { exportDocuments, importDocuments } from './transfer';
-import { DOC_SCHEME, DocumentFileSystem } from './documentFs';
+import { CollectionRef, DOC_SCHEME, DocumentFileSystem } from './documentFs';
 
 export function activate(context: vscode.ExtensionContext): void {
   const connections = new ConnectionManager(context);
   const tree = new MongoTreeProvider(connections);
   const documents = new DocumentFileSystem(connections);
+  const manager = new Manager(connections);
   const collectionTarget = (node: CollectionNode) => ({
     connectionId: node.connection.id,
     connectionName: node.connection.name,
@@ -57,6 +59,53 @@ export function activate(context: vscode.ExtensionContext): void {
       });
     }),
 
+    vscode.commands.registerCommand('mongoster.createDatabase', async (node?: ConnectionNode) => {
+      if (!node) return;
+      const created = await manager.createDatabase(node.info);
+      if (!created) return;
+      tree.refresh();
+      CollectionPanel.show(context, connections, documents, {
+        connectionId: node.info.id,
+        connectionName: node.info.name,
+        ...created,
+        readOnly: false,
+      });
+    }),
+
+    vscode.commands.registerCommand('mongoster.createCollection', async (node?: DatabaseNode) => {
+      if (!node) return;
+      const name = await manager.createCollection(node.connection, node.database);
+      if (name) tree.refresh();
+    }),
+
+    vscode.commands.registerCommand('mongoster.renameCollection', async (node?: CollectionNode) => {
+      if (!node || node.isView) return;
+      const name = await manager.renameCollection(node.connection, node.database, node.collection);
+      if (!name) return;
+      const from = collectionTarget(node);
+      const to = { ...from, collection: name };
+      await moveCollectionState(context.globalState, from, to);
+      // The open panel belongs to the old name: reopen it under the new one.
+      if (CollectionPanel.close((t) => sameCollection(t, from)).length) {
+        CollectionPanel.show(context, connections, documents, to);
+      }
+      tree.refresh();
+    }),
+
+    vscode.commands.registerCommand('mongoster.dropCollection', async (node?: CollectionNode) => {
+      if (!node) return;
+      if (!(await manager.dropCollection(node.connection, node.database, node.collection, node.isView))) return;
+      CollectionPanel.close((t) => sameCollection(t, collectionTarget(node)));
+      tree.refresh();
+    }),
+
+    vscode.commands.registerCommand('mongoster.dropDatabase', async (node?: DatabaseNode) => {
+      if (!node) return;
+      if (!(await manager.dropDatabase(node.connection, node.database))) return;
+      CollectionPanel.close((t) => t.connectionId === node.connection.id && t.database === node.database);
+      tree.refresh();
+    }),
+
     vscode.commands.registerCommand('mongoster.importDocuments', async (node?: CollectionNode) => {
       if (!node) return;
       const target = collectionTarget(node);
@@ -70,6 +119,10 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {}
+
+function sameCollection(a: CollectionRef, b: CollectionRef): boolean {
+  return a.connectionId === b.connectionId && a.database === b.database && a.collection === b.collection;
+}
 
 async function addConnection(connections: ConnectionManager): Promise<void> {
   const uri = (

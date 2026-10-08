@@ -5,6 +5,11 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
 ## Funzionalità
 
 - **Connessioni** nella barra laterale (icona a foglia): connessione → database → collezioni. Le connection string sono salvate nel SecretStorage di VS Code.
+- **Gestione database e collezioni** dal menu contestuale dell'albero:
+  - `Create Database…` sulla connessione chiede il nome del database e della prima collezione (MongoDB crea un database solo insieme a una collezione) e la apre.
+  - `Create Collection…` (anche con `+` sul database) accetta opzioni facoltative, per esempio `{ capped: true, size: 1048576 }` o `{ timeseries: { timeField: "ts" } }`.
+  - `Rename Collection…` rinomina nello stesso database; la tab aperta, la cronologia delle query e le colonne espanse seguono il nuovo nome. Le view non si rinominano.
+  - `Drop…` su collezioni e view, `Drop Database…` sul database: per collezioni e database va digitato il nome per confermare, e il messaggio dice quanti documenti, indici o collezioni verranno eliminati. Le tab delle collezioni eliminate si chiudono.
 - **Tabella** per collezione: una colonna per campo, valori colorati per tipo, paginazione, conteggio totale.
 - **Filter / Sort / Project** in sintassi mongosh: `{ _id: ObjectId("…"), name: /mario/i, createdAt: { $gte: ISODate("2024-01-01") } }`. `Ctrl+Enter` esegue.
 - **Drag & drop verso il filtro**:
@@ -25,6 +30,11 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - Trascinando il valore di un elemento il filtro usa `$elemMatch`: `{ items: { $elemMatch: { sku: "A1", qty: { $gte: 4 } } } }`. Più condizioni sullo stesso array si sommano nello stesso `$elemMatch`, quindi valgono per lo **stesso elemento**.
   - Trascinare l'intestazione e ordinare usano il percorso puntato (`items.sku`).
   - Dentro gli elementi si possono espandere i sotto-documenti (`items[].options.color`); gli array dentro gli array restano come valore.
+- **Update many / Delete many**: i pulsanti accanto a `Explain` agiscono su tutti i documenti che corrispondono al filtro.
+  - La dialog mostra il filtro e quanti documenti corrispondono prima di scrivere; la tabella dietro mostra quei documenti.
+  - Per l'update si scrivono gli operatori (`{ $set: { status: "archived" }, $inc: { version: 1 } }`) o una pipeline (`[ { $set: { total: { $add: ["$a", "$b"] } } } ]`); un documento senza operatori viene rifiutato perché sostituirebbe i documenti interi. `Ctrl+Invio` applica.
+  - Con il filtro vuoto viene chiesta un'ulteriore conferma, perché si modifica o cancella l'intera collezione.
+  - Al termine viene mostrato quanti documenti sono stati modificati o eliminati. Non disponibile per le view.
 - **Modifica inline**: doppio clic su una cella (o `F2` sulla cella selezionata) per modificarne il valore in sintassi mongosh; `Invio` salva con `$set`, `Shift+Invio` va a capo, `Esc` (o un clic altrove) annulla.
   - Funziona anche sui campi annidati, sugli elementi degli array espansi (`items.2.qty`) e sulle celle vuote (aggiunge il campo).
   - I tipi numerici restano quelli originali; `NumberLong(...)` e simili forzano un tipo.
@@ -79,9 +89,10 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/documentFs.ts` – file system virtuale `mongoster://` per aprire, modificare e salvare i documenti
 - `src/queries.ts` – testo di filtri e pipeline → argomenti del driver
 - `src/transfer.ts` – export (JSON, JSON Lines, CSV) e import
+- `src/manage.ts` – creazione, rinomina ed eliminazione di database e collezioni
 - `src/shared/query.ts` – parsing/formattazione della sintassi mongosh ⇄ EJSON
 - `src/shared/columns.ts` – modello delle colonne (annidate e array), usato dalla tabella e dal CSV
 - `src/shared/csv.ts` – generazione e parsing CSV
 - `src/shared/pipeline.ts` – modello degli stage di aggregazione, modelli e conversione testo ⇄ stage
 - `src/shared/explain.ts` – riassunto dell'output di explain e suggerimento dell'indice
-- `src/webview/main.ts`, `src/webview/history.ts`, `src/webview/pipeline.ts`, `src/webview/indexes.ts`, `src/webview/explainView.ts`, `media/webview.css` – UI della tabella, cronologia, editor della pipeline, indici ed explain
+- `src/webview/main.ts`, `src/webview/history.ts`, `src/webview/pipeline.ts`, `src/webview/indexes.ts`, `src/webview/explainView.ts`, `src/webview/bulk.ts`, `media/webview.css` – UI della tabella, cronologia, editor della pipeline, indici, explain e update/delete many

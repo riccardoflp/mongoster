@@ -5,6 +5,7 @@ import { HistoryPopover } from './history';
 import { PipelineEditor } from './pipeline';
 import { IndexesView } from './indexes';
 import { ExplainView } from './explainView';
+import { BulkDialog, BulkOp } from './bulk';
 import {
   ColumnNode,
   MAX_ELEMENTS,
@@ -76,6 +77,7 @@ const columnsByKey = new Map<string, ColumnNode>();
 /** Cell to select again after the grid re-renders (e.g. after an inline edit). */
 let reselect: { row: number; path: string; elem?: string } | null = null;
 let readOnly = false;
+let collectionName = '';
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const filterInput = el<HTMLTextAreaElement>('filter');
@@ -190,6 +192,7 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
   const m = event.data;
   switch (m.type) {
     case 'init':
+      collectionName = m.collection;
       el('ns').innerHTML = '';
       el('ns').append(
         span('ns-conn', m.connectionName),
@@ -220,6 +223,12 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
     case 'indexResult':
       pendingIndex.get(m.requestId)?.(m.ok ? undefined : m.message ?? 'Failed');
       pendingIndex.delete(m.requestId);
+      break;
+    case 'bulkCount':
+      bulk.onCount(m);
+      break;
+    case 'bulkResult':
+      bulk.onResult(m);
       break;
     case 'explainResult':
       if (m.requestId === explainRequest) explainView.show(m);
@@ -862,9 +871,10 @@ filterInput.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (explainView.isOpen) {
+  if (explainView.isOpen || bulk.isOpen) {
     if (e.key === 'Escape') {
-      explainView.close();
+      if (explainView.isOpen) explainView.close();
+      else bulk.close();
       e.preventDefault();
     }
     return;
@@ -989,6 +999,24 @@ function explain(): void {
   vscode.postMessage({ type: 'explain', requestId: explainRequest, source });
 }
 el('explainFind').addEventListener('click', explain);
+
+// ---------------------------------------------------------------------------
+// Update many / Delete many
+
+const bulk = new BulkDialog((message) => vscode.postMessage(message));
+
+function openBulk(op: BulkOp): void {
+  if (!isValidObject(filterInput.value)) {
+    filterInput.classList.add('invalid');
+    showError('Invalid query syntax — check the highlighted field.');
+    return;
+  }
+  // Show the documents that will be affected behind the dialog.
+  if (filterInput.value !== state.filter) run(true);
+  bulk.open(op, filterInput.value, collectionName);
+}
+el('updateMany').addEventListener('click', () => openBulk('update'));
+el('deleteMany').addEventListener('click', () => openBulk('delete'));
 el('explainPipeline').addEventListener('click', explain);
 el('modeAggregate').addEventListener('click', () => state.mode !== 'aggregate' && setMode('aggregate'));
 

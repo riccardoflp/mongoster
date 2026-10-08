@@ -1244,3 +1244,68 @@ body.mode-indexes .not-indexes {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ---------- update / delete many ---------- */
+
+.bulk-box {
+  width: min(640px, 94vw);
+}
+
+.bulk-body {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 8px 10px;
+  padding: 12px 14px 4px;
+}
+
+.bulk-label {
+  padding-top: 3px;
+  color: var(--muted);
+}
+
+.bulk-filter {
+  font-family: var(--mono);
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.bulk-filter.warn {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  border-color: currentColor;
+}
+
+#bulkUpdate {
+  font-family: var(--mono);
+  resize: vertical;
+  min-height: 4.5em;
+}
+
+#bulkModal.delete .bulk-update {
+  display: none;
+}
+
+.bulk-count,
+.bulk-error {
+  grid-column: 1 / -1;
+}
+
+.bulk-error {
+  margin: 0;
+}
+
+.bulk-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 10px 14px 12px;
+}
+
+button.danger-primary:not(:disabled) {
+  background: var(--vscode-inputValidation-errorBorder, #be1100);
+  color: #fff;
+}
