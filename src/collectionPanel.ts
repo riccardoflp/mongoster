@@ -10,6 +10,7 @@ import { StageError, buildPipeline, fromRelaxed, toBson, toUpdate } from './quer
 import { exportDocuments } from './transfer';
 import type { AggregateRequest, BulkRequest, HostMessage, IndexInfo, QueryRequest, QuerySource, UpdateFieldRequest, WebviewMessage } from './shared/messages';
 import { suggestIndex, summarizeExplain } from './shared/explain';
+import { analyzeSchema } from './shared/schema';
 
 const { EJSON } = BSON;
 
@@ -174,6 +175,9 @@ export class CollectionPanel {
       case 'bulkApply':
         await this.bulkApply(m);
         break;
+      case 'analyzeSchema':
+        await this.analyzeSchema(m.requestId, m.filter, m.size);
+        break;
       case 'loadIndexes':
         await this.postIndexes();
         break;
@@ -267,6 +271,27 @@ export class CollectionPanel {
       this.post({ type: 'refresh' });
     } catch (err) {
       reply(false, errorMessage(err));
+    }
+  }
+
+  /** Schema of a random sample of the documents matching the filter (all of them when they fit). */
+  private async analyzeSchema(requestId: number, filterText: string, size: number): Promise<void> {
+    const started = Date.now();
+    try {
+      const coll = await this.coll();
+      const filter = toBson(filterText, 'Filter') ?? {};
+      const all = !Object.keys(filter).length;
+      const total =
+        all && !this.target.readOnly ? await coll.estimatedDocumentCount() : await coll.countDocuments(filter, { maxTimeMS: 60_000 });
+      const pipeline: Document[] = [];
+      if (!all) pipeline.push({ $match: filter });
+      pipeline.push(total > size ? { $sample: { size } } : { $limit: size });
+      // promoteValues: false keeps Int32 and Double apart, so the types are reported exactly.
+      const docs = await coll.aggregate(pipeline, { promoteValues: false, maxTimeMS: 120_000, allowDiskUse: true }).toArray();
+      const schema = analyzeSchema(docs.map((d) => EJSON.serialize(d, { relaxed: false })));
+      this.post({ type: 'schema', requestId, schema, total: Math.max(total, schema.sampled), durationMs: Date.now() - started });
+    } catch (err) {
+      this.post({ type: 'schema', requestId, error: errorMessage(err) });
     }
   }
 
@@ -528,10 +553,11 @@ export class CollectionPanel {
       <div class="mode" role="tablist" aria-label="Query mode">
         <button id="modeFind" role="tab" aria-selected="true" title="Filter, sort and project documents">Find</button>
         <button id="modeAggregate" role="tab" aria-selected="false" title="Build an aggregation pipeline">Aggregate</button>
+        <button id="modeSchema" role="tab" aria-selected="false" title="Fields, types and values of a sample of documents">Schema</button>
         <button id="modeIndexes" role="tab" aria-selected="false" title="Indexes of the collection">Indexes</button>
       </div>
       <button id="historyBtn" class="secondary" title="Recent and saved queries" aria-haspopup="true" aria-expanded="false">History ▾</button>
-      <button id="export" class="secondary not-indexes" title="Export the results to JSON, JSON Lines or CSV">Export</button>
+      <button id="export" class="secondary not-indexes not-schema" title="Export the results to JSON, JSON Lines or CSV">Export</button>
       <button id="insert" class="secondary editable" title="Insert a new document">Insert</button>
     </div>
     <div class="find-only">
@@ -543,11 +569,11 @@ export class CollectionPanel {
         </div>
         <button id="run" class="primary" title="Run query (Ctrl+Enter)">Find</button>
         <button id="reset" class="secondary" title="Clear filter, sort and projection">Reset</button>
-        <button id="explainFind" class="secondary" title="Show how MongoDB runs this query: index used, documents examined">Explain</button>
-        <button id="updateMany" class="secondary editable" title="Update every document matching the filter">Update many…</button>
-        <button id="deleteMany" class="secondary editable danger" title="Delete every document matching the filter">Delete many…</button>
+        <button id="explainFind" class="secondary not-schema" title="Show how MongoDB runs this query: index used, documents examined">Explain</button>
+        <button id="updateMany" class="secondary editable not-schema" title="Update every document matching the filter">Update many…</button>
+        <button id="deleteMany" class="secondary editable danger not-schema" title="Delete every document matching the filter">Delete many…</button>
       </div>
-      <div class="row options">
+      <div class="row options not-schema">
         <label for="sort">Sort</label>
         <input id="sort" spellcheck="false" placeholder="{ field: -1 }">
         <label for="projection">Project</label>
@@ -581,6 +607,19 @@ export class CollectionPanel {
     <div class="history-body" id="historyBody"></div>
   </div>
   <div class="error hidden" id="error"></div>
+  <section class="schema-only schema-view" id="schemaView">
+    <div class="row schema-head">
+      <span id="schemaInfo" class="schema-info"></span>
+      <span class="spacer"></span>
+      <label for="schemaSize">Sample</label>
+      <select id="schemaSize" title="Documents analyzed: a random sample when more match the filter">
+        <option>100</option><option selected>1000</option><option>10000</option>
+      </select>
+      <button id="schemaExpand" class="icon" title="Expand all">⊞</button>
+      <button id="schemaCollapse" class="icon" title="Collapse all">⊟</button>
+    </div>
+    <div id="schemaBody" class="schema-body"></div>
+  </section>
   <section class="indexes-only indexes-view" id="indexesView">
     <div class="row index-create editable">
       <label for="indexKeys">Keys</label>

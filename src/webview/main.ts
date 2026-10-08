@@ -6,6 +6,7 @@ import { PipelineEditor } from './pipeline';
 import { IndexesView } from './indexes';
 import { ExplainView } from './explainView';
 import { BulkDialog, BulkOp } from './bulk';
+import { SchemaView } from './schemaView';
 import {
   ColumnNode,
   MAX_ELEMENTS,
@@ -27,7 +28,7 @@ declare function acquireVsCodeApi(): {
   setState(state: QueryState): void;
 };
 
-type Mode = 'find' | 'aggregate' | 'indexes';
+type Mode = 'find' | 'aggregate' | 'schema' | 'indexes';
 
 interface QueryState {
   mode: Mode;
@@ -41,6 +42,8 @@ interface QueryState {
   skip: number;
   /** Dotted paths of expanded sub-document columns. */
   expanded: string[];
+  /** Documents sampled by the schema analysis. */
+  schemaSize?: number;
 }
 
 /** `within`: the array a dragged element field belongs to; its conditions go into an $elemMatch. */
@@ -104,6 +107,10 @@ function run(resetSkip = false): void {
     vscode.postMessage({ type: 'loadIndexes' });
     return;
   }
+  if (state.mode === 'schema') {
+    runSchema();
+    return;
+  }
   state.filter = filterInput.value;
   state.sort = sortInput.value;
   state.projection = projectionInput.value;
@@ -133,6 +140,23 @@ function run(resetSkip = false): void {
   });
 }
 
+function runSchema(): void {
+  const ok = isValidObject(filterInput.value);
+  filterInput.classList.toggle('invalid', !ok);
+  if (!ok) {
+    showError('Invalid query syntax — check the highlighted field.');
+    return;
+  }
+  showError(null);
+  state.filter = filterInput.value;
+  state.schemaSize = Number(schemaSize.value);
+  vscode.setState(state);
+  schemaRequest++;
+  setLoading(true);
+  schemaView.loading();
+  vscode.postMessage({ type: 'analyzeSchema', requestId: schemaRequest, filter: state.filter, size: state.schemaSize });
+}
+
 function runAggregate(): void {
   if (!pipeline.prepare()) return;
   pipeline.markError(null);
@@ -160,6 +184,9 @@ function setMode(mode: Mode, runNow = true): void {
   if (mode === 'indexes' && readOnly) mode = state.mode = 'find';
   document.body.classList.toggle('mode-aggregate', mode === 'aggregate');
   document.body.classList.toggle('mode-indexes', mode === 'indexes');
+  document.body.classList.toggle('mode-schema', mode === 'schema');
+  el('modeSchema').setAttribute('aria-selected', String(mode === 'schema'));
+  el('run').textContent = mode === 'schema' ? 'Analyze' : 'Find';
   el('modeFind').setAttribute('aria-selected', String(mode === 'find'));
   el('modeAggregate').setAttribute('aria-selected', String(mode === 'aggregate'));
   el('modeIndexes').setAttribute('aria-selected', String(mode === 'indexes'));
@@ -219,6 +246,11 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       break;
     case 'indexes':
       indexesView.render(m.indexes, m.error);
+      break;
+    case 'schema':
+      if (m.requestId !== schemaRequest) break;
+      setLoading(false);
+      schemaView.show(m);
       break;
     case 'indexResult':
       pendingIndex.get(m.requestId)?.(m.ok ? undefined : m.message ?? 'Failed');
@@ -952,6 +984,16 @@ const pipeline = new PipelineEditor({
 });
 el('modeFind').addEventListener('click', () => state.mode !== 'find' && setMode('find'));
 el('modeIndexes').addEventListener('click', () => state.mode !== 'indexes' && setMode('indexes'));
+el('modeSchema').addEventListener('click', () => state.mode !== 'schema' && setMode('schema'));
+
+// ---------------------------------------------------------------------------
+// Schema
+
+let schemaRequest = 0;
+const schemaSize = el<HTMLSelectElement>('schemaSize');
+if (state.schemaSize) schemaSize.value = String(state.schemaSize);
+schemaSize.addEventListener('change', () => run());
+const schemaView = new SchemaView({ filter: (path, condition) => addCondition(path, condition) });
 
 // ---------------------------------------------------------------------------
 // Indexes & explain

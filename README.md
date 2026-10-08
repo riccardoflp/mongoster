@@ -53,6 +53,11 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - Le pipeline che finiscono con `$out`/`$merge` non si esportano: seleziona uno stage precedente.
 - **Import**: clic destro su una collezione → `Import Documents…` accetta JSON (array o singolo documento), JSON Lines, CSV e anche la sintassi mongosh (`ObjectId(...)`, `ISODate(...)`). Chiede conferma, inserisce a blocchi di 1000 e segnala i documenti scartati (es. `_id` già esistente) senza fermarsi.
   - Nel CSV le intestazioni con il punto creano sotto-documenti (`address.city`), le celle vuote vengono omesse e numeri, booleani, `null`, date ISO (`…Z`), JSON e `_id` esadecimali vengono riconosciuti.
+- **Schema**: la scheda `Schema` analizza i documenti che corrispondono al filtro (tutti, o un campione casuale di 100 / 1.000 / 10.000) e per ogni campo mostra:
+  - quanto spesso è presente e con quali tipi BSON (`int`, `double`, `long`, `decimal`, `date`, `objectId`, …), con le percentuali;
+  - i valori più frequenti, oppure un istogramma per numeri e date con minimo e massimo; per gli array la lunghezza e i valori degli elementi.
+  - I sotto-documenti e i campi degli oggetti negli array (`items[].sku`) si espandono con `▸`; `⊞` / `⊟` espandono o chiudono tutto.
+  - Clic su un valore, su una barra dell'istogramma o su un tipo per aggiungerlo al filtro (`{ status: "active" }`, `{ age: { $gte: 25, $lt: 30 } }`, `{ name: { $type: "string" } }`): l'analisi riparte sui documenti filtrati.
 - **Indici**: la scheda `Indexes` (accanto a `Find / Aggregate`) elenca gli indici della collezione con chiavi, proprietà (`unique`, `sparse`, TTL, `partial`, `text`, `hidden`, …), dimensione e numero di utilizzi dall'avvio del server.
   - Per creare un indice scrivi le chiavi (`{ status: 1, createdAt: -1 }`) e, se servono, le opzioni (`{ unique: true, expireAfterSeconds: 3600, partialFilterExpression: { … } }`), poi `Create`.
   - `Hide` nasconde un indice al query planner senza cancellarlo (utile per capire se serve ancora), `Unhide` lo riattiva; `Drop` lo elimina dopo conferma. `_id_` non si può toccare.
@@ -95,4 +100,5 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/shared/csv.ts` – generazione e parsing CSV
 - `src/shared/pipeline.ts` – modello degli stage di aggregazione, modelli e conversione testo ⇄ stage
 - `src/shared/explain.ts` – riassunto dell'output di explain e suggerimento dell'indice
-- `src/webview/main.ts`, `src/webview/history.ts`, `src/webview/pipeline.ts`, `src/webview/indexes.ts`, `src/webview/explainView.ts`, `src/webview/bulk.ts`, `media/webview.css` – UI della tabella, cronologia, editor della pipeline, indici, explain e update/delete many
+- `src/shared/schema.ts` – analisi dello schema di un campione di documenti
+- `src/webview/main.ts`, `src/webview/history.ts`, `src/webview/pipeline.ts`, `src/webview/indexes.ts`, `src/webview/explainView.ts`, `src/webview/bulk.ts`, `src/webview/schemaView.ts`, `media/webview.css` – UI della tabella, cronologia, editor della pipeline, indici, explain, update/delete many e schema

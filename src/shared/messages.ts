@@ -1,5 +1,6 @@
 // Message protocol between the collection webview and the extension host.
 // Documents and _id values travel as relaxed EJSON plain values.
+import type { SchemaSummary } from './schema';
 import type { PipelineStage } from './pipeline';
 import type { ExplainSummary } from './explain';
 
@@ -105,6 +106,7 @@ export type WebviewMessage =
   | { type: 'dropIndex'; name: string }
   | { type: 'hideIndex'; name: string; hidden: boolean }
   | { type: 'bulkCount'; requestId: number; filter: string }
+  | { type: 'analyzeSchema'; requestId: number; filter: string; size: number }
   | BulkRequest
   | { type: 'export'; source: QuerySource; expanded: string[]; page: { skip: number; limit: number }; count: number | null };
 
@@ -128,5 +130,6 @@ export type HostMessage =
   | { type: 'indexes'; indexes: IndexInfo[]; error?: string }
   | { type: 'indexResult'; requestId: number; ok: boolean; message?: string }
   | { type: 'bulkCount'; requestId: number; count?: number; error?: string }
+  | { type: 'schema'; requestId: number; schema?: SchemaSummary; total?: number; durationMs?: number; error?: string }
   /** `ok: false` without a message: the confirmation was cancelled. */
   | { type: 'bulkResult'; requestId: number; ok: boolean; message?: string };
