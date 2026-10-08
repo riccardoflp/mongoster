@@ -1,0 +1,89 @@
+/* GridFS tab: monitor.css provides the base (bar, tables, detail rows). */
+
+#search {
+  flex: 1;
+  max-width: 460px;
+}
+
+.title strong {
+  font-weight: 600;
+}
+
+.message {
+  flex: none;
+}
+
+.list {
+  flex: 1;
+}
+
+td.name {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+td.muted {
+  color: var(--muted);
+}
+
+td.id {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+td.command {
+  max-width: 320px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  flex: none;
+}
+
+.preview {
+  margin: 4px 0 6px;
+}
+
+.preview img {
+  display: block;
+  max-width: min(100%, 720px);
+  max-height: 420px;
+  object-fit: contain;
+  /* Icons and other tiny images are enlarged a bit. */
+  min-width: 64px;
+  background: repeating-conic-gradient(rgba(128, 128, 128, 0.15) 0% 25%, transparent 0% 50%) 50% / 16px 16px;
+  border: 1px solid var(--border);
+}
+
+.preview pre {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+}
+
+tr.detail .preview pre.text {
+  white-space: pre;
+  word-break: normal;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.failed {
+  color: var(--vscode-errorForeground, #f48771);
+}

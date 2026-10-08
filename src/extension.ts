@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { CONNECTION_COLORS, ConnectionColor, ConnectionInfo, ConnectionManager } from './connections';
-import { CollectionNode, ConnectionNode, DatabaseNode, FolderNode, MongoTreeProvider, TreeNode, errorMessage } from './tree';
+import { BucketNode, CollectionNode, ConnectionNode, DatabaseNode, FolderNode, MongoTreeProvider, TreeNode, errorMessage } from './tree';
 import { CollectionPanel, CollectionTarget, expandedStateKey, layoutStateKey, moveCollectionState, readOnlyMessage } from './collectionPanel';
 import { Manager } from './manage';
 import { exportDocuments, importDocuments } from './transfer';
@@ -10,6 +10,7 @@ import { Playgrounds } from './playground/playground';
 import { MonitorPanel } from './monitor';
 import { ComparePanel } from './compare';
 import { UsersPanel } from './users';
+import { GridFSPanel, dropBucket, uploadFiles } from './gridfs';
 import { Copier } from './copy';
 import { WatchPanel, WatchScope } from './watch';
 import { ConnectionEditor, SaveConnection } from './connectionEditor';
@@ -58,6 +59,7 @@ export function activate(context: vscode.ExtensionContext): void {
       WatchPanel.connectionChanged(info);
       ComparePanel.connectionChanged(info);
       UsersPanel.connectionChanged(info);
+      GridFSPanel.connectionChanged(info);
     }
   };
 
@@ -186,6 +188,7 @@ export function activate(context: vscode.ExtensionContext): void {
         WatchPanel.close(node.info.id);
         ComparePanel.close(node.info.id);
         UsersPanel.close(node.info.id);
+        GridFSPanel.close(node.info.id);
         ConnectionEditor.close(node.info.id);
         await connections.remove(node.info.id);
       }
@@ -328,7 +331,54 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!node) return;
       if (!(await manager.dropDatabase(node.connection, node.database))) return;
       CollectionPanel.close((t) => t.connectionId === node.connection.id && t.database === node.database);
+      GridFSPanel.close(node.connection.id, node.database);
       tree.refresh();
+    }),
+
+    vscode.commands.registerCommand('mongoster.openGridFS', (node?: BucketNode) =>
+      node ? GridFSPanel.show(context, connections, documents, { connectionId: node.connection.id, database: node.database, bucket: node.bucket }) : undefined,
+    ),
+
+    vscode.commands.registerCommand('mongoster.uploadGridFS', async (node?: BucketNode | DatabaseNode) => {
+      if (!node) return;
+      const info = connections.get(node.connection.id) ?? node.connection;
+      if (info.readOnly) return void vscode.window.showErrorMessage(`The connection ${info.name} is read-only.`);
+      let bucket = node instanceof BucketNode ? node.bucket : undefined;
+      if (!bucket) {
+        bucket = await vscode.window.showInputBox({
+          title: `Upload files to GridFS in ${info.name} › ${node.database}`,
+          prompt: 'Bucket name: its files go in <bucket>.files and <bucket>.chunks',
+          value: 'fs',
+          validateInput: (v) => (/^[^$\s]+$/.test(v.trim()) && !v.includes('\0') ? undefined : 'Enter a name without spaces or $'),
+        });
+        if (!bucket) return;
+        bucket = bucket.trim();
+      }
+      const target = { connectionId: info.id, database: node.database, bucket };
+      try {
+        const message = await uploadFiles(await connections.getClient(info.id), target, `${info.name} › ${node.database} › ${bucket}`);
+        if (!message) return;
+        tree.refresh();
+        GridFSPanel.refresh(target);
+        const answer = await vscode.window.showInformationMessage(message, 'Open');
+        if (answer === 'Open') GridFSPanel.show(context, connections, documents, target);
+      } catch (err) {
+        void vscode.window.showErrorMessage(errorMessage(err));
+      }
+    }),
+
+    vscode.commands.registerCommand('mongoster.dropGridFSBucket', async (node?: BucketNode) => {
+      if (!node) return;
+      const info = connections.get(node.connection.id) ?? node.connection;
+      if (info.readOnly) return void vscode.window.showErrorMessage(`The connection ${info.name} is read-only.`);
+      const target = { connectionId: info.id, database: node.database, bucket: node.bucket };
+      try {
+        if (!(await dropBucket(await connections.getClient(info.id), target, `${info.name} › ${node.database} › ${node.bucket}`))) return;
+        GridFSPanel.close(info.id, node.database, node.bucket);
+        tree.refresh();
+      } catch (err) {
+        void vscode.window.showErrorMessage(errorMessage(err));
+      }
     }),
 
     vscode.commands.registerCommand('mongoster.importDocuments', async (node?: CollectionNode) => {

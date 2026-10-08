@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { ConnectionInfo, ConnectionManager } from './connections';
+import { bucketNames } from './shared/gridfs';
 
 export class FolderNode extends vscode.TreeItem {
   readonly kind = 'folder';
@@ -71,6 +72,24 @@ export class CollectionNode extends vscode.TreeItem {
   }
 }
 
+/** A GridFS bucket: its X.files and X.chunks collections. */
+export class BucketNode extends vscode.TreeItem {
+  readonly kind = 'bucket';
+  constructor(
+    readonly connection: ConnectionInfo,
+    readonly database: string,
+    readonly bucket: string,
+  ) {
+    super(bucket, vscode.TreeItemCollapsibleState.None);
+    this.id = `bucket:${connection.id}/${database}/${bucket}`;
+    this.description = 'GridFS';
+    this.contextValue = `bucket${connection.readOnly ? '.readonly' : ''}`;
+    this.iconPath = new vscode.ThemeIcon('files');
+    this.tooltip = `GridFS bucket ${database}.${bucket} (${bucket}.files and ${bucket}.chunks)`;
+    this.command = { command: 'mongoster.openGridFS', title: 'Open GridFS Bucket', arguments: [this] };
+  }
+}
+
 class MessageNode extends vscode.TreeItem {
   readonly kind = 'message';
   constructor(message: string, icon = 'info') {
@@ -80,7 +99,7 @@ class MessageNode extends vscode.TreeItem {
   }
 }
 
-export type TreeNode = FolderNode | ConnectionNode | DatabaseNode | CollectionNode | MessageNode;
+export type TreeNode = FolderNode | ConnectionNode | DatabaseNode | BucketNode | CollectionNode | MessageNode;
 
 export class MongoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   private readonly changeEmitter = new vscode.EventEmitter<TreeNode | undefined>();
@@ -143,7 +162,9 @@ export class MongoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
           Number(a.collection.startsWith('system.')) - Number(b.collection.startsWith('system.')) ||
           a.collection.localeCompare(b.collection),
       );
-    return colls.length ? colls : [new MessageNode('No collections')];
+    // GridFS buckets first; their collections stay listed too.
+    const buckets = bucketNames(infos.map((c) => c.name)).map((b) => new BucketNode(node.connection, node.database, b));
+    return colls.length ? [...buckets, ...colls] : [new MessageNode('No collections')];
   }
 }
 

@@ -5,6 +5,7 @@
 !dist/monitor.js
 !dist/compare.js
 !dist/users.js
+!dist/gridfs.js
 !dist/watch.js
 !dist/connectionEditor.js
 !dist/chartjs.js

@@ -606,3 +606,46 @@ export type UsersViewMessage =
   | { type: 'saveRole'; create: boolean; database: string; role: string; privileges: string; roles: RoleRef[] }
   | { type: 'dropRole'; database: string; role: string }
   | { type: 'copy'; text: string };
+
+// ---- GridFS
+
+export interface GridFile {
+  /** The _id as canonical EJSON text: identifies the file in messages. */
+  key: string;
+  /** The _id on one line. */
+  id: string;
+  filename: string;
+  /** Bytes. */
+  length: number;
+  chunkSize: number;
+  /** ISO time. */
+  uploadDate?: string;
+  contentType?: string;
+  metadata?: unknown;
+  /** The files document, relaxed EJSON. */
+  raw: unknown;
+}
+
+export interface GridSort {
+  field: 'filename' | 'length' | 'uploadDate';
+  desc: boolean;
+}
+
+export type GridFSHostMessage =
+  | { type: 'init'; connectionName: string; readOnly: boolean; color?: string; database: string; bucket: string }
+  | { type: 'files'; requestId: number; files?: GridFile[]; total?: number; totalSize?: number; error?: string }
+  | { type: 'preview'; key: string; kind?: 'image' | 'text' | 'binary'; dataUrl?: string; text?: string; truncated?: boolean; error?: string }
+  | { type: 'action'; ok: boolean; message?: string };
+
+export type GridFSViewMessage =
+  | { type: 'ready' }
+  /** `search`: part of the file name, or a mongosh filter on the files collection ({ … }). */
+  | { type: 'load'; requestId: number; search: string; sort: GridSort; skip: number; limit: number }
+  | { type: 'upload' }
+  | { type: 'download'; key: string }
+  | { type: 'open'; key: string }
+  | { type: 'preview'; key: string }
+  | { type: 'rename'; key: string }
+  | { type: 'delete'; key: string }
+  | { type: 'editMetadata'; key: string }
+  | { type: 'copy'; text: string };

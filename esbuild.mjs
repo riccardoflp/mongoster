@@ -76,6 +76,14 @@ const contexts = await Promise.all([
   }),
   esbuild.context({
     ...common,
+    entryPoints: ['src/webview/gridfs.ts'],
+    outfile: 'dist/gridfs.js',
+    platform: 'browser',
+    format: 'iife',
+    target: 'es2020',
+  }),
+  esbuild.context({
+    ...common,
     entryPoints: ['src/webview/watch.ts'],
     outfile: 'dist/watch.js',
     platform: 'browser',
