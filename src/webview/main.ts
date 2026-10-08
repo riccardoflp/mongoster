@@ -1,8 +1,10 @@
 import { isEjsonWrapper, isPlainObject, mergeCondition, parseQuery, prettyShell, toShell } from '../shared/query';
-import type { HostMessage, WebviewMessage } from '../shared/messages';
+import type { HostMessage, QuerySource, WebviewMessage } from '../shared/messages';
 import type { PipelineStage } from '../shared/pipeline';
 import { HistoryPopover } from './history';
 import { PipelineEditor } from './pipeline';
+import { IndexesView } from './indexes';
+import { ExplainView } from './explainView';
 import {
   ColumnNode,
   MAX_ELEMENTS,
@@ -24,7 +26,7 @@ declare function acquireVsCodeApi(): {
   setState(state: QueryState): void;
 };
 
-type Mode = 'find' | 'aggregate';
+type Mode = 'find' | 'aggregate' | 'indexes';
 
 interface QueryState {
   mode: Mode;
@@ -95,6 +97,11 @@ function run(resetSkip = false): void {
     runAggregate();
     return;
   }
+  if (state.mode === 'indexes') {
+    indexesView.setLoading();
+    vscode.postMessage({ type: 'loadIndexes' });
+    return;
+  }
   state.filter = filterInput.value;
   state.sort = sortInput.value;
   state.projection = projectionInput.value;
@@ -148,9 +155,12 @@ function savePipelineState(): void {
 
 function setMode(mode: Mode, runNow = true): void {
   state.mode = mode;
+  if (mode === 'indexes' && readOnly) mode = state.mode = 'find';
   document.body.classList.toggle('mode-aggregate', mode === 'aggregate');
+  document.body.classList.toggle('mode-indexes', mode === 'indexes');
   el('modeFind').setAttribute('aria-selected', String(mode === 'find'));
   el('modeAggregate').setAttribute('aria-selected', String(mode === 'aggregate'));
+  el('modeIndexes').setAttribute('aria-selected', String(mode === 'indexes'));
   vscode.setState(state);
   if (!runNow) return;
   showError(null);
@@ -192,6 +202,9 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       if (m.expanded.length) expanded = new Set(m.expanded);
       document.body.classList.toggle('readonly', readOnly);
       el('docEdit').textContent = readOnly ? 'Open in editor' : 'Edit';
+      el<HTMLButtonElement>('modeIndexes').disabled = readOnly;
+      if (readOnly) el('modeIndexes').title = 'Views use the indexes of their source collection';
+      if (readOnly && state.mode === 'indexes') setMode('find', false);
       if (readOnly) el('docEdit').title = el('docEdit').dataset.title = 'Open in a read-only editor tab';
       run();
       break;
@@ -200,6 +213,16 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       break;
     case 'history':
       history.update(m.recent, m.saved);
+      break;
+    case 'indexes':
+      indexesView.render(m.indexes, m.error);
+      break;
+    case 'indexResult':
+      pendingIndex.get(m.requestId)?.(m.ok ? undefined : m.message ?? 'Failed');
+      pendingIndex.delete(m.requestId);
+      break;
+    case 'explainResult':
+      if (m.requestId === explainRequest) explainView.show(m);
       break;
     case 'fieldResult':
       pendingFields.get(m.requestId)?.(m.ok ? undefined : m.message ?? 'Not saved');
@@ -839,6 +862,13 @@ filterInput.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
+  if (explainView.isOpen) {
+    if (e.key === 'Escape') {
+      explainView.close();
+      e.preventDefault();
+    }
+    return;
+  }
   if (!modal.classList.contains('hidden')) {
     if (e.key === 'Escape') closeDocument();
     else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') openDocument(openDocIndex - 1);
@@ -911,6 +941,55 @@ const pipeline = new PipelineEditor({
   copy: (text) => vscode.postMessage({ type: 'copy', text }),
 });
 el('modeFind').addEventListener('click', () => state.mode !== 'find' && setMode('find'));
+el('modeIndexes').addEventListener('click', () => state.mode !== 'indexes' && setMode('indexes'));
+
+// ---------------------------------------------------------------------------
+// Indexes & explain
+
+const pendingIndex = new Map<number, (error: string | undefined) => void>();
+let indexRequest = 0;
+const indexesView = new IndexesView({
+  create: (keys, options) =>
+    new Promise((resolve) => {
+      const requestId = ++indexRequest;
+      pendingIndex.set(requestId, resolve);
+      vscode.postMessage({ type: 'createIndex', requestId, keys, options });
+    }),
+  drop: (name) => vscode.postMessage({ type: 'dropIndex', name }),
+  hide: (name, hidden) => vscode.postMessage({ type: 'hideIndex', name, hidden }),
+});
+
+let explainRequest = 0;
+const explainView = new ExplainView({
+  jsonTree: (value) => jsonNode(null, value, true, 0),
+  suggest: (keys) => {
+    setMode('indexes');
+    indexesView.prefill(keys);
+  },
+});
+
+function explain(): void {
+  let source: QuerySource;
+  if (state.mode === 'aggregate') {
+    if (!pipeline.prepare()) return;
+    source = { kind: 'aggregate', stages: pipeline.stages, upto: pipeline.upto };
+  } else {
+    // Explain what is in the fields, even if not run yet.
+    for (const input of [filterInput, sortInput, projectionInput]) {
+      if (!isValidObject(input.value)) {
+        input.classList.add('invalid');
+        showError('Invalid query syntax — check the highlighted field.');
+        return;
+      }
+    }
+    source = { kind: 'find', filter: filterInput.value, sort: sortInput.value, projection: projectionInput.value };
+  }
+  explainRequest++;
+  explainView.loading(state.mode === 'aggregate' ? 'Explain · pipeline' : 'Explain · find');
+  vscode.postMessage({ type: 'explain', requestId: explainRequest, source });
+}
+el('explainFind').addEventListener('click', explain);
+el('explainPipeline').addEventListener('click', explain);
 el('modeAggregate').addEventListener('click', () => state.mode !== 'aggregate' && setMode('aggregate'));
 
 // ---------------------------------------------------------------------------

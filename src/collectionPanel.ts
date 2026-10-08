@@ -8,7 +8,8 @@ import { parseQuery, relaxEjson, toShell } from './shared/query';
 import { PipelineStage, parseStageBody } from './shared/pipeline';
 import { StageError, buildPipeline, fromRelaxed, toBson } from './queries';
 import { exportDocuments } from './transfer';
-import type { AggregateRequest, HostMessage, QueryRequest, UpdateFieldRequest, WebviewMessage } from './shared/messages';
+import type { AggregateRequest, HostMessage, IndexInfo, QueryRequest, QuerySource, UpdateFieldRequest, WebviewMessage } from './shared/messages';
+import { suggestIndex, summarizeExplain } from './shared/explain';
 
 const { EJSON } = BSON;
 
@@ -140,6 +141,21 @@ export class CollectionPanel {
       case 'updateField':
         await this.updateField(m);
         break;
+      case 'explain':
+        await this.explain(m.requestId, m.source);
+        break;
+      case 'loadIndexes':
+        await this.postIndexes();
+        break;
+      case 'createIndex':
+        await this.createIndex(m.requestId, m.keys, m.options);
+        break;
+      case 'dropIndex':
+        await this.dropIndex(m.name);
+        break;
+      case 'hideIndex':
+        await this.indexCommand(async () => (await this.db()).command({ collMod: this.target.collection, index: { name: m.name, hidden: m.hidden } }));
+        break;
       case 'deleteDocument':
         await this.deleteDocument(m.id);
         break;
@@ -222,6 +238,119 @@ export class CollectionPanel {
     } catch (err) {
       reply(false, errorMessage(err));
     }
+  }
+
+  private async coll() {
+    const client = await this.connections.getClient(this.target.connectionId);
+    return client.db(this.target.database).collection(this.target.collection);
+  }
+
+  private db() {
+    return this.connections.getClient(this.target.connectionId).then((c) => c.db(this.target.database));
+  }
+
+  private async explain(requestId: number, source: QuerySource): Promise<void> {
+    try {
+      const coll = await this.coll();
+      let raw: Document;
+      let filter: unknown;
+      let sort: unknown;
+      if (source.kind === 'find') {
+        raw = await coll
+          .find(toBson(source.filter, 'Filter') ?? {}, {
+            sort: toBson(source.sort, 'Sort'),
+            projection: toBson(source.projection, 'Projection'),
+            maxTimeMS: 60_000,
+          })
+          .explain('executionStats');
+        filter = source.filter.trim() ? parseQuery(source.filter) : {};
+        sort = source.sort.trim() ? parseQuery(source.sort) : undefined;
+      } else {
+        const { pipeline, write } = buildPipeline(source.stages, source.upto);
+        if (write) throw new Error(`A pipeline ending with ${write.op} can't be explained here: select an earlier stage.`);
+        raw = await coll.aggregate(pipeline, { allowDiskUse: true, maxTimeMS: 60_000 }).explain('executionStats');
+        // The query layer can use an index for a leading $match (and a $sort right after it).
+        const [first, second] = source.stages.slice(0, source.upto + 1).filter((s) => s.enabled);
+        if (first?.op.trim() === '$match') {
+          filter = parseStageBody(first);
+          if (second?.op.trim() === '$sort') sort = parseStageBody(second);
+        } else if (first?.op.trim() === '$sort') sort = parseStageBody(first);
+      }
+      const summary = summarizeExplain(raw);
+      const suggestion = summary.collscan || summary.inMemorySort ? suggestIndex(filter, sort) : null;
+      this.post({ type: 'explainResult', requestId, summary, raw: relaxEjson(EJSON.serialize(raw, { relaxed: false })), suggestion });
+    } catch (err) {
+      this.post({ type: 'explainResult', requestId, error: errorMessage(err) });
+    }
+  }
+
+  private async postIndexes(): Promise<void> {
+    try {
+      const coll = await this.coll();
+      const list = await coll.listIndexes().toArray();
+      const stats = await coll
+        .aggregate<Document>([{ $indexStats: {} }])
+        .toArray()
+        .catch(() => [] as Document[]);
+      const sizes: Record<string, number> = await coll
+        .aggregate<Document>([{ $collStats: { storageStats: {} } }])
+        .toArray()
+        .then((r) => r[0]?.storageStats?.indexSizes ?? {})
+        .catch(() => ({}));
+      const indexes: IndexInfo[] = list.map((ix) => {
+        const stat = stats.find((s) => s.name === ix.name);
+        return {
+          name: String(ix.name),
+          key: relaxed(ix.key) as Record<string, unknown>,
+          unique: ix.unique || undefined,
+          sparse: ix.sparse || undefined,
+          hidden: ix.hidden || undefined,
+          expireAfterSeconds: ix.expireAfterSeconds,
+          partialFilterExpression: ix.partialFilterExpression ? relaxed(ix.partialFilterExpression) : undefined,
+          collation: ix.collation?.locale,
+          size: sizes[ix.name] !== undefined ? Number(sizes[ix.name]) : undefined,
+          ops: stat ? Number(stat.accesses?.ops) : undefined,
+          since: stat?.accesses?.since instanceof Date ? stat.accesses.since.toISOString() : undefined,
+          building: stat?.building || undefined,
+        };
+      });
+      this.post({ type: 'indexes', indexes });
+    } catch (err) {
+      this.post({ type: 'indexes', indexes: [], error: errorMessage(err) });
+    }
+  }
+
+  private async createIndex(requestId: number, keysText: string, optionsText: string): Promise<void> {
+    try {
+      if (this.target.readOnly) throw new Error('Views have no indexes of their own.');
+      const keys = toBson(keysText, 'Keys');
+      if (!keys || !Object.keys(keys).length) throw new Error('Keys: enter the fields to index, e.g. { status: 1, age: -1 }');
+      const name = await (await this.coll()).createIndex(keys, toBson(optionsText, 'Options') ?? {});
+      this.post({ type: 'indexResult', requestId, ok: true, message: `Created index ${name}.` });
+    } catch (err) {
+      this.post({ type: 'indexResult', requestId, ok: false, message: errorMessage(err) });
+    }
+    await this.postIndexes();
+  }
+
+  private async dropIndex(name: string): Promise<void> {
+    if (name === '_id_') return;
+    const answer = await vscode.window.showWarningMessage(
+      `Drop index ${name} on ${this.target.collection}?`,
+      { modal: true, detail: 'Queries that use it will fall back to other indexes or a collection scan. Hiding the index first lets you check the impact without losing it.' },
+      'Drop',
+    );
+    if (answer !== 'Drop') return;
+    await this.indexCommand(async () => (await this.coll()).dropIndex(name));
+  }
+
+  private async indexCommand(run: () => Promise<unknown>): Promise<void> {
+    try {
+      await run();
+    } catch (err) {
+      void vscode.window.showErrorMessage(errorMessage(err));
+    }
+    await this.postIndexes();
   }
 
   private async runQuery(m: QueryRequest): Promise<void> {
@@ -335,9 +464,10 @@ export class CollectionPanel {
       <div class="mode" role="tablist" aria-label="Query mode">
         <button id="modeFind" role="tab" aria-selected="true" title="Filter, sort and project documents">Find</button>
         <button id="modeAggregate" role="tab" aria-selected="false" title="Build an aggregation pipeline">Aggregate</button>
+        <button id="modeIndexes" role="tab" aria-selected="false" title="Indexes of the collection">Indexes</button>
       </div>
       <button id="historyBtn" class="secondary" title="Recent and saved queries" aria-haspopup="true" aria-expanded="false">History ▾</button>
-      <button id="export" class="secondary" title="Export the results to JSON, JSON Lines or CSV">Export</button>
+      <button id="export" class="secondary not-indexes" title="Export the results to JSON, JSON Lines or CSV">Export</button>
       <button id="insert" class="secondary editable" title="Insert a new document">Insert</button>
     </div>
     <div class="find-only">
@@ -349,6 +479,7 @@ export class CollectionPanel {
         </div>
         <button id="run" class="primary" title="Run query (Ctrl+Enter)">Find</button>
         <button id="reset" class="secondary" title="Clear filter, sort and projection">Reset</button>
+        <button id="explainFind" class="secondary" title="Show how MongoDB runs this query: index used, documents examined">Explain</button>
       </div>
       <div class="row options">
         <label for="sort">Sort</label>
@@ -367,6 +498,7 @@ export class CollectionPanel {
       <div class="row pipeline-actions">
         <button id="runPipeline" class="primary" title="Run the whole pipeline (Ctrl+Enter in a stage)">Run</button>
         <button id="clearPipeline" class="secondary" title="Remove all stages">Clear</button>
+        <button id="explainPipeline" class="secondary" title="Show how MongoDB runs the pipeline (up to the previewed stage)">Explain</button>
         <button id="addStage" class="secondary" title="Add a stage at the end">+ Stage</button>
         <button id="pipelineTextToggle" class="secondary" title="Edit or paste the whole pipeline as text">Edit as text</button>
         <button id="copyPipeline" class="secondary" title="Copy the pipeline (mongosh syntax)">Copy</button>
@@ -383,6 +515,17 @@ export class CollectionPanel {
     <div class="history-body" id="historyBody"></div>
   </div>
   <div class="error hidden" id="error"></div>
+  <section class="indexes-only indexes-view" id="indexesView">
+    <div class="row index-create editable">
+      <label for="indexKeys">Keys</label>
+      <input id="indexKeys" spellcheck="false" placeholder="{ status: 1, createdAt: -1 }">
+      <label for="indexOptions">Options</label>
+      <input id="indexOptions" spellcheck="false" placeholder="{ unique: true, name: &quot;…&quot;, expireAfterSeconds: 3600, partialFilterExpression: { … } }">
+      <button id="createIndex" class="primary">Create</button>
+    </div>
+    <div id="indexMessage" class="hidden"></div>
+    <table id="indexTable" class="grid index-table"></table>
+  </section>
   <div class="statusbar">
     <span id="status"></span>
     <span class="spacer"></span>
@@ -414,6 +557,17 @@ export class CollectionPanel {
         <button id="docClose" class="icon" title="Close (Esc)">✕</button>
       </div>
       <div class="modal-body" id="docBody"></div>
+    </div>
+  </div>
+  <div id="explainModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-box explain-box">
+      <div class="modal-head">
+        <span id="explainTitle" class="doc-title">Explain</span>
+        <span class="spacer"></span>
+        <button id="explainRaw" class="secondary" title="Toggle the full explain output">Raw</button>
+        <button id="explainClose" class="icon" title="Close (Esc)">✕</button>
+      </div>
+      <div class="modal-body" id="explainBody"></div>
     </div>
   </div>
   <script nonce="${nonce}" src="${asset('dist', 'webview.js')}"></script>

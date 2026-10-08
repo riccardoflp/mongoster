@@ -43,6 +43,13 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - Le pipeline che finiscono con `$out`/`$merge` non si esportano: seleziona uno stage precedente.
 - **Import**: clic destro su una collezione → `Import Documents…` accetta JSON (array o singolo documento), JSON Lines, CSV e anche la sintassi mongosh (`ObjectId(...)`, `ISODate(...)`). Chiede conferma, inserisce a blocchi di 1000 e segnala i documenti scartati (es. `_id` già esistente) senza fermarsi.
   - Nel CSV le intestazioni con il punto creano sotto-documenti (`address.city`), le celle vuote vengono omesse e numeri, booleani, `null`, date ISO (`…Z`), JSON e `_id` esadecimali vengono riconosciuti.
+- **Indici**: la scheda `Indexes` (accanto a `Find / Aggregate`) elenca gli indici della collezione con chiavi, proprietà (`unique`, `sparse`, TTL, `partial`, `text`, `hidden`, …), dimensione e numero di utilizzi dall'avvio del server.
+  - Per creare un indice scrivi le chiavi (`{ status: 1, createdAt: -1 }`) e, se servono, le opzioni (`{ unique: true, expireAfterSeconds: 3600, partialFilterExpression: { … } }`), poi `Create`.
+  - `Hide` nasconde un indice al query planner senza cancellarlo (utile per capire se serve ancora), `Unhide` lo riattiva; `Drop` lo elimina dopo conferma. `_id_` non si può toccare.
+  - Le view non hanno indici propri: usano quelli della collezione di origine.
+- **Explain**: il pulsante `Explain` (in `Find` e nell'editor della pipeline) mostra come MongoDB esegue la query: indice usato o `COLLSCAN`, ordinamento in memoria, documenti e chiavi esaminati rispetto a quelli restituiti, tempo, piano di esecuzione a albero; `Raw` mostra l'output completo.
+  - Se la query legge tutta la collezione o ordina in memoria propone un indice (prima i campi in uguaglianza, poi l'ordinamento, poi i range); `Create…` apre la scheda `Indexes` con l'indice già compilato.
+  - Per le pipeline spiega fino allo stage mostrato; quelle con `$out`/`$merge` non si spiegano.
 - Le **view** sono in sola lettura.
 - `Ctrl+C` su una cella selezionata copia il valore.
 
@@ -76,4 +83,5 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/shared/columns.ts` – modello delle colonne (annidate e array), usato dalla tabella e dal CSV
 - `src/shared/csv.ts` – generazione e parsing CSV
 - `src/shared/pipeline.ts` – modello degli stage di aggregazione, modelli e conversione testo ⇄ stage
-- `src/webview/main.ts`, `src/webview/history.ts`, `src/webview/pipeline.ts`, `media/webview.css` – UI della tabella, cronologia ed editor della pipeline
+- `src/shared/explain.ts` – riassunto dell'output di explain e suggerimento dell'indice
+- `src/webview/main.ts`, `src/webview/history.ts`, `src/webview/pipeline.ts`, `src/webview/indexes.ts`, `src/webview/explainView.ts`, `media/webview.css` – UI della tabella, cronologia, editor della pipeline, indici ed explain

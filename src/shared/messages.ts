@@ -1,6 +1,7 @@
 // Message protocol between the collection webview and the extension host.
 // Documents and _id values travel as relaxed EJSON plain values.
 import type { PipelineStage } from './pipeline';
+import type { ExplainSummary } from './explain';
 
 export interface QueryRequest {
   type: 'query';
@@ -40,6 +41,24 @@ export type QuerySource =
   | { kind: 'find'; filter: string; sort: string; projection: string }
   | { kind: 'aggregate'; stages: PipelineStage[]; upto: number };
 
+export interface IndexInfo {
+  name: string;
+  /** Key pattern, relaxed EJSON. */
+  key: Record<string, unknown>;
+  unique?: boolean;
+  sparse?: boolean;
+  hidden?: boolean;
+  expireAfterSeconds?: number;
+  partialFilterExpression?: unknown;
+  collation?: string;
+  /** Bytes on disk, when the server reports it. */
+  size?: number;
+  /** Uses since `since` (server restart or index creation), from $indexStats. */
+  ops?: number;
+  since?: string;
+  building?: boolean;
+}
+
 /** A find query, or an aggregation when `pipeline` is set (filter/sort/projection are then empty). */
 export interface QueryText {
   filter: string;
@@ -70,6 +89,11 @@ export type WebviewMessage =
   | { type: 'clearHistory' }
   | { type: 'copy'; text: string }
   | UpdateFieldRequest
+  | { type: 'explain'; requestId: number; source: QuerySource }
+  | { type: 'loadIndexes' }
+  | { type: 'createIndex'; requestId: number; keys: string; options: string }
+  | { type: 'dropIndex'; name: string }
+  | { type: 'hideIndex'; name: string; hidden: boolean }
   | { type: 'export'; source: QuerySource; expanded: string[]; page: { skip: number; limit: number }; count: number | null };
 
 export type HostMessage =
@@ -78,4 +102,16 @@ export type HostMessage =
   | { type: 'error'; requestId: number; message: string; stage?: number }
   | { type: 'refresh' }
   | { type: 'history'; recent: SavedQuery[]; saved: SavedQuery[] }
-  | { type: 'fieldResult'; requestId: number; ok: boolean; message?: string };
+  | { type: 'fieldResult'; requestId: number; ok: boolean; message?: string }
+  | {
+      type: 'explainResult';
+      requestId: number;
+      summary?: ExplainSummary;
+      /** Full explain output, relaxed EJSON. */
+      raw?: unknown;
+      /** ESR index for the query's filter and sort, when the plan could use one. */
+      suggestion?: Record<string, 1 | -1> | null;
+      error?: string;
+    }
+  | { type: 'indexes'; indexes: IndexInfo[]; error?: string }
+  | { type: 'indexResult'; requestId: number; ok: boolean; message?: string };
