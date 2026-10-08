@@ -1,4 +1,4 @@
-import { isEjsonWrapper, isPlainObject, mergeCondition, parseQuery, toShell } from '../shared/query';
+import { isEjsonWrapper, isPlainObject, mergeCondition, parseQuery, prettyShell, toShell } from '../shared/query';
 import type { HostMessage, WebviewMessage } from '../shared/messages';
 import type { PipelineStage } from '../shared/pipeline';
 import { HistoryPopover } from './history';
@@ -14,7 +14,9 @@ import {
   leafCount,
   leaves,
   rowHeight,
+  valueAtPath,
 } from '../shared/columns';
+import { CellEditor } from './cellEditor';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: WebviewMessage): void;
@@ -69,6 +71,8 @@ let drag: DragPayload | null = null;
 let selectedCell: HTMLTableCellElement | null = null;
 let openDocIndex = -1;
 const columnsByKey = new Map<string, ColumnNode>();
+/** Cell to select again after the grid re-renders (e.g. after an inline edit). */
+let reselect: { row: number; path: string; elem?: string } | null = null;
 let readOnly = false;
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -197,6 +201,10 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
     case 'history':
       history.update(m.recent, m.saved);
       break;
+    case 'fieldResult':
+      pendingFields.get(m.requestId)?.(m.ok ? undefined : m.message ?? 'Not saved');
+      pendingFields.delete(m.requestId);
+      break;
     case 'result':
       if (m.requestId !== currentRequest) return;
       setLoading(false);
@@ -269,6 +277,7 @@ function renderGrid(): void {
   const leafList = leaves(columns);
   const sort = currentSort();
   selectedCell = null;
+  cellEditor.close();
   grid.replaceChildren();
   el('empty').classList.toggle('hidden', docs.length > 0);
   if (!docs.length) return;
@@ -333,7 +342,7 @@ function renderGrid(): void {
     const num = rows[0].insertCell();
     num.className = 'rownum';
     num.rowSpan = height;
-    num.title = 'Open document (double-click row)';
+    num.title = 'Open document';
     num.append(span('expand', '{ }'), document.createTextNode(String(state.skip + rowIndex + 1)));
 
     /** A leaf, or an expanded group whose value here can't be expanded: one cell spanning the group. */
@@ -393,11 +402,20 @@ function renderGrid(): void {
         more.classList.replace('missing', 'more');
         more.textContent = `… ${array.length - shown} more elements — open the document to see all`;
       }
-      if (next < height) addCell(rows[next], node, MISSING, height - next);
+      if (next < height) addCell(rows[next], node, MISSING, height - next).classList.add('filler');
     };
 
     renderNodes(columns, doc, 0, rows[0], height);
   });
+
+  if (reselect) {
+    const { row, path, elem } = reselect;
+    reselect = null;
+    const td = [...(grid.tBodies[row]?.querySelectorAll<HTMLTableCellElement>('td[data-path]') ?? [])].find(
+      (c) => c.dataset.path === path && c.dataset.elem === elem,
+    );
+    if (td) selectCell(td);
+  }
 }
 
 function groupClasses(cell: HTMLElement, start: boolean, end: boolean): void {
@@ -475,15 +493,74 @@ grid.addEventListener('click', (e) => {
     openDocument(Number(td.closest('tr')!.dataset.row));
     return;
   }
+  selectCell(td);
+});
+
+function selectCell(td: HTMLTableCellElement): void {
   selectedCell?.classList.remove('selected');
   selectedCell = td;
   td.classList.add('selected');
-});
+}
 
+// Double-click edits the value in place where possible, otherwise opens the document.
 grid.addEventListener('dblclick', (e) => {
+  const td = (e.target as HTMLElement).closest('td');
+  if (td && !td.classList.contains('rownum') && startEdit(td)) return;
   const tr = (e.target as HTMLElement).closest('tbody tr') as HTMLTableRowElement | null;
   if (tr?.dataset.row) openDocument(Number(tr.dataset.row));
 });
+
+// ---------------------------------------------------------------------------
+// Inline editing
+
+const cellEditor = new CellEditor(el('gridWrap'));
+const pendingFields = new Map<number, (error: string | undefined) => void>();
+let fieldRequest = 0;
+
+/** The document and full path (with array indexes) a cell edits, or null when it can't be edited in place. */
+function editTarget(td: HTMLElement): { row: number; doc: Record<string, unknown>; path: string[]; original: unknown } | null {
+  if (state.mode !== 'find' || readOnly) return null;
+  const tr = td.closest('tr');
+  if (!tr?.dataset.row || !td.dataset.path || td.classList.contains('more') || td.classList.contains('filler')) return null;
+  const row = Number(tr.dataset.row);
+  const doc = docs[row];
+  if (!doc || !('_id' in doc)) return null;
+  let path = JSON.parse(td.dataset.path) as string[];
+  if (path[0] === '_id') return null;
+  if (td.dataset.elem !== undefined) {
+    const depth = Number(td.dataset.depth);
+    path = [...path.slice(0, depth), td.dataset.elem, ...path.slice(depth)];
+  }
+  return { row, doc, path, original: valueAtPath(doc, path) };
+}
+
+function startEdit(td: HTMLTableCellElement): boolean {
+  const target = editTarget(td);
+  if (!target) return false;
+  const { row, doc, path, original } = target;
+  const missing = original === MISSING;
+  const text = missing ? '' : isPlainObject(original) || Array.isArray(original) ? prettyShell(original, 0, 60) : toShell(original);
+  const quoted = typeof original === 'string';
+  selectCell(td);
+  cellEditor.open(td, text, quoted ? [1, text.length - 1] : [0, text.length], {
+    save: (value) =>
+      new Promise((resolve) => {
+        const requestId = ++fieldRequest;
+        pendingFields.set(requestId, resolve);
+        reselect = { row, path: td.dataset.path!, elem: td.dataset.elem };
+        vscode.postMessage({
+          type: 'updateField',
+          requestId,
+          id: doc._id,
+          path,
+          original: missing ? undefined : original,
+          missing,
+          value,
+        });
+      }),
+  });
+  return true;
+}
 
 function toggleSort(key: string): void {
   if (state.mode === 'aggregate') {
@@ -776,6 +853,9 @@ document.addEventListener('keydown', (e) => {
     const cell = cellValue(selectedCell);
     if (cell) vscode.postMessage({ type: 'copy', text: toShell(cell.value) });
     e.preventDefault();
+  } else if (e.key === 'F2') {
+    e.preventDefault();
+    startEdit(selectedCell);
   } else if (e.key === 'Enter') {
     openDocument(Number(selectedCell.closest('tr')!.dataset.row));
   } else if (e.key === 'Delete' && !readOnly && state.mode === 'find') {

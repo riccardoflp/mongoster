@@ -25,7 +25,11 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - Trascinando il valore di un elemento il filtro usa `$elemMatch`: `{ items: { $elemMatch: { sku: "A1", qty: { $gte: 4 } } } }`. Più condizioni sullo stesso array si sommano nello stesso `$elemMatch`, quindi valgono per lo **stesso elemento**.
   - Trascinare l'intestazione e ordinare usano il percorso puntato (`items.sku`).
   - Dentro gli elementi si possono espandere i sotto-documenti (`items[].options.color`); gli array dentro gli array restano come valore.
-- **Documento JSON**: doppio clic su una riga (o clic sul numero di riga) apre una dialog con l'albero JSON espandibile; `↑/↓` per scorrere i documenti, `Copy`.
+- **Modifica inline**: doppio clic su una cella (o `F2` sulla cella selezionata) per modificarne il valore in sintassi mongosh; `Invio` salva con `$set`, `Shift+Invio` va a capo, `Esc` (o un clic altrove) annulla.
+  - Funziona anche sui campi annidati, sugli elementi degli array espansi (`items.2.qty`) e sulle celle vuote (aggiunge il campo).
+  - I tipi numerici restano quelli originali; `NumberLong(...)` e simili forzano un tipo.
+  - Se nel frattempo il valore è cambiato nel database viene chiesto se sovrascrivere. Non disponibile per `_id`, per le view e in modalità Aggregate.
+- **Documento JSON**: clic sul numero di riga (o `Invio` sulla cella selezionata) apre una dialog con l'albero JSON espandibile; `↑/↓` per scorrere i documenti, `Copy`.
 - **Modifica**: `Edit` apre il documento in una tab dell'editor; `Ctrl+S` lo salva su MongoDB.
   - I tipi numerici restano quelli originali (Double, Int32, Long), anche cambiando il valore; `NumberLong(...)` e simili forzano un tipo esplicito.
   - Nell'editor è accettata anche la sintassi mongosh (`ObjectId(...)`, `ISODate(...)`).

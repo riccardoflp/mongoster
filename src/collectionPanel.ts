@@ -1,14 +1,14 @@
 import * as vscode from 'vscode';
 import { BSON, Collection, Document } from 'mongodb';
 import { ConnectionManager } from './connections';
-import { byId, CollectionRef, DocumentFileSystem } from './documentFs';
+import { byId, CollectionRef, DocumentFileSystem, relaxed, restoreTypes } from './documentFs';
 import { errorMessage } from './tree';
 import { QueryHistory, sameQuery } from './queryHistory';
-import { relaxEjson, toShell } from './shared/query';
+import { parseQuery, relaxEjson, toShell } from './shared/query';
 import { PipelineStage, parseStageBody } from './shared/pipeline';
 import { StageError, buildPipeline, fromRelaxed, toBson } from './queries';
 import { exportDocuments } from './transfer';
-import type { AggregateRequest, HostMessage, QueryRequest, WebviewMessage } from './shared/messages';
+import type { AggregateRequest, HostMessage, QueryRequest, UpdateFieldRequest, WebviewMessage } from './shared/messages';
 
 const { EJSON } = BSON;
 
@@ -137,6 +137,9 @@ export class CollectionPanel {
       case 'insertDocument':
         await this.documents.openNew(this.target);
         break;
+      case 'updateField':
+        await this.updateField(m);
+        break;
       case 'deleteDocument':
         await this.deleteDocument(m.id);
         break;
@@ -172,6 +175,53 @@ export class CollectionPanel {
       void vscode.window.showErrorMessage(`Delete failed: ${errorMessage(err)}`);
     }
     this.post({ type: 'refresh' });
+  }
+
+  /**
+   * $set of one value. The update only applies if the database still holds the value the user saw;
+   * otherwise they're asked whether to overwrite. Numeric types are kept as in editDocument.
+   */
+  private async updateField(m: UpdateFieldRequest): Promise<void> {
+    const reply = (ok: boolean, message?: string) => this.post({ type: 'fieldResult', requestId: m.requestId, ok, message });
+    const key = m.path.join('.');
+    if (this.target.readOnly) return reply(false, 'Views are read-only.');
+    if (m.path[0] === '_id') return reply(false, '_id cannot be changed.');
+    let next: unknown;
+    try {
+      next = fromRelaxed(parseQuery(m.value));
+    } catch (err) {
+      return reply(false, errorMessage(err));
+    }
+    try {
+      const client = await this.connections.getClient(this.target.connectionId);
+      const coll = client.db(this.target.database).collection(this.target.collection);
+      const id = fromRelaxed(m.id);
+      const doc = await coll.findOne(byId(id), { projection: { [m.path[0]]: 1 }, promoteValues: false });
+      if (!doc) return reply(false, 'Document not found: it may have been deleted.');
+      const current = valueAt(doc, m.path);
+      const changed = current === MISSING ? !m.missing : m.missing || JSON.stringify(relaxed(current)) !== JSON.stringify(m.original);
+      if (changed) {
+        const now = current === MISSING ? 'removed' : `changed to ${toShell(relaxed(current))}`;
+        const answer = await vscode.window.showWarningMessage(
+          `${key} was ${now} in the database after it was loaded. Overwrite it?`,
+          { modal: true },
+          'Overwrite',
+        );
+        if (answer !== 'Overwrite') {
+          reply(false, 'Not saved: the value changed in the database.');
+          this.post({ type: 'refresh' });
+          return;
+        }
+      }
+      const value = restoreTypes(next, current === MISSING ? undefined : current);
+      const filter = { ...byId(id), [key]: current === MISSING ? { $exists: false } : current };
+      const res = await coll.updateOne(filter, { $set: { [key]: value } });
+      if (!res.matchedCount) return reply(false, `${key} changed again in the database: refresh and retry.`);
+      reply(true);
+      this.post({ type: 'refresh' });
+    } catch (err) {
+      reply(false, errorMessage(err));
+    }
   }
 
   private async runQuery(m: QueryRequest): Promise<void> {
@@ -370,6 +420,20 @@ export class CollectionPanel {
 </body>
 </html>`;
   }
+}
+
+const MISSING = Symbol('missing');
+
+/** Value at a path that may step into arrays by index; MISSING when absent. */
+function valueAt(doc: unknown, path: string[]): unknown {
+  let current = doc;
+  for (const segment of path) {
+    if (Array.isArray(current) && /^\d+$/.test(segment) && Number(segment) < current.length) current = current[Number(segment)];
+    else if (current !== null && typeof current === 'object' && !Array.isArray(current) && !('_bsontype' in current) && segment in current) {
+      current = (current as Record<string, unknown>)[segment];
+    } else return MISSING;
+  }
+  return current;
 }
 
 async function countPipeline(coll: Collection, pipeline: Document[]): Promise<number | null> {

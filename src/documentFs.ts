@@ -194,7 +194,8 @@ function encode(text: string): Uint8Array {
   return new TextEncoder().encode(text);
 }
 
-function relaxed(value: unknown): unknown {
+/** A BSON value as relaxed EJSON, as the webview sees it. */
+export function relaxed(value: unknown): unknown {
   return (relaxEjson(EJSON.serialize({ v: value }, { relaxed: false })) as { v: unknown }).v;
 }
 
@@ -219,7 +220,7 @@ const NUMERIC_TYPES = new Set(['Int32', 'Double', 'Long']);
  * as Int32 when integral, Double otherwise. Keep each field's original numeric type so saving doesn't
  * silently change it — unless the user explicitly wrote another type (e.g. NumberLong(...)).
  */
-function restoreTypes(next: unknown, prev: unknown): unknown {
+export function restoreTypes(next: unknown, prev: unknown): unknown {
   const typeOf = (v: unknown) => (v as { _bsontype?: string } | null)?._bsontype;
   const nextType = typeOf(next);
   const prevType = typeOf(prev);

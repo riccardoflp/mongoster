@@ -47,6 +47,17 @@ export function getAt(doc: unknown, path: string[]): unknown {
   return current;
 }
 
+/** Like getAt, but numeric segments step into arrays ("items", "2", "sku"). */
+export function valueAtPath(doc: unknown, path: string[]): unknown {
+  let current: unknown = doc;
+  for (const segment of path) {
+    if (Array.isArray(current) && /^\d+$/.test(segment) && Number(segment) < current.length) current = current[Number(segment)];
+    else if (isSubdocument(current) && segment in current) current = current[segment];
+    else return MISSING;
+  }
+  return current;
+}
+
 /** Sub-documents found at an expanded path, looking inside the elements of expanded arrays. */
 function objectsAt(rows: unknown[], path: string[]): Record<string, unknown>[] {
   let current = rows;

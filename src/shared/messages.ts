@@ -12,6 +12,19 @@ export interface QueryRequest {
   limit: number;
 }
 
+/** Inline edit of one value: `path` may contain array indexes ("items", "2", "sku"). */
+export interface UpdateFieldRequest {
+  type: 'updateField';
+  requestId: number;
+  id: unknown;
+  path: string[];
+  /** The value the user saw (relaxed EJSON); absent when the field was missing. */
+  original?: unknown;
+  missing: boolean;
+  /** New value in mongosh syntax. */
+  value: string;
+}
+
 export interface AggregateRequest {
   type: 'aggregate';
   requestId: number;
@@ -56,6 +69,7 @@ export type WebviewMessage =
   | { type: 'removeQuery'; id: string }
   | { type: 'clearHistory' }
   | { type: 'copy'; text: string }
+  | UpdateFieldRequest
   | { type: 'export'; source: QuerySource; expanded: string[]; page: { skip: number; limit: number }; count: number | null };
 
 export type HostMessage =
@@ -63,4 +77,5 @@ export type HostMessage =
   | { type: 'result'; requestId: number; docs: unknown[]; count: number | null; durationMs: number; note?: string }
   | { type: 'error'; requestId: number; message: string; stage?: number }
   | { type: 'refresh' }
-  | { type: 'history'; recent: SavedQuery[]; saved: SavedQuery[] };
+  | { type: 'history'; recent: SavedQuery[]; saved: SavedQuery[] }
+  | { type: 'fieldResult'; requestId: number; ok: boolean; message?: string };
