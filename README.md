@@ -36,6 +36,7 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - Gli stage che scrivono (`$out`, `$merge`) chiedono conferma prima di eseguire; l'anteprima di uno stage precedente non scrive nulla.
   - Gli errori indicano lo stage che li ha causati. Le pipeline finiscono nella stessa cronologia delle query.
   - I risultati dell'aggregate non sono modificabili: per modificare un documento torna a `Find`.
+  - `Save as view…` crea una view sulla collezione con la pipeline fino allo stage mostrato (senza `$out`/`$merge`) e propone di aprirla.
 - **Colonne annidate**: le colonne con sotto-documenti hanno un pulsante `▸` che le espande in colonne con il punto (`address` → `address.city`, `address.zip`, …), un livello alla volta; `Alt+clic` espande tutti i livelli. Clic sul prefisso (`address.`) per richiudere il gruppo. Filtri, range e ordinamento funzionano anche sui campi annidati (`{ "address.city": "Milano" }`). Se in un documento il campo non è un oggetto, il valore occupa tutto il gruppo. Le espansioni sono ricordate per ogni collezione.
 - **Array di oggetti**: anche le colonne con array di sotto-documenti hanno `▸[]`: si espandono nei campi degli elementi (`items[].sku`, `items[].qty`, …) e **ogni elemento diventa una sotto-riga** del documento, così i campi dello stesso elemento restano allineati (fino a 20 elementi per documento, poi `… N more`).
   - Trascinando il valore di un elemento il filtro usa `$elemMatch`: `{ items: { $elemMatch: { sku: "A1", qty: { $gte: 4 } } } }`. Più condizioni sullo stesso array si sommano nello stesso `$elemMatch`, quindi valgono per lo **stesso elemento**.
@@ -69,6 +70,10 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - i valori più frequenti, oppure un istogramma per numeri e date con minimo e massimo; per gli array la lunghezza e i valori degli elementi.
   - I sotto-documenti e i campi degli oggetti negli array (`items[].sku`) si espandono con `▸`; `⊞` / `⊟` espandono o chiudono tutto.
   - Clic su un valore, su una barra dell'istogramma o su un tipo per aggiungerlo al filtro (`{ status: "active" }`, `{ age: { $gte: 25, $lt: 30 } }`, `{ name: { $type: "string" } }`): l'analisi riparte sui documenti filtrati.
+- **View**: clic destro su una view → `Edit View Definition…` apre `viewOn` e `pipeline` come JSON in una tab; `Ctrl+S` applica le modifiche (`collMod`) e aggiorna la tab della view.
+- **Regole di validazione**: clic destro su una collezione → `Edit Validation Rules…` (o `Validation rules…` nella scheda `Schema`) apre `validator`, `validationLevel` e `validationAction` come JSON; `Ctrl+S` le applica.
+  - Se la collezione non ha regole viene proposto un `$jsonSchema` generato da un campione di 1.000 documenti: i tipi BSON di ogni campo (anche annidati e negli array) e come `required` i campi sempre presenti. Va rivisto prima di salvare; `validationAction: "warn"` registra i documenti non validi senza rifiutarli.
+  - `validator: {}` toglie le regole. Con una connessione in sola lettura le regole si possono solo leggere.
 - **Indici**: la scheda `Indexes` (accanto a `Find / Aggregate`) elenca gli indici della collezione con chiavi, proprietà (`unique`, `sparse`, TTL, `partial`, `text`, `hidden`, …), dimensione e numero di utilizzi dall'avvio del server.
   - Per creare un indice scrivi le chiavi (`{ status: 1, createdAt: -1 }`) e, se servono, le opzioni (`{ unique: true, expireAfterSeconds: 3600, partialFilterExpression: { … } }`), poi `Create`.
   - `Hide` nasconde un indice al query planner senza cancellarlo (utile per capire se serve ancora), `Unhide` lo riattiva; `Drop` lo elimina dopo conferma. `_id_` non si può toccare.
@@ -103,6 +108,7 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/collectionPanel.ts` – webview per collezione, esecuzione delle query
 - `src/queryHistory.ts` – cronologia e query salvate per collezione
 - `src/documentFs.ts` – file system virtuale `mongoster://` per aprire, modificare e salvare i documenti
+- `src/definitionFs.ts` – file system virtuale `mongoster-def://` per le definizioni delle view e le regole di validazione
 - `src/queries.ts` – testo di filtri e pipeline → argomenti del driver
 - `src/transfer.ts` – export (JSON, JSON Lines, CSV) e import
 - `src/manage.ts` – creazione, rinomina ed eliminazione di database e collezioni
@@ -111,5 +117,5 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/shared/csv.ts` – generazione e parsing CSV
 - `src/shared/pipeline.ts` – modello degli stage di aggregazione, modelli e conversione testo ⇄ stage
 - `src/shared/explain.ts` – riassunto dell'output di explain e suggerimento dell'indice
-- `src/shared/schema.ts` – analisi dello schema di un campione di documenti
+- `src/shared/schema.ts` – analisi dello schema di un campione di documenti e `$jsonSchema` generato
 - `src/webview/main.ts`, `src/webview/history.ts`, `src/webview/pipeline.ts`, `src/webview/indexes.ts`, `src/webview/explainView.ts`, `src/webview/bulk.ts`, `src/webview/schemaView.ts`, `src/webview/columnsUi.ts`, `media/webview.css` – UI della tabella, cronologia, editor della pipeline, indici, explain, update/delete many, schema e colonne

@@ -168,6 +168,18 @@
         "command": "mongoster.removeFolder",
         "title": "Remove Folder (Keep Connections)",
         "category": "Mongoster"
+      },
+      {
+        "command": "mongoster.editValidation",
+        "title": "Edit Validation Rules…",
+        "category": "Mongoster",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "mongoster.editView",
+        "title": "Edit View Definition…",
+        "category": "Mongoster",
+        "icon": "$(edit)"
       }
     ],
     "menus": {
@@ -303,6 +315,16 @@
           "command": "mongoster.removeFolder",
           "when": "view == mongoster.connections && viewItem == folder",
           "group": "1_folder@2"
+        },
+        {
+          "command": "mongoster.editValidation",
+          "when": "view == mongoster.connections && viewItem =~ /^collection/",
+          "group": "3_manage@2"
+        },
+        {
+          "command": "mongoster.editView",
+          "when": "view == mongoster.connections && viewItem =~ /^view/",
+          "group": "3_manage@1"
         }
       ],
       "commandPalette": [
@@ -380,6 +402,14 @@
         },
         {
           "command": "mongoster.removeFolder",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.editValidation",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.editView",
           "when": "false"
         }
       ]

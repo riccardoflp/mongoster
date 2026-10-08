@@ -109,6 +109,8 @@ export type WebviewMessage =
   | { type: 'hideIndex'; name: string; hidden: boolean }
   | { type: 'bulkCount'; requestId: number; filter: string }
   | { type: 'analyzeSchema'; requestId: number; filter: string; size: number }
+  | { type: 'saveView'; stages: PipelineStage[]; upto: number }
+  | { type: 'editValidation' }
   | BulkRequest
   | { type: 'export'; source: QuerySource; expanded: string[]; layout: ColumnLayout; page: { skip: number; limit: number }; count: number | null };
 

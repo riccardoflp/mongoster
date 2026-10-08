@@ -11,6 +11,7 @@ import { exportDocuments } from './transfer';
 import type { AggregateRequest, BulkRequest, HostMessage, IndexInfo, QueryRequest, QuerySource, UpdateFieldRequest, WebviewMessage } from './shared/messages';
 import { suggestIndex, summarizeExplain } from './shared/explain';
 import { analyzeSchema } from './shared/schema';
+import { collectionNameError } from './manage';
 import type { ColumnLayout } from './shared/columns';
 
 const { EJSON } = BSON;
@@ -225,6 +226,12 @@ export class CollectionPanel {
       case 'analyzeSchema':
         await this.analyzeSchema(m.requestId, m.filter, m.size);
         break;
+      case 'saveView':
+        await this.saveView(m.stages, m.upto);
+        break;
+      case 'editValidation':
+        await vscode.commands.executeCommand('mongoster.editValidation', { ...this.target, readOnly: this.target.locked });
+        break;
       case 'loadIndexes':
         await this.postIndexes();
         break;
@@ -321,6 +328,46 @@ export class CollectionPanel {
       this.post({ type: 'refresh' });
     } catch (err) {
       reply(false, errorMessage(err));
+    }
+  }
+
+  /** Creates a view on this collection with the pipeline up to the previewed stage. */
+  private async saveView(stages: PipelineStage[], upto: number): Promise<void> {
+    if (this.target.locked) {
+      void vscode.window.showErrorMessage(readOnlyMessage(this.target));
+      return;
+    }
+    let pipeline: Document[];
+    try {
+      const built = buildPipeline(stages, upto);
+      if (built.write) throw new Error(`A view can't contain ${built.write.op}: select an earlier stage.`);
+      pipeline = built.pipeline;
+    } catch (err) {
+      void vscode.window.showErrorMessage(errorMessage(err));
+      return;
+    }
+    const db = await this.db();
+    const existing = (await db.listCollections({}, { nameOnly: true }).toArray()).map((c) => c.name);
+    const name = (
+      await vscode.window.showInputBox({
+        title: 'Save Pipeline as View',
+        prompt: `Name of the view on ${this.target.collection} (${pipeline.length} stage${pipeline.length === 1 ? '' : 's'})`,
+        ignoreFocusOut: true,
+        validateInput: (v) =>
+          collectionNameError(v.trim()) ?? (existing.includes(v.trim()) ? 'A collection or view with this name already exists' : undefined),
+      })
+    )?.trim();
+    if (!name) return;
+    try {
+      await db.createCollection(name, { viewOn: this.target.collection, pipeline });
+    } catch (err) {
+      void vscode.window.showErrorMessage(errorMessage(err));
+      return;
+    }
+    void vscode.commands.executeCommand('mongoster.refresh');
+    const open = await vscode.window.showInformationMessage(`Created view ${this.target.database}.${name}.`, 'Open View');
+    if (open === 'Open View') {
+      CollectionPanel.show(this.context, this.connections, this.documents, { ...this.target, collection: name, view: true, readOnly: true });
     }
   }
 
@@ -646,6 +693,7 @@ export class CollectionPanel {
         <button id="runPipeline" class="primary" title="Run the whole pipeline (Ctrl+Enter in a stage)">Run</button>
         <button id="clearPipeline" class="secondary" title="Remove all stages">Clear</button>
         <button id="explainPipeline" class="secondary" title="Show how MongoDB runs the pipeline (up to the previewed stage)">Explain</button>
+        <button id="saveView" class="secondary not-locked" title="Create a view with the pipeline up to the previewed stage">Save as view…</button>
         <button id="addStage" class="secondary" title="Add a stage at the end">+ Stage</button>
         <button id="pipelineTextToggle" class="secondary" title="Edit or paste the whole pipeline as text">Edit as text</button>
         <button id="copyPipeline" class="secondary" title="Copy the pipeline (mongosh syntax)">Copy</button>
@@ -670,6 +718,7 @@ export class CollectionPanel {
       <select id="schemaSize" title="Documents analyzed: a random sample when more match the filter">
         <option>100</option><option selected>1000</option><option>10000</option>
       </select>
+      <button id="editValidation" class="secondary not-view" title="Validation rules ($jsonSchema) of the collection; without rules, a schema generated from the documents is proposed">Validation rules…</button>
       <button id="schemaExpand" class="icon" title="Expand all">⊞</button>
       <button id="schemaCollapse" class="icon" title="Collapse all">⊟</button>
     </div>

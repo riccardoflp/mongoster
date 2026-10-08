@@ -237,6 +237,8 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
         badge.title = m.locked ? 'The connection is read-only: no changes are made through it' : 'Views are read-only';
         el('ns').append(badge);
       }
+      document.body.classList.toggle('locked', m.locked);
+      document.body.classList.toggle('view', m.view);
       if (m.color) document.body.dataset.color = m.color;
       else delete document.body.dataset.color;
       readOnly = m.readOnly;
@@ -1220,6 +1222,11 @@ function openBulk(op: BulkOp): void {
 el('updateMany').addEventListener('click', () => openBulk('update'));
 el('deleteMany').addEventListener('click', () => openBulk('delete'));
 el('explainPipeline').addEventListener('click', explain);
+el('saveView').addEventListener('click', () => {
+  if (!pipeline.prepare()) return;
+  vscode.postMessage({ type: 'saveView', stages: pipeline.stages, upto: pipeline.upto });
+});
+el('editValidation').addEventListener('click', () => vscode.postMessage({ type: 'editValidation' }));
 el('modeAggregate').addEventListener('click', () => state.mode !== 'aggregate' && setMode('aggregate'));
 
 // ---------------------------------------------------------------------------

@@ -295,3 +295,37 @@ function histogram(numbers: number[], type: BsonType): Bin[] {
   const value = (x: number): unknown => (type === 'date' ? { $date: new Date(x).toISOString() } : round(x));
   return counts.map((count, i) => ({ from: value(start + i * step), to: value(start + (i + 1) * step), count }));
 }
+
+// ---------------------------------------------------------------------------
+// $jsonSchema validator from an analysis
+
+/**
+ * A `$jsonSchema` describing the analyzed documents: the BSON types seen for each field, nested objects
+ * and array elements, and as `required` the fields present in every document (or parent object).
+ */
+export function toJsonSchema(summary: SchemaSummary): Record<string, unknown> {
+  return objectSchema(summary.fields);
+}
+
+function objectSchema(fields: FieldSchema[]): Record<string, unknown> {
+  const required = fields.filter((f) => f.of > 0 && f.count === f.of).map((f) => f.name);
+  return {
+    bsonType: 'object',
+    ...(required.length && { required }),
+    properties: Object.fromEntries(fields.map((f) => [f.name, fieldSchema(f)])),
+  };
+}
+
+function fieldSchema(f: FieldSchema): Record<string, unknown> {
+  const types = f.types.map((t) => t.type);
+  const schema: Record<string, unknown> = { bsonType: types.length === 1 ? types[0] : types };
+  // `properties` and `items` only constrain values of the object / array type.
+  if (f.fields?.length) {
+    const { properties, required } = objectSchema(f.fields);
+    if (required) schema.required = required;
+    schema.properties = properties;
+  }
+  const elements = f.types.find((t) => t.elements)?.elements;
+  if (elements) schema.items = fieldSchema(elements);
+  return schema;
+}

@@ -5,12 +5,19 @@ import { CollectionPanel, CollectionTarget, expandedStateKey, layoutStateKey, mo
 import { Manager } from './manage';
 import { exportDocuments, importDocuments } from './transfer';
 import { CollectionRef, DOC_SCHEME, DocumentFileSystem } from './documentFs';
+import { DEF_SCHEME, DefinitionFileSystem } from './definitionFs';
 
 export function activate(context: vscode.ExtensionContext): void {
   const connections = new ConnectionManager(context);
   const tree = new MongoTreeProvider(connections);
   const documents = new DocumentFileSystem(connections);
   const manager = new Manager(connections);
+  const definitions = new DefinitionFileSystem(connections);
+  /** Definitions of a read-only connection open read-only; views' definitions can be edited otherwise. */
+  const definitionRef = (arg: CollectionNode | CollectionRef): CollectionRef =>
+    arg instanceof CollectionNode
+      ? { connectionId: arg.connection.id, database: arg.database, collection: arg.collection, readOnly: !!arg.connection.readOnly }
+      : arg;
   const collectionTarget = (node: CollectionNode): CollectionTarget => ({
     connectionId: node.connection.id,
     connectionName: node.connection.name,
@@ -32,6 +39,16 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.createTreeView('mongoster.connections', { treeDataProvider: tree, showCollapseAll: true }),
     vscode.workspace.registerFileSystemProvider(DOC_SCHEME, documents, { isCaseSensitive: true }),
     documents.onDidSave((ref) => CollectionPanel.refresh(ref)),
+    vscode.workspace.registerFileSystemProvider(DEF_SCHEME, definitions, { isCaseSensitive: true }),
+    definitions.onDidSave((ref) => CollectionPanel.refresh(ref)),
+
+    vscode.commands.registerCommand('mongoster.editValidation', (arg?: CollectionNode | CollectionRef) =>
+      arg ? definitions.open(definitionRef(arg), 'validation') : undefined,
+    ),
+
+    vscode.commands.registerCommand('mongoster.editView', (arg?: CollectionNode | CollectionRef) =>
+      arg ? definitions.open(definitionRef(arg), 'view') : undefined,
+    ),
 
     vscode.commands.registerCommand('mongoster.addConnection', (node?: FolderNode) =>
       addConnection(connections, node instanceof FolderNode ? node.folder : undefined),
