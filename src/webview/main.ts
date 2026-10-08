@@ -1,0 +1,547 @@
+import { formatFilter, isEjsonWrapper, isOperatorObject, isPlainObject, parseQuery, toShell } from '../shared/query';
+import type { HostMessage, WebviewMessage } from '../shared/messages';
+
+declare function acquireVsCodeApi(): {
+  postMessage(message: WebviewMessage): void;
+  getState(): Partial<QueryState> | undefined;
+  setState(state: QueryState): void;
+};
+
+interface QueryState {
+  filter: string;
+  sort: string;
+  projection: string;
+  limit: number;
+  skip: number;
+}
+
+type DragPayload = { kind: 'cell'; key: string; value: unknown } | { kind: 'column'; key: string };
+
+interface DropZone {
+  label: string;
+  title: string;
+  condition: (p: DragPayload) => unknown;
+}
+
+const vscode = acquireVsCodeApi();
+const state: QueryState = { filter: '', sort: '', projection: '', limit: 50, skip: 0, ...vscode.getState() };
+
+let docs: Record<string, unknown>[] = [];
+let count: number | null = null;
+let currentRequest = 0;
+let drag: DragPayload | null = null;
+let selectedCell: HTMLTableCellElement | null = null;
+let openDocIndex = -1;
+
+const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+const filterInput = el<HTMLTextAreaElement>('filter');
+const sortInput = el<HTMLInputElement>('sort');
+const projectionInput = el<HTMLInputElement>('projection');
+const limitSelect = el<HTMLSelectElement>('limit');
+const grid = el<HTMLTableElement>('grid');
+const dropzones = el('dropzones');
+const modal = el('modal');
+
+// ---------------------------------------------------------------------------
+// Querying
+
+function run(resetSkip = false): void {
+  state.filter = filterInput.value;
+  state.sort = sortInput.value;
+  state.projection = projectionInput.value;
+  state.limit = Number(limitSelect.value);
+  if (resetSkip) state.skip = 0;
+
+  let invalid = false;
+  for (const input of [filterInput, sortInput, projectionInput]) {
+    const ok = isValidObject(input.value);
+    input.classList.toggle('invalid', !ok);
+    invalid ||= !ok;
+  }
+  if (invalid) {
+    showError('Invalid query syntax — check the highlighted field.');
+    return;
+  }
+
+  vscode.setState(state);
+  currentRequest++;
+  setLoading(true);
+  vscode.postMessage({
+    type: 'query',
+    requestId: currentRequest,
+    filter: state.filter,
+    sort: state.sort,
+    projection: state.projection,
+    skip: state.skip,
+    limit: state.limit,
+  });
+}
+
+function isValidObject(text: string): boolean {
+  if (!text.trim()) return true;
+  try {
+    return isPlainObject(parseQuery(text));
+  } catch {
+    return false;
+  }
+}
+
+function setLoading(loading: boolean): void {
+  document.body.classList.toggle('loading', loading);
+}
+
+function showError(message: string | null): void {
+  const box = el('error');
+  box.textContent = message ?? '';
+  box.classList.toggle('hidden', !message);
+}
+
+window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
+  const m = event.data;
+  switch (m.type) {
+    case 'init':
+      el('ns').innerHTML = '';
+      el('ns').append(
+        span('ns-conn', m.connectionName),
+        span('ns-sep', ' › '),
+        span('ns-db', m.database),
+        span('ns-sep', ' › '),
+        span('ns-coll', m.collection),
+      );
+      run();
+      break;
+    case 'result':
+      if (m.requestId !== currentRequest) return;
+      setLoading(false);
+      showError(null);
+      docs = m.docs as Record<string, unknown>[];
+      count = m.count;
+      renderGrid();
+      renderStatus(m.durationMs);
+      break;
+    case 'error':
+      if (m.requestId !== currentRequest) return;
+      setLoading(false);
+      showError(m.message);
+      break;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Grid
+
+function collectColumns(rows: Record<string, unknown>[]): string[] {
+  const seen = new Set<string>();
+  for (const row of rows) for (const key of Object.keys(row)) seen.add(key);
+  const cols = [...seen];
+  const idIndex = cols.indexOf('_id');
+  if (idIndex > 0) cols.unshift(...cols.splice(idIndex, 1));
+  return cols;
+}
+
+function typeClass(v: unknown): string {
+  if (v === null || v === undefined) return 't-null';
+  if (Array.isArray(v)) return 't-array';
+  switch (typeof v) {
+    case 'string':
+      return 't-string';
+    case 'number':
+      return 't-number';
+    case 'boolean':
+      return 't-bool';
+  }
+  if (isEjsonWrapper(v)) {
+    const key = Object.keys(v)[0];
+    if (key === '$oid') return 't-oid';
+    if (key === '$date' || key === '$timestamp') return 't-date';
+    if (key.startsWith('$number')) return 't-number';
+    if (key === '$regularExpression') return 't-regex';
+    return 't-special';
+  }
+  return 't-object';
+}
+
+function cellText(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.length}] ${toShell(v)}`;
+  if (isPlainObject(v) && !isEjsonWrapper(v)) return `{${Object.keys(v).length}} ${toShell(v)}`;
+  return toShell(v);
+}
+
+function currentSort(): Record<string, unknown> {
+  try {
+    const v = sortInput.value.trim() ? parseQuery(sortInput.value) : {};
+    return isPlainObject(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+function renderGrid(): void {
+  const columns = collectColumns(docs);
+  const sort = currentSort();
+  selectedCell = null;
+  grid.replaceChildren();
+  el('empty').classList.toggle('hidden', docs.length > 0);
+  if (!docs.length) return;
+
+  const thead = grid.createTHead();
+  const headRow = thead.insertRow();
+  const corner = document.createElement('th');
+  corner.className = 'rownum';
+  corner.textContent = '#';
+  headRow.append(corner);
+  for (const col of columns) {
+    const th = document.createElement('th');
+    th.dataset.key = col;
+    th.draggable = true;
+    th.title = `${col}\nClick to sort · drag to the filter`;
+    th.append(span('col-name', col));
+    const dir = sort[col];
+    if (dir === 1 || dir === -1) th.append(span('sort-indicator', dir === 1 ? ' ▲' : ' ▼'));
+    headRow.append(th);
+  }
+
+  const tbody = grid.createTBody();
+  docs.forEach((doc, rowIndex) => {
+    const tr = tbody.insertRow();
+    tr.dataset.row = String(rowIndex);
+    const num = tr.insertCell();
+    num.className = 'rownum';
+    num.title = 'Open document (double-click row)';
+    num.append(span('expand', '{ }'), document.createTextNode(String(state.skip + rowIndex + 1)));
+    for (const col of columns) {
+      const td = tr.insertCell();
+      td.dataset.key = col;
+      if (!(col in doc)) {
+        td.className = 'missing';
+        continue;
+      }
+      const value = doc[col];
+      const text = cellText(value);
+      td.className = typeClass(value);
+      td.textContent = text.length > 300 ? text.slice(0, 300) + '…' : text;
+      td.title = text.length > 2000 ? text.slice(0, 2000) + '…' : text;
+      td.draggable = true;
+    }
+  });
+}
+
+function renderStatus(durationMs: number): void {
+  const from = docs.length ? state.skip + 1 : 0;
+  const to = state.skip + docs.length;
+  const total = count === null ? '?' : count.toLocaleString();
+  el('range').textContent = `${from.toLocaleString()}–${to.toLocaleString()} of ${total}`;
+  el('status').textContent = `${docs.length} document${docs.length === 1 ? '' : 's'} · ${durationMs} ms`;
+  el<HTMLButtonElement>('prev').disabled = state.skip === 0;
+  el<HTMLButtonElement>('next').disabled = count !== null ? to >= count : docs.length < state.limit;
+}
+
+function cellValue(td: HTMLElement): { key: string; value: unknown } | null {
+  const tr = td.closest('tr');
+  const key = td.dataset.key;
+  if (!tr?.dataset.row || key === undefined) return null;
+  const doc = docs[Number(tr.dataset.row)];
+  return key in doc ? { key, value: doc[key] } : null;
+}
+
+grid.addEventListener('click', (e) => {
+  const target = e.target as HTMLElement;
+  const th = target.closest('th');
+  if (th?.dataset.key) {
+    toggleSort(th.dataset.key);
+    return;
+  }
+  const td = target.closest('td');
+  if (!td) return;
+  if (td.classList.contains('rownum')) {
+    openDocument(Number(td.closest('tr')!.dataset.row));
+    return;
+  }
+  selectedCell?.classList.remove('selected');
+  selectedCell = td;
+  td.classList.add('selected');
+});
+
+grid.addEventListener('dblclick', (e) => {
+  const tr = (e.target as HTMLElement).closest('tbody tr') as HTMLTableRowElement | null;
+  if (tr?.dataset.row) openDocument(Number(tr.dataset.row));
+});
+
+function toggleSort(key: string): void {
+  const dir = currentSort()[key];
+  sortInput.value = dir === 1 ? toShell({ [key]: -1 }) : dir === -1 ? '' : toShell({ [key]: 1 });
+  run(true);
+}
+
+// ---------------------------------------------------------------------------
+// Drag & drop into the filter
+
+const COMPARABLE = new Set(['t-number', 't-date', 't-string']);
+
+function zonesFor(p: DragPayload): DropZone[] {
+  if (p.kind === 'column') {
+    return [
+      { label: 'exists', title: `${p.key}: { $exists: true }`, condition: () => ({ $exists: true }) },
+      { label: 'missing', title: `${p.key}: { $exists: false }`, condition: () => ({ $exists: false }) },
+      { label: 'is null', title: `${p.key}: null`, condition: () => null },
+    ];
+  }
+  const zones: DropZone[] = [
+    { label: '= equals', title: 'Match this exact value', condition: (d) => (d as { value: unknown }).value },
+    { label: '≠ not equal', title: '$ne', condition: (d) => ({ $ne: (d as { value: unknown }).value }) },
+  ];
+  if (COMPARABLE.has(typeClass(p.value))) {
+    zones.push(
+      { label: '≥ from', title: '$gte (combines with ≤ for a range)', condition: (d) => ({ $gte: (d as { value: unknown }).value }) },
+      { label: '≤ to', title: '$lte (combines with ≥ for a range)', condition: (d) => ({ $lte: (d as { value: unknown }).value }) },
+    );
+  }
+  if (Array.isArray(p.value) && p.value.length) {
+    zones.push({ label: '∈ in', title: '$in: any of these values', condition: (d) => ({ $in: (d as { value: unknown }).value }) });
+  }
+  return zones;
+}
+
+function showDropzones(p: DragPayload): void {
+  dropzones.replaceChildren();
+  for (const zone of zonesFor(p)) {
+    const div = document.createElement('div');
+    div.className = 'dropzone';
+    div.title = zone.title;
+    div.append(span('dz-label', zone.label), span('dz-key', p.key));
+    div.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = 'copy';
+      div.classList.add('over');
+    });
+    div.addEventListener('dragleave', () => div.classList.remove('over'));
+    div.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (drag) addCondition(drag.key, zone.condition(drag));
+      endDrag();
+    });
+    dropzones.append(div);
+  }
+  document.body.classList.add('dragging');
+}
+
+function endDrag(): void {
+  drag = null;
+  document.body.classList.remove('dragging');
+  dropzones.replaceChildren();
+}
+
+grid.addEventListener('dragstart', (e) => {
+  const target = e.target as HTMLElement;
+  if (target.tagName === 'TH' && target.dataset.key) {
+    drag = { kind: 'column', key: target.dataset.key };
+  } else if (target.tagName === 'TD') {
+    const cell = cellValue(target);
+    if (!cell) return;
+    drag = { kind: 'cell', ...cell };
+  } else {
+    return;
+  }
+  const label = drag.kind === 'cell' ? `${drag.key}: ${toShell(drag.value)}` : drag.key;
+  e.dataTransfer!.setData('text/plain', label);
+  e.dataTransfer!.effectAllowed = 'copy';
+  showDropzones(drag);
+});
+
+grid.addEventListener('dragend', endDrag);
+
+function addCondition(key: string, condition: unknown): void {
+  let filter: unknown;
+  try {
+    filter = filterInput.value.trim() ? parseQuery(filterInput.value) : {};
+  } catch {
+    showError('Fix the filter syntax before adding conditions by drag & drop.');
+    filterInput.classList.add('invalid');
+    return;
+  }
+  if (!isPlainObject(filter)) {
+    showError('The filter must be an object.');
+    return;
+  }
+  const existing = filter[key];
+  filter[key] =
+    isOperatorObject(condition) && isOperatorObject(existing) ? { ...existing, ...condition } : condition;
+  filterInput.value = formatFilter(filter);
+  autosize();
+  flash(el('filterWrap'));
+  run(true);
+}
+
+function flash(node: HTMLElement): void {
+  node.classList.remove('flash');
+  void node.offsetWidth;
+  node.classList.add('flash');
+}
+
+// ---------------------------------------------------------------------------
+// Document dialog
+
+function openDocument(index: number): void {
+  if (index < 0 || index >= docs.length) return;
+  openDocIndex = index;
+  const doc = docs[index];
+  el('docTitle').textContent = `Document ${state.skip + index + 1}${'_id' in doc ? ' · ' + toShell(doc._id) : ''}`;
+  el<HTMLButtonElement>('docPrev').disabled = index === 0;
+  el<HTMLButtonElement>('docNext').disabled = index === docs.length - 1;
+  const body = el('docBody');
+  body.replaceChildren(jsonNode(null, doc, true, 0));
+  body.scrollTop = 0;
+  modal.classList.remove('hidden');
+  el('docClose').focus();
+}
+
+function closeDocument(): void {
+  modal.classList.add('hidden');
+  openDocIndex = -1;
+}
+
+function jsonNode(key: string | null, value: unknown, last: boolean, depth: number): HTMLElement {
+  const comma = last ? '' : ',';
+  const isContainer = Array.isArray(value) || (isPlainObject(value) && !isEjsonWrapper(value));
+  const keyPart = () => (key === null ? [] : [span('jkey', key), span('jpunc', ': ')]);
+
+  if (!isContainer) {
+    const leaf = document.createElement('div');
+    leaf.className = 'jleaf';
+    leaf.append(...keyPart(), span(typeClass(value), toShell(value)), span('jpunc', comma));
+    return leaf;
+  }
+
+  const isArray = Array.isArray(value);
+  const entries: [string, unknown][] = isArray
+    ? (value as unknown[]).map((v, i) => [String(i), v])
+    : Object.entries(value as Record<string, unknown>);
+  const [open, close] = isArray ? ['[', ']'] : ['{', '}'];
+
+  const node = document.createElement('div');
+  node.className = 'jnode';
+  if (depth >= 3 && entries.length > 0) node.classList.add('collapsed');
+
+  const head = document.createElement('div');
+  head.className = 'jhead';
+  const toggle = span('jtoggle', '');
+  head.append(toggle, ...keyPart(), span('jpunc', open));
+  const summary = `${entries.length} ${isArray ? 'item' : 'field'}${entries.length === 1 ? '' : 's'}`;
+  head.append(span('jsummary', ` ${summary} `), span('jpunc jsummary', close + comma));
+  if (!entries.length) {
+    head.append(span('jpunc', close + comma));
+    node.classList.add('empty');
+  }
+  head.addEventListener('click', () => node.classList.toggle('collapsed'));
+  node.append(head);
+
+  if (entries.length) {
+    const children = document.createElement('div');
+    children.className = 'jchildren';
+    entries.forEach(([k, v], i) =>
+      children.append(jsonNode(isArray ? null : k, v, i === entries.length - 1, depth + 1)),
+    );
+    const tail = document.createElement('div');
+    tail.className = 'jtail';
+    tail.append(span('jpunc', close + comma));
+    node.append(children, tail);
+  }
+  return node;
+}
+
+el('docClose').addEventListener('click', closeDocument);
+el('docPrev').addEventListener('click', () => openDocument(openDocIndex - 1));
+el('docNext').addEventListener('click', () => openDocument(openDocIndex + 1));
+el('docExpand').addEventListener('click', () =>
+  el('docBody').querySelectorAll('.jnode').forEach((n) => n.classList.remove('collapsed')),
+);
+el('docCollapse').addEventListener('click', () =>
+  el('docBody').querySelectorAll('.jchildren .jnode').forEach((n) => n.classList.add('collapsed')),
+);
+el('docCopy').addEventListener('click', () => {
+  if (openDocIndex >= 0) vscode.postMessage({ type: 'copy', text: toShell(docs[openDocIndex], 2) });
+});
+el('docEditor').addEventListener('click', () => {
+  if (openDocIndex >= 0) vscode.postMessage({ type: 'openDocument', doc: docs[openDocIndex] });
+});
+modal.addEventListener('click', (e) => {
+  if (e.target === modal) closeDocument();
+});
+
+// ---------------------------------------------------------------------------
+// Toolbar & keyboard
+
+function autosize(): void {
+  filterInput.style.height = 'auto';
+  const borders = filterInput.offsetHeight - filterInput.clientHeight;
+  filterInput.style.height = `${Math.min(filterInput.scrollHeight + borders, 240)}px`;
+}
+
+el('run').addEventListener('click', () => run(true));
+el('reset').addEventListener('click', () => {
+  filterInput.value = sortInput.value = projectionInput.value = '';
+  autosize();
+  run(true);
+});
+el('prev').addEventListener('click', () => {
+  state.skip = Math.max(0, state.skip - state.limit);
+  run();
+});
+el('next').addEventListener('click', () => {
+  state.skip += state.limit;
+  run();
+});
+limitSelect.addEventListener('change', () => run(true));
+filterInput.addEventListener('input', () => {
+  autosize();
+  filterInput.classList.remove('invalid');
+});
+for (const input of [sortInput, projectionInput]) {
+  input.addEventListener('input', () => input.classList.remove('invalid'));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') run(true);
+  });
+}
+filterInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    run(true);
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (!modal.classList.contains('hidden')) {
+    if (e.key === 'Escape') closeDocument();
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') openDocument(openDocIndex - 1);
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') openDocument(openDocIndex + 1);
+    else return;
+    e.preventDefault();
+    return;
+  }
+  const inField = (e.target as HTMLElement).closest('input, textarea, select');
+  if (inField || !selectedCell) return;
+  if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
+    const cell = cellValue(selectedCell);
+    if (cell) vscode.postMessage({ type: 'copy', text: toShell(cell.value) });
+    e.preventDefault();
+  } else if (e.key === 'Enter') {
+    openDocument(Number(selectedCell.closest('tr')!.dataset.row));
+  }
+});
+
+function span(className: string, text: string): HTMLSpanElement {
+  const s = document.createElement('span');
+  s.className = className;
+  s.textContent = text;
+  return s;
+}
+
+// ---------------------------------------------------------------------------
+// Boot
+
+filterInput.value = state.filter;
+sortInput.value = state.sort;
+projectionInput.value = state.projection;
+limitSelect.value = String(state.limit);
+new ResizeObserver(autosize).observe(filterInput.parentElement!);
+vscode.postMessage({ type: 'ready' });

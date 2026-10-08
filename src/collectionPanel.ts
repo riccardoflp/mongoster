@@ -1,0 +1,217 @@
+import * as vscode from 'vscode';
+import { BSON, Collection, Document } from 'mongodb';
+
+const { EJSON } = BSON;
+import { ConnectionManager } from './connections';
+import { DocumentProvider } from './documentProvider';
+import { errorMessage } from './tree';
+import { isPlainObject, parseQuery, relaxEjson } from './shared/query';
+import type { HostMessage, QueryRequest, WebviewMessage } from './shared/messages';
+
+export interface CollectionTarget {
+  connectionId: string;
+  connectionName: string;
+  database: string;
+  collection: string;
+}
+
+/** One webview tab per collection, showing a queryable grid of documents. */
+export class CollectionPanel {
+  private static readonly panels = new Map<string, CollectionPanel>();
+
+  static show(
+    context: vscode.ExtensionContext,
+    connections: ConnectionManager,
+    documents: DocumentProvider,
+    target: CollectionTarget,
+  ): void {
+    const key = `${target.connectionId}/${target.database}/${target.collection}`;
+    const existing = CollectionPanel.panels.get(key);
+    if (existing) {
+      existing.panel.reveal();
+      return;
+    }
+    CollectionPanel.panels.set(key, new CollectionPanel(context, connections, documents, target, () => {
+      CollectionPanel.panels.delete(key);
+    }));
+  }
+
+  private readonly panel: vscode.WebviewPanel;
+
+  private constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly connections: ConnectionManager,
+    private readonly documents: DocumentProvider,
+    private readonly target: CollectionTarget,
+    onDispose: () => void,
+  ) {
+    const roots = [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')];
+    this.panel = vscode.window.createWebviewPanel(
+      'mongoster.collection',
+      target.collection,
+      vscode.ViewColumn.Active,
+      { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: roots },
+    );
+    this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'collection.svg');
+    this.panel.webview.html = this.html();
+    this.panel.webview.onDidReceiveMessage((m: WebviewMessage) => this.onMessage(m));
+    this.panel.onDidDispose(onDispose);
+  }
+
+  private post(message: HostMessage): void {
+    void this.panel.webview.postMessage(message);
+  }
+
+  private async onMessage(m: WebviewMessage): Promise<void> {
+    switch (m.type) {
+      case 'ready':
+        this.post({
+          type: 'init',
+          connectionName: this.target.connectionName,
+          database: this.target.database,
+          collection: this.target.collection,
+        });
+        break;
+      case 'query':
+        await this.runQuery(m);
+        break;
+      case 'openDocument': {
+        const id = isPlainObject(m.doc) ? m.doc._id : undefined;
+        const idLabel = isPlainObject(id) && typeof id.$oid === 'string' ? id.$oid : JSON.stringify(id ?? 'document');
+        await this.documents.show(
+          `${this.target.database}.${this.target.collection}`,
+          idLabel,
+          JSON.stringify(m.doc, null, 2),
+        );
+        break;
+      }
+      case 'copy':
+        await vscode.env.clipboard.writeText(m.text);
+        vscode.window.setStatusBarMessage('Mongoster: copied to clipboard', 2000);
+        break;
+    }
+  }
+
+  private async runQuery(m: QueryRequest): Promise<void> {
+    const started = Date.now();
+    try {
+      const filter = toBson(m.filter, 'Filter') ?? {};
+      const sort = toBson(m.sort, 'Sort');
+      const projection = toBson(m.projection, 'Projection');
+      const client = await this.connections.getClient(this.target.connectionId);
+      const coll = client.db(this.target.database).collection(this.target.collection);
+      const [docs, count] = await Promise.all([
+        coll
+          .find(filter, { sort, projection, skip: m.skip, limit: m.limit, maxTimeMS: 60_000, promoteLongs: false })
+          .toArray(),
+        countDocuments(coll, filter),
+      ]);
+      this.post({
+        type: 'result',
+        requestId: m.requestId,
+        docs: relaxEjson(EJSON.serialize(docs, { relaxed: false })) as unknown[],
+        count,
+        durationMs: Date.now() - started,
+      });
+    } catch (err) {
+      this.post({ type: 'error', requestId: m.requestId, message: errorMessage(err) });
+    }
+  }
+
+  private html(): string {
+    const webview = this.panel.webview;
+    const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...p));
+    const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+    return /* html */ `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="${asset('media', 'webview.css')}">
+  <title>${escapeHtml(this.target.collection)}</title>
+</head>
+<body>
+  <div id="progress" class="progress"></div>
+  <header class="toolbar">
+    <div class="ns" id="ns"></div>
+    <div class="row">
+      <label for="filter">Filter</label>
+      <div class="filter-wrap" id="filterWrap">
+        <textarea id="filter" rows="1" spellcheck="false" placeholder="{ field: &quot;value&quot; }  —  or drag a cell / column here"></textarea>
+        <div class="dropzones" id="dropzones"></div>
+      </div>
+      <button id="run" class="primary" title="Run query (Ctrl+Enter)">Find</button>
+      <button id="reset" class="secondary" title="Clear filter, sort and projection">Reset</button>
+    </div>
+    <div class="row options">
+      <label for="sort">Sort</label>
+      <input id="sort" spellcheck="false" placeholder="{ field: -1 }">
+      <label for="projection">Project</label>
+      <input id="projection" spellcheck="false" placeholder="{ field: 1 }">
+    </div>
+  </header>
+  <div class="error hidden" id="error"></div>
+  <div class="statusbar">
+    <span id="status"></span>
+    <span class="spacer"></span>
+    <label for="limit">Page size</label>
+    <select id="limit">
+      <option>10</option><option>20</option><option selected>50</option><option>100</option><option>200</option><option>500</option>
+    </select>
+    <button id="prev" class="icon" title="Previous page">‹</button>
+    <span id="range"></span>
+    <button id="next" class="icon" title="Next page">›</button>
+  </div>
+  <main class="grid-wrap" id="gridWrap">
+    <table id="grid" class="grid"></table>
+    <div id="empty" class="empty hidden">No documents match this query.</div>
+  </main>
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-box">
+      <div class="modal-head">
+        <button id="docPrev" class="icon" title="Previous document (↑)">‹</button>
+        <span id="docTitle" class="doc-title"></span>
+        <button id="docNext" class="icon" title="Next document (↓)">›</button>
+        <span class="spacer"></span>
+        <button id="docExpand" class="secondary">Expand all</button>
+        <button id="docCollapse" class="secondary">Collapse all</button>
+        <button id="docCopy" class="secondary">Copy</button>
+        <button id="docEditor" class="secondary">Open in editor</button>
+        <button id="docClose" class="icon" title="Close (Esc)">✕</button>
+      </div>
+      <div class="modal-body" id="docBody"></div>
+    </div>
+  </div>
+  <script nonce="${nonce}" src="${asset('dist', 'webview.js')}"></script>
+</body>
+</html>`;
+  }
+}
+
+function toBson(text: string, label: string): Document | undefined {
+  if (!text.trim()) return undefined;
+  let value: unknown;
+  try {
+    value = parseQuery(text);
+  } catch (err) {
+    throw new Error(`${label}: ${errorMessage(err)}`);
+  }
+  if (!isPlainObject(value)) throw new Error(`${label} must be an object`);
+  // Non-relaxed keeps NumberLong/NumberDecimal exact instead of collapsing them to JS numbers.
+  return EJSON.deserialize(value, { relaxed: false }) as Document;
+}
+
+async function countDocuments(coll: Collection, filter: Document): Promise<number | null> {
+  try {
+    return Object.keys(filter).length
+      ? await coll.countDocuments(filter, { maxTimeMS: 10_000 })
+      : await coll.estimatedDocumentCount({ maxTimeMS: 10_000 });
+  } catch {
+    return null;
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}

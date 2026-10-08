@@ -1,0 +1,144 @@
+{
+  "name": "mongoster",
+  "displayName": "Mongoster",
+  "description": "Browse MongoDB collections in a table, inspect documents as JSON and build filters by dragging cells.",
+  "version": "0.0.1",
+  "publisher": "pozzi",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "mongodb",
+    "mongo",
+    "database"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "mongoster",
+          "title": "Mongoster",
+          "icon": "media/mongoster.svg"
+        }
+      ]
+    },
+    "views": {
+      "mongoster": [
+        {
+          "id": "mongoster.connections",
+          "name": "Connections"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "mongoster.connections",
+        "contents": "No MongoDB connections yet.\n[Add Connection](command:mongoster.addConnection)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "mongoster.addConnection",
+        "title": "Add Connection",
+        "category": "Mongoster",
+        "icon": "$(add)"
+      },
+      {
+        "command": "mongoster.removeConnection",
+        "title": "Remove Connection",
+        "category": "Mongoster",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "mongoster.disconnect",
+        "title": "Disconnect",
+        "category": "Mongoster",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "mongoster.refresh",
+        "title": "Refresh",
+        "category": "Mongoster",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mongoster.openCollection",
+        "title": "Open Collection",
+        "category": "Mongoster"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "mongoster.addConnection",
+          "when": "view == mongoster.connections",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mongoster.refresh",
+          "when": "view == mongoster.connections",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "mongoster.disconnect",
+          "when": "view == mongoster.connections && viewItem == connection.connected",
+          "group": "inline@1"
+        },
+        {
+          "command": "mongoster.refresh",
+          "when": "view == mongoster.connections && viewItem =~ /^(connection|database)/",
+          "group": "inline@2"
+        },
+        {
+          "command": "mongoster.disconnect",
+          "when": "view == mongoster.connections && viewItem == connection.connected",
+          "group": "1_connection@1"
+        },
+        {
+          "command": "mongoster.removeConnection",
+          "when": "view == mongoster.connections && viewItem =~ /^connection/",
+          "group": "1_connection@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "mongoster.openCollection",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.removeConnection",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.disconnect",
+          "when": "false"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "package": "node esbuild.mjs --production && vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "json5": "^2.2.3",
+    "mongodb": "^6.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  }
+}
