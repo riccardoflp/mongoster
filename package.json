@@ -3,10 +3,8 @@
   "displayName": "Mongoster",
   "description": "MongoDB client for VS Code: browse collections in a table, query and aggregate, edit documents, analyze schemas, indexes and relations, monitor the server.",
   "version": "0.1.0",
-  "publisher": "riccardofilippozzi",
-  "author": {
-    "name": "Riccardo Filippozzi"
-  },
+  "publisher": "RiccardoFilippozzi",
+  "repository": "https://github.com/riccardoflp/mongoster",
   "license": "MIT",
   "icon": "media/icon.png",
   "galleryBanner": {
