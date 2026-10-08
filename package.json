@@ -1,9 +1,12 @@
 {
   "name": "mongoster",
   "displayName": "Mongoster",
-  "description": "Browse MongoDB collections in a table, inspect documents as JSON and build filters by dragging cells.",
-  "version": "0.0.1",
-  "publisher": "pozzi",
+  "description": "MongoDB client for VS Code: browse collections in a table, query and aggregate, edit documents, analyze schemas, indexes and relations, monitor the server.",
+  "version": "0.1.0",
+  "publisher": "riccardofilippozzi",
+  "author": {
+    "name": "Riccardo Filippozzi"
+  },
   "license": "MIT",
   "icon": "media/icon.png",
   "galleryBanner": {
@@ -19,7 +22,9 @@
   "keywords": [
     "mongodb",
     "mongo",
-    "database"
+    "database",
+    "nosql",
+    "mongosh"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [],
