@@ -68,6 +68,14 @@ const contexts = await Promise.all([
   }),
   esbuild.context({
     ...common,
+    entryPoints: ['src/webview/users.ts'],
+    outfile: 'dist/users.js',
+    platform: 'browser',
+    format: 'iife',
+    target: 'es2020',
+  }),
+  esbuild.context({
+    ...common,
     entryPoints: ['src/webview/watch.ts'],
     outfile: 'dist/watch.js',
     platform: 'browser',

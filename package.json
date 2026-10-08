@@ -206,6 +206,12 @@
         "icon": "$(pulse)"
       },
       {
+        "command": "mongoster.manageUsers",
+        "title": "Manage Users and Roles",
+        "category": "Mongoster",
+        "icon": "$(person)"
+      },
+      {
         "command": "mongoster.compareCollection",
         "title": "Compare With…",
         "category": "Mongoster",
@@ -401,6 +407,11 @@
           "group": "2_monitor@1"
         },
         {
+          "command": "mongoster.manageUsers",
+          "when": "view == mongoster.connections && viewItem =~ /^(connection|database)/",
+          "group": "2_monitor@2"
+        },
+        {
           "command": "mongoster.copyCollection",
           "when": "view == mongoster.connections && viewItem =~ /^(collection|view)/",
           "group": "2_transfer@3"
@@ -521,6 +532,10 @@
         },
         {
           "command": "mongoster.openMonitor",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.manageUsers",
           "when": "false"
         },
         {

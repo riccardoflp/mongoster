@@ -9,6 +9,7 @@ import { DEF_SCHEME, DefinitionFileSystem } from './definitionFs';
 import { Playgrounds } from './playground/playground';
 import { MonitorPanel } from './monitor';
 import { ComparePanel } from './compare';
+import { UsersPanel } from './users';
 import { Copier } from './copy';
 import { WatchPanel, WatchScope } from './watch';
 import { ConnectionEditor, SaveConnection } from './connectionEditor';
@@ -56,6 +57,7 @@ export function activate(context: vscode.ExtensionContext): void {
       MonitorPanel.connectionChanged(info);
       WatchPanel.connectionChanged(info);
       ComparePanel.connectionChanged(info);
+      UsersPanel.connectionChanged(info);
     }
   };
 
@@ -183,6 +185,7 @@ export function activate(context: vscode.ExtensionContext): void {
         MonitorPanel.close(node.info.id);
         WatchPanel.close(node.info.id);
         ComparePanel.close(node.info.id);
+        UsersPanel.close(node.info.id);
         ConnectionEditor.close(node.info.id);
         await connections.remove(node.info.id);
       }
@@ -205,6 +208,12 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mongoster.openMonitor', (node?: ConnectionNode) =>
       node ? MonitorPanel.show(context, connections, node.info) : undefined,
     ),
+
+    vscode.commands.registerCommand('mongoster.manageUsers', (node?: ConnectionNode | DatabaseNode) => {
+      if (!node) return;
+      if (node.kind === 'connection') UsersPanel.show(context, connections, node.info);
+      else UsersPanel.show(context, connections, node.connection, node.database);
+    }),
 
     vscode.commands.registerCommand('mongoster.disconnect', (node?: ConnectionNode) =>
       node ? connections.disconnect(node.info.id) : undefined,

@@ -543,3 +543,66 @@ export type CompareViewMessage =
   | { type: 'openDocument'; key: string; side: 'left' | 'right' }
   | { type: 'swap' }
   | { type: 'copy'; text: string };
+
+// ---- users and roles
+
+export interface RoleRef {
+  role: string;
+  db: string;
+}
+
+export interface UserEntry {
+  user: string;
+  db: string;
+  roles: RoleRef[];
+  mechanisms: string[];
+  customData?: unknown;
+  /** The usersInfo entry, relaxed EJSON. */
+  raw: unknown;
+}
+
+export interface Privilege {
+  /** "shop.users", "shop.*" (any collection of shop), "*.users", "*.*", "cluster" or "any resource". */
+  resource: string;
+  actions: string[];
+}
+
+export interface RoleEntry {
+  role: string;
+  db: string;
+  builtin: boolean;
+  privileges: Privilege[];
+  /** Roles it inherits. */
+  roles: RoleRef[];
+  /** The rolesInfo entry, relaxed EJSON. */
+  raw: unknown;
+}
+
+export type UsersHostMessage =
+  | {
+      type: 'init';
+      connectionName: string;
+      readOnly: boolean;
+      color?: string;
+      /** The database to show first ('' for all). */
+      database: string;
+      /** Who the connection is signed in as. */
+      me?: { users: { user: string; db: string }[]; roles: RoleRef[] };
+      meError?: string;
+    }
+  | { type: 'data'; requestId: number; database: string; users?: UserEntry[]; roles?: RoleEntry[]; usersError?: string; rolesError?: string; databases: string[] }
+  | { type: 'action'; ok: boolean; message?: string };
+
+export type UsersViewMessage =
+  | { type: 'ready' }
+  /** `database` '' for all. */
+  | { type: 'load'; requestId: number; database: string; builtin: boolean }
+  | { type: 'createUser'; database: string; user: string; password: string; roles: RoleRef[]; customData: string }
+  | { type: 'setPassword'; database: string; user: string; password: string }
+  | { type: 'grantRoles'; database: string; user: string; roles: RoleRef[] }
+  | { type: 'revokeRole'; database: string; user: string; role: RoleRef }
+  | { type: 'dropUser'; database: string; user: string }
+  /** `privileges`: an array in mongosh syntax. */
+  | { type: 'saveRole'; create: boolean; database: string; role: string; privileges: string; roles: RoleRef[] }
+  | { type: 'dropRole'; database: string; role: string }
+  | { type: 'copy'; text: string };

@@ -1,0 +1,218 @@
+/* Users and roles tab: monitor.css provides the base (bar, toolbar, tables, detail rows). */
+
+.me {
+  padding: 6px 10px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.message {
+  flex: none;
+}
+
+#search {
+  min-width: 200px;
+}
+
+.view {
+  display: flex;
+}
+
+.view .table-wrap {
+  flex: 1;
+}
+
+.muted,
+td.muted {
+  color: var(--muted);
+}
+
+td.name {
+  font-weight: 600;
+}
+
+tr.builtin td.name {
+  font-weight: normal;
+}
+
+.tag {
+  font-family: var(--vscode-font-family);
+  font-weight: normal;
+  font-size: 0.85em;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.row-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+input:not([type='checkbox']):not([type='search']),
+textarea {
+  font: inherit;
+  font-family: var(--mono);
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, inherit);
+  border: 1px solid var(--vscode-input-border, var(--border));
+  border-radius: 2px;
+  padding: 2px 6px;
+}
+
+input:disabled {
+  opacity: 0.7;
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+/* ---------- forms ---------- */
+
+.form-panel {
+  flex: none;
+  margin: 0 10px 10px;
+  padding: 8px 12px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--vscode-focusBorder, #007fd4);
+  border-radius: 3px;
+  max-width: 820px;
+}
+
+.form-panel h3 {
+  margin: 0 0 8px;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px;
+  align-items: start;
+  margin-bottom: 8px;
+}
+
+.field-label {
+  padding-top: 3px;
+  color: var(--muted);
+}
+
+.field-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.field-control > input,
+.field-control > select {
+  min-width: 260px;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.password {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.password input {
+  min-width: 260px;
+}
+
+.role-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.role-row,
+.grant {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.role-row input,
+.grant input {
+  min-width: 200px;
+}
+
+.form-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+  padding-left: 118px;
+}
+
+/* ---------- details ---------- */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 8px;
+  font-family: var(--vscode-font-family);
+}
+
+.chips .label,
+.grant .label {
+  color: var(--muted);
+  min-width: 56px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+}
+
+button.chip-x {
+  background: none;
+  color: var(--muted);
+  padding: 0 2px;
+  font-size: 0.85em;
+}
+
+button.chip-x:hover {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.grant {
+  margin-bottom: 6px;
+  font-family: var(--vscode-font-family);
+}
+
+table.privileges {
+  min-width: 0;
+  margin: 2px 0 8px;
+}
+
+tr.detail table.privileges td,
+table.privileges th {
+  background: none;
+  white-space: normal;
+  vertical-align: top;
+  position: static;
+}
+
+table.privileges td.actions {
+  max-width: 640px;
+  color: var(--muted);
+}
