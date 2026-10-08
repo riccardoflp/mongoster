@@ -2,6 +2,7 @@
 !dist/extension.js
 !dist/webview.js
 !dist/playground.js
+!dist/monitor.js
 !media/**
 !package.json
 !README.md

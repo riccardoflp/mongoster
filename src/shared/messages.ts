@@ -181,3 +181,102 @@ export type PlaygroundViewMessage =
   | { type: 'copy'; text: string }
   | { type: 'openJson'; text: string }
   | { type: 'goToLine'; line: number };
+
+// ---------------------------------------------------------------------------
+// Server monitor
+
+export interface MonitorOp {
+  /** Number, or "shard:number" on a mongos. */
+  opid: number | string;
+  type: string;
+  ns: string;
+  /** Running time in microseconds. */
+  micros?: number;
+  active: boolean;
+  client?: string;
+  appName?: string;
+  desc?: string;
+  user?: string;
+  plan?: string;
+  waitingForLock?: boolean;
+  /** Internal operation of the server (no client connection). */
+  system: boolean;
+  /** The command on one line. */
+  summary: string;
+  /** The whole currentOp entry, relaxed EJSON. */
+  raw: unknown;
+}
+
+export interface ProfileEntry {
+  /** ISO date. */
+  ts: string;
+  op: string;
+  ns: string;
+  millis: number;
+  docsExamined?: number;
+  keysExamined?: number;
+  nreturned?: number;
+  plan?: string;
+  user?: string;
+  summary: string;
+  raw: unknown;
+}
+
+export interface ServerStats {
+  host: string;
+  version: string;
+  /** Seconds. */
+  uptime: number;
+  connections: { current: number; available: number; totalCreated: number };
+  opcounters: Record<'insert' | 'query' | 'update' | 'delete' | 'getmore' | 'command', number>;
+  /** MB. */
+  memory?: { resident: number; virtual: number };
+  network?: { bytesIn: number; bytesOut: number; numRequests: number };
+  /** When it was read, ms since epoch. */
+  at: number;
+}
+
+export interface DatabaseStats {
+  name: string;
+  collections?: number;
+  views?: number;
+  objects?: number;
+  dataSize?: number;
+  storageSize?: number;
+  indexes?: number;
+  indexSize?: number;
+  error?: string;
+}
+
+export interface CollectionStats {
+  name: string;
+  type: string;
+  count?: number;
+  size?: number;
+  avgObjSize?: number;
+  storageSize?: number;
+  nindexes?: number;
+  totalIndexSize?: number;
+  capped?: boolean;
+  error?: string;
+}
+
+export type MonitorHostMessage =
+  | { type: 'init'; connectionName: string; readOnly: boolean; color?: string; databases: string[] }
+  | { type: 'ops'; requestId: number; ops?: MonitorOp[]; error?: string; at: number }
+  | { type: 'killResult'; opid: number | string; ok: boolean; message?: string }
+  | { type: 'profile'; requestId: number; database: string; level?: number; slowms?: number; entries?: ProfileEntry[]; error?: string }
+  | { type: 'server'; requestId: number; stats?: ServerStats; error?: string }
+  | { type: 'databases'; requestId: number; databases?: DatabaseStats[]; error?: string }
+  | { type: 'collections'; requestId: number; database: string; collections?: CollectionStats[]; error?: string };
+
+export type MonitorViewMessage =
+  | { type: 'ready' }
+  | { type: 'loadOps'; requestId: number; includeIdle: boolean }
+  | { type: 'killOp'; opid: number | string; summary: string }
+  | { type: 'loadProfile'; requestId: number; database: string }
+  | { type: 'setProfile'; requestId: number; database: string; level: 0 | 1 | 2; slowms: number }
+  | { type: 'loadServer'; requestId: number }
+  | { type: 'loadDatabases'; requestId: number }
+  | { type: 'loadCollections'; requestId: number; database: string }
+  | { type: 'copy'; text: string };

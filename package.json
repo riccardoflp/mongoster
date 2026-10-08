@@ -198,6 +198,12 @@
         "title": "Change Playground Connection…",
         "category": "Mongoster",
         "icon": "$(database)"
+      },
+      {
+        "command": "mongoster.openMonitor",
+        "title": "Open Server Monitor",
+        "category": "Mongoster",
+        "icon": "$(pulse)"
       }
     ],
     "menus": {
@@ -353,6 +359,11 @@
           "command": "mongoster.newPlayground",
           "when": "view == mongoster.connections && viewItem =~ /^(connection|database|collection|view)/",
           "group": "0_create@9"
+        },
+        {
+          "command": "mongoster.openMonitor",
+          "when": "view == mongoster.connections && viewItem =~ /^connection/",
+          "group": "2_monitor@1"
         }
       ],
       "commandPalette": [
@@ -447,6 +458,10 @@
         {
           "command": "mongoster.changePlaygroundConnection",
           "when": "resourceFilename =~ /\\.mongodb\\.js$/"
+        },
+        {
+          "command": "mongoster.openMonitor",
+          "when": "false"
         }
       ],
       "editor/title": [

@@ -93,6 +93,11 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - La connessione e il database di default si vedono (e si cambiano) nella CodeLens in cima al file e nella barra di stato; `use("…")` nello script ha la precedenza. Con una connessione in sola lettura i metodi che scrivono, `$out`/`$merge` e i comandi che modificano vengono rifiutati.
   - Gli errori indicano la riga (clic per andarci); `Cancel` sulla notifica smette di attendere il risultato (le operazioni già inviate possono completarsi sul server).
   - Autocompletamento nel file: dopo `db.` le collezioni e i metodi del database, dopo `db.users.` i metodi della collezione, dopo `find(...).` quelli del cursore; dentro `find`, `aggregate`, `updateMany`, `sort`… gli stessi suggerimenti di campi, operatori e valori della tabella.
+- **Monitor del server**: clic destro su una connessione → `Open Server Monitor` apre una tab con tre schede, aggiornate con `Refresh` o in automatico (2, 5 o 15 secondi, solo quando la tab è visibile):
+  - `Operations`: le operazioni in corso (`currentOp`) con tipo, namespace, durata (gialla oltre 5 s, rossa oltre 30 s), client e applicazione, piano (`COLLSCAN` evidenziato), attesa di lock e comando; filtro per testo e per durata minima, connessioni inattive e operazioni interne del server su richiesta. Clic su una riga per il dettaglio completo; `Kill` interrompe l'operazione (`killOp`) dopo conferma.
+  - `Slow queries`: le operazioni registrate dal profiler del database scelto (le ultime 200) con durata, documenti e chiavi esaminati rispetto ai restituiti, piano e comando; clic per il dettaglio con `execStats`. Il livello del profiler (spento, operazioni lente oltre N ms, tutte) si cambia da lì.
+  - `Stats`: versione, uptime, connessioni, operazioni al secondo per tipo, rete e memoria del server; tabella dei database (collezioni, view, documenti, dati, storage, indici) e, cliccandone uno, delle sue collezioni, ordinabili per colonna.
+  - Con una connessione in sola lettura le operazioni non si possono interrompere e il profiler non si può cambiare.
 - Le **view** sono in sola lettura, come le collezioni delle connessioni in sola lettura (badge `view` / `read-only` accanto al nome).
 - `Ctrl+C` su una cella selezionata copia il valore.
 
@@ -121,6 +126,7 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/queryHistory.ts` – cronologia e query salvate per collezione
 - `src/documentFs.ts` – file system virtuale `mongoster://` per aprire, modificare e salvare i documenti
 - `src/definitionFs.ts` – file system virtuale `mongoster-def://` per le definizioni delle view e le regole di validazione
+- `src/monitor.ts`, `src/webview/monitor.ts`, `media/monitor.css` – monitor del server: operazioni in corso, profiler, statistiche
 - `src/playground/` – playground: riscrittura dello script (`rewrite.ts`, con `acorn`), runtime stile mongosh (`shell.ts`), contesto del cursore per l'autocompletamento (`context.ts`), comandi, CodeLens e completion (`playground.ts`), tab del risultato (`resultPanel.ts`, `src/webview/playground.ts`, `media/playground.css`)
 - `src/queries.ts` – testo di filtri e pipeline → argomenti del driver
 - `src/transfer.ts` – export (JSON, JSON Lines, CSV) e import

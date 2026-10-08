@@ -7,6 +7,7 @@ import { exportDocuments, importDocuments } from './transfer';
 import { CollectionRef, DOC_SCHEME, DocumentFileSystem } from './documentFs';
 import { DEF_SCHEME, DefinitionFileSystem } from './definitionFs';
 import { Playgrounds } from './playground/playground';
+import { MonitorPanel } from './monitor';
 
 export function activate(context: vscode.ExtensionContext): void {
   const connections = new ConnectionManager(context);
@@ -32,7 +33,10 @@ export function activate(context: vscode.ExtensionContext): void {
   /** Saves connection changes and applies them to the open collection tabs. */
   const updateConnection = async (id: string, changes: Partial<Omit<ConnectionInfo, 'id'>>, uri?: string) => {
     const info = await connections.update(id, changes, uri);
-    if (info) CollectionPanel.connectionChanged(info);
+    if (info) {
+      CollectionPanel.connectionChanged(info);
+      MonitorPanel.connectionChanged(info);
+    }
   };
 
   context.subscriptions.push(
@@ -147,8 +151,15 @@ export function activate(context: vscode.ExtensionContext): void {
         { modal: true },
         'Remove',
       );
-      if (answer === 'Remove') await connections.remove(node.info.id);
+      if (answer === 'Remove') {
+        MonitorPanel.close(node.info.id);
+        await connections.remove(node.info.id);
+      }
     }),
+
+    vscode.commands.registerCommand('mongoster.openMonitor', (node?: ConnectionNode) =>
+      node ? MonitorPanel.show(context, connections, node.info) : undefined,
+    ),
 
     vscode.commands.registerCommand('mongoster.disconnect', (node?: ConnectionNode) =>
       node ? connections.disconnect(node.info.id) : undefined,

@@ -47,6 +47,14 @@ const contexts = await Promise.all([
     format: 'iife',
     target: 'es2020',
   }),
+  esbuild.context({
+    ...common,
+    entryPoints: ['src/webview/monitor.ts'],
+    outfile: 'dist/monitor.js',
+    platform: 'browser',
+    format: 'iife',
+    target: 'es2020',
+  }),
 ]);
 
 if (watch) {
