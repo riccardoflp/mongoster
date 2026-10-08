@@ -30,6 +30,7 @@ import {
 import { CellEditor } from './cellEditor';
 import { ColumnMenu, ColumnsPanel, LayoutActions } from './columnsUi';
 import { Completer } from './autocomplete';
+import { FilterBuilder } from './builder';
 import { CompletionKind, FieldHint, fieldHints } from '../shared/complete';
 import { analyzeSchema } from '../shared/schema';
 
@@ -60,6 +61,8 @@ interface QueryState {
   chart?: ChartSpec;
   /** Data of the chart: the filter or the pipeline. */
   chartSource?: 'find' | 'aggregate';
+  /** The filter builder is open. */
+  builder?: boolean;
 }
 
 /** `within`: the array a dragged element field belongs to; its conditions go into an $elemMatch. */
@@ -947,6 +950,7 @@ function addCondition(key: string, condition: unknown, within?: string): void {
     return;
   }
   autosize();
+  builder.sync();
   flash(el('filterWrap'));
   run(true);
 }
@@ -1088,6 +1092,7 @@ el('export').addEventListener('click', () => {
 el('reset').addEventListener('click', () => {
   filterInput.value = sortInput.value = projectionInput.value = '';
   autosize();
+  builder.sync();
   run(true);
 });
 el('prev').addEventListener('click', () => {
@@ -1102,6 +1107,7 @@ limitSelect.addEventListener('change', () => run(true));
 filterInput.addEventListener('input', () => {
   autosize();
   filterInput.classList.remove('invalid');
+  builder.sync();
 });
 for (const input of [sortInput, projectionInput]) {
   input.addEventListener('input', () => input.classList.remove('invalid'));
@@ -1172,6 +1178,7 @@ function loadQuery(q: QueryText): void {
   sortInput.value = q.sort;
   projectionInput.value = q.projection;
   autosize();
+  builder.sync();
   setMode('find');
 }
 
@@ -1225,6 +1232,21 @@ const completeWith = (field: HTMLTextAreaElement | HTMLInputElement, kind: Compl
   field.addEventListener('focus', fieldsOfCollection);
 };
 completeWith(filterInput, 'filter');
+
+const builder = new FilterBuilder(el('builder'), el<HTMLButtonElement>('builderToggle'), {
+  text: () => filterInput.value,
+  setText: (text) => {
+    filterInput.value = text;
+    filterInput.classList.remove('invalid');
+    autosize();
+  },
+  run: () => run(true),
+  fields: fieldsOfCollection,
+  toggled: (open) => {
+    state.builder = open;
+    vscode.setState(state);
+  },
+});
 completeWith(sortInput, 'sort');
 completeWith(projectionInput, 'project');
 completeWith(el<HTMLTextAreaElement>('pipelineText'), 'pipeline');
@@ -1323,6 +1345,7 @@ const chartView = new ChartView(
         return;
       }
       autosize();
+      builder.sync();
       setMode('find');
       flash(el('filterWrap'));
     },
@@ -1466,5 +1489,6 @@ limitSelect.value = String(state.limit);
 pipeline.setStages(state.stages, state.previewUpto);
 setChartSource(state.chartSource ?? 'find');
 setMode(state.mode, false);
+if (state.builder) builder.setOpen(true);
 new ResizeObserver(autosize).observe(filterInput.parentElement!);
 vscode.postMessage({ type: 'ready' });

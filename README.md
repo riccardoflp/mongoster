@@ -23,6 +23,11 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - `Drop…` su collezioni e view, `Drop Database…` sul database: per collezioni e database va digitato il nome per confermare, e il messaggio dice quanti documenti, indici o collezioni verranno eliminati. Le tab delle collezioni eliminate si chiudono.
 - **Tabella** per collezione: una colonna per campo, valori colorati per tipo, paginazione, conteggio totale.
 - **Filter / Sort / Project** in sintassi mongosh: `{ _id: ObjectId("…"), name: /mario/i, createdAt: { $gte: ISODate("2024-01-01") } }`. `Ctrl+Enter` esegue.
+- **Query builder visuale**: `Builder` accanto al filtro apre sotto di esso un elenco di condizioni, ognuna con campo, operatore e valore, per chi non vuole scrivere la sintassi mongosh:
+  - operatori `=`, `≠`, `>`, `≥`, `<`, `≤`, `in` / `not in` (valori separati da virgole o un array), `matches` (espressione regolare, `/^mario/i` o solo il testo), `exists`, `missing`, `type` (tipo BSON da un elenco) e `size` (array con quel numero di elementi);
+  - il campo si sceglie tra quelli della collezione (anche annidati), il valore tra i più frequenti del campo; i valori si scrivono come in mongosh (`42`, `true`, `"testo"`, `ISODate("2024-01-01")`, `ObjectId("…")`), una parola senza virgolette è una stringa;
+  - `Match all` combina le condizioni tutte insieme (quelle sullo stesso campo diventano un unico range, es. `{ age: { $gte: 20, $lte: 30 } }`), `Match any` le combina con `$or`;
+  - il filtro testuale si aggiorna mentre si compilano le righe (quelle incomplete, tratteggiate, non contano) e, viceversa, un filtro scritto a mano, trascinato o ripreso dalla cronologia riempie le righe. Se usa operatori che le righe non sanno mostrare (`$elemMatch`, `$expr`, `$or` annidati…) il builder lo dice e lascia il filtro com'è. `Invio` in una riga esegue la query; il builder resta aperto o chiuso per la tab.
 - **Autocompletamento** mentre scrivi in Filter, Sort, Project, negli stage della pipeline (anche come testo), in `Update many` e nelle chiavi di un nuovo indice:
   - nomi dei campi, anche annidati (`address.city`, tra virgolette quando serve), presi da un campione di 500 documenti, con tipo e percentuale di documenti che li hanno; dal secondo stage in poi, se la tabella mostra l'output dello stage precedente, i campi sono quelli di quell'output;
   - operatori adatti al punto in cui sei: `$and`/`$or`/`$expr` in cima al filtro, `$gte`/`$in`/`$elemMatch`/`$exists`… dentro un campo, stage della pipeline, accumulatori in `$group`, espressioni e riferimenti `"$campo"` in `$project`/`$addFields`, operatori di update (`$set`, `$inc`, `$push`…);
@@ -208,6 +213,7 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/history.ts`, `src/webview/undoHistory.ts`, `media/undoHistory.css` – cronologia per annullare le modifiche: documenti salvati su disco con i limiti, annullamento e tab `Undo History`
 - `src/compare.ts`, `src/webview/compare.ts`, `media/compare.css` – confronto di due collezioni per `_id` e allineamento di un lato all'altro
 - `src/shared/query.ts` – parsing/formattazione della sintassi mongosh ⇄ EJSON
+- `src/shared/builder.ts`, `src/webview/builder.ts` – query builder visuale: righe campo/operatore/valore ⇄ filtro
 - `src/shared/columns.ts` – modello delle colonne (annidate e array) e del layout scelto dall'utente, usato dalla tabella e dal CSV
 - `src/shared/csv.ts` – generazione e parsing CSV
 - `src/shared/pipeline.ts` – modello degli stage di aggregazione, modelli e conversione testo ⇄ stage

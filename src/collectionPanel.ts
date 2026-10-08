@@ -782,6 +782,7 @@ export class CollectionPanel {
           <textarea id="filter" rows="1" spellcheck="false" placeholder="{ field: &quot;value&quot; }  —  or drag a cell / column here"></textarea>
           <div class="dropzones" id="dropzones"></div>
         </div>
+        <button id="builderToggle" class="secondary" title="Build the filter from fields, operators and values" aria-expanded="false" aria-controls="builder">Builder</button>
         <button id="run" class="primary" title="Run query (Ctrl+Enter)">Find</button>
         <button id="reset" class="secondary" title="Clear filter, sort and projection">Reset</button>
         <button id="explainFind" class="secondary not-schema not-chart" title="Show how MongoDB runs this query: index used, documents examined">Explain</button>
@@ -789,6 +790,7 @@ export class CollectionPanel {
         <button id="updateMany" class="secondary editable not-schema not-chart" title="Update every document matching the filter">Update many…</button>
         <button id="deleteMany" class="secondary editable danger not-schema not-chart" title="Delete every document matching the filter">Delete many…</button>
       </div>
+      <div id="builder" class="builder hidden" role="group" aria-label="Filter builder"></div>
       <div class="row options not-schema not-chart">
         <label for="sort">Sort</label>
         <input id="sort" spellcheck="false" placeholder="{ field: -1 }">

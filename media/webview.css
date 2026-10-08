@@ -1954,3 +1954,89 @@ body[data-color] .ns-conn {
 #codeError {
   margin: 0 10px 8px;
 }
+
+/* ---------- filter builder ---------- */
+
+.builder {
+  margin-left: 60px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.builder-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 0.92em;
+}
+
+.builder-head .spacer {
+  flex: 1;
+}
+
+.builder-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.builder-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.builder-row .b-field {
+  flex: 1 1 140px;
+  min-width: 80px;
+  max-width: 260px;
+}
+
+.builder-row .b-op {
+  flex: none;
+  width: 84px;
+}
+
+.builder-row .b-value {
+  flex: 2 1 200px;
+  min-width: 80px;
+}
+
+.builder-row .b-none {
+  align-self: stretch;
+}
+
+.builder-row.incomplete .b-field,
+.builder-row.incomplete .b-value {
+  border-style: dashed;
+  border-color: var(--border);
+}
+
+.builder-note {
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.builder-note.failed {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+#builderToggle.active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+@media (max-width: 560px) {
+  .builder {
+    margin-left: 0;
+  }
+
+  .builder-row {
+    flex-wrap: wrap;
+  }
+}
