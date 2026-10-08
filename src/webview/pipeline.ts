@@ -93,16 +93,16 @@ export class PipelineEditor {
    * Adds a filter condition on the output shown in the grid: merged into the shown
    * stage when it's a $match, otherwise a new $match right after it.
    */
-  addCondition(key: string, condition: unknown): boolean {
+  addCondition(key: string, condition: unknown, within?: string): boolean {
     if (!this.prepare()) return false;
     const i = this.upto;
     const stage = this.stages[i];
     try {
       if (stage?.enabled && stage.op.trim() === '$match') {
-        stage.body = mergeCondition(stage.body, key, condition);
+        stage.body = mergeCondition(stage.body, key, condition, within);
         this.focusStage(i);
       } else {
-        this.insert(i + 1, { op: '$match', body: mergeCondition('', key, condition), enabled: true });
+        this.insert(i + 1, { op: '$match', body: mergeCondition('', key, condition, within), enabled: true });
       }
     } catch (err) {
       this.cb.notify(`Fix stage ${i + 1} before adding conditions by drag & drop: ${(err as Error).message}`);

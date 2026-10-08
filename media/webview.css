@@ -386,6 +386,18 @@ body.dragging .dropzones {
   font-style: italic;
 }
 
+/* Expanded arrays: one sub-row per element, lighter separators between elements. */
+.grid tbody tr:not(:last-child) td.elem {
+  border-bottom-style: dotted;
+}
+
+.grid td.more {
+  color: var(--muted);
+  font-style: italic;
+  font-family: var(--vscode-font-family);
+  cursor: default;
+}
+
 .sort-indicator {
   color: var(--accent);
   font-size: 0.8em;
@@ -395,7 +407,7 @@ body.dragging .dropzones {
   cursor: grab;
 }
 
-.grid tbody tr:hover td {
+.grid tbody:hover td {
   background: var(--vscode-list-hoverBackground);
 }
 
@@ -440,7 +452,7 @@ body.dragging .dropzones {
   color: var(--accent);
 }
 
-.grid tr:hover td.rownum .expand {
+.grid tbody:hover td.rownum .expand {
   opacity: 1;
 }
 

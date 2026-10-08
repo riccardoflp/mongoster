@@ -300,12 +300,26 @@ export function formatFilter(obj: Record<string, unknown>): string {
 
 /**
  * Adds `key: condition` to a filter-like object text and returns the reformatted text.
- * Operator objects on the same key are merged ({ $gte } + { $lte } → a range). Throws if the text isn't an object.
+ * Operator objects on the same key are merged ({ $gte } + { $lte } → a range). With `within` (an array
+ * containing `key`), the condition goes into that array's $elemMatch, so conditions added on
+ * different fields apply to the same element. Throws if the text isn't an object.
  */
-export function mergeCondition(text: string, key: string, condition: unknown): string {
+export function mergeCondition(text: string, key: string, condition: unknown, within?: string): string {
   const filter = text.trim() ? parseQuery(text) : {};
   if (!isPlainObject(filter)) throw new Error('must be an object');
-  const existing = filter[key];
-  filter[key] = isOperatorObject(condition) && isOperatorObject(existing) ? { ...existing, ...condition } : condition;
+  if (within && key.startsWith(`${within}.`)) {
+    const existing = filter[within];
+    const target = isOperatorObject(existing) ? existing : {};
+    const elemMatch = isPlainObject(target.$elemMatch) ? target.$elemMatch : {};
+    mergeField(elemMatch, key.slice(within.length + 1), condition);
+    filter[within] = { ...target, $elemMatch: elemMatch };
+  } else {
+    mergeField(filter, key, condition);
+  }
   return formatFilter(filter);
+}
+
+function mergeField(obj: Record<string, unknown>, key: string, condition: unknown): void {
+  const existing = obj[key];
+  obj[key] = isOperatorObject(condition) && isOperatorObject(existing) ? { ...existing, ...condition } : condition;
 }

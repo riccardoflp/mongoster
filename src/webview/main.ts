@@ -3,7 +3,18 @@ import type { HostMessage, WebviewMessage } from '../shared/messages';
 import type { PipelineStage } from '../shared/pipeline';
 import { HistoryPopover } from './history';
 import { PipelineEditor } from './pipeline';
-import { ColumnNode, MISSING, buildColumns, expandableBelow, getAt, isSubdocument, leafCount, leaves } from './columns';
+import {
+  ColumnNode,
+  MAX_ELEMENTS,
+  MISSING,
+  buildColumns,
+  expandableBelow,
+  getAt,
+  isSubdocument,
+  leafCount,
+  leaves,
+  rowHeight,
+} from './columns';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: WebviewMessage): void;
@@ -27,7 +38,8 @@ interface QueryState {
   expanded: string[];
 }
 
-type DragPayload = { kind: 'cell'; key: string; value: unknown } | { kind: 'column'; key: string };
+/** `within`: the array a dragged element field belongs to; its conditions go into an $elemMatch. */
+type DragPayload = { kind: 'cell'; key: string; value: unknown; within?: string } | { kind: 'column'; key: string };
 
 interface DropZone {
   label: string;
@@ -56,6 +68,7 @@ let currentRequest = 0;
 let drag: DragPayload | null = null;
 let selectedCell: HTMLTableCellElement | null = null;
 let openDocIndex = -1;
+const columnsByKey = new Map<string, ColumnNode>();
 let readOnly = false;
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -275,16 +288,18 @@ function renderGrid(): void {
     groupClasses(th, leaf.starts.length > 0, leaf.ends.length > 0);
     // Parent segments of an expanded column: click one to collapse that group.
     node.path.slice(0, -1).forEach((segment, i) => {
-      const prefix = span('col-prefix', `${segment}.`);
+      const prefix = span('col-prefix', `${segment}${node.arrayDepth === i + 1 ? '[]' : ''}.`);
       prefix.dataset.collapse = node.path.slice(0, i + 1).join('.');
       prefix.title = `Collapse ${prefix.dataset.collapse}`;
       th.append(prefix);
     });
     th.append(span('col-name', node.path[node.path.length - 1]));
     if (node.expandable && !node.children) {
-      const expander = span('expander', '▸');
+      const expander = span('expander', node.array ? '▸[]' : '▸');
       expander.dataset.expand = node.key;
-      expander.title = `Expand ${node.key} into columns (Alt+click: expand all levels)`;
+      expander.title = node.array
+        ? `Expand the elements of ${node.key} into columns, one sub-row per element (Alt+click: expand all levels)`
+        : `Expand ${node.key} into columns (Alt+click: expand all levels)`;
       th.append(expander);
     }
     const dir = sort[node.key];
@@ -292,47 +307,96 @@ function renderGrid(): void {
     headRow.append(th);
   }
 
-  const tbody = grid.createTBody();
+  // Index of the first leaf under each column, for the group borders.
+  const firstLeaf = new Map<ColumnNode, number>();
+  columnsByKey.clear();
+  let n = 0;
+  const index = (nodes: ColumnNode[]) => {
+    for (const node of nodes) {
+      firstLeaf.set(node, n);
+      columnsByKey.set(node.key, node);
+      if (node.children) index(node.children);
+      else n++;
+    }
+  };
+  index(columns);
+
   docs.forEach((doc, rowIndex) => {
-    const tr = tbody.insertRow();
-    tr.dataset.row = String(rowIndex);
-    const num = tr.insertCell();
+    // One tbody per document: expanded arrays add a sub-row per element.
+    const tbody = grid.createTBody();
+    const height = rowHeight(doc, columns);
+    const rows = Array.from({ length: height }, () => {
+      const tr = tbody.insertRow();
+      tr.dataset.row = String(rowIndex);
+      return tr;
+    });
+    const num = rows[0].insertCell();
     num.className = 'rownum';
+    num.rowSpan = height;
     num.title = 'Open document (double-click row)';
     num.append(span('expand', '{ }'), document.createTextNode(String(state.skip + rowIndex + 1)));
-    let leafIndex = 0;
-    const renderCells = (nodes: ColumnNode[]) => {
+
+    /** A leaf, or an expanded group whose value here can't be expanded: one cell spanning the group. */
+    const addCell = (tr: HTMLTableRowElement, node: ColumnNode, value: unknown, rowSpan: number, elem?: number) => {
+      const width = leafCount(node);
+      const first = leafList[firstLeaf.get(node)!];
+      const last = leafList[firstLeaf.get(node)! + width - 1];
+      const td = tr.insertCell();
+      td.colSpan = width;
+      td.rowSpan = rowSpan;
+      td.dataset.path = JSON.stringify(node.path);
+      if (elem !== undefined) {
+        td.dataset.elem = String(elem);
+        td.dataset.depth = String(node.arrayDepth ?? node.path.length);
+      }
+      if (value === MISSING) {
+        td.className = 'missing';
+      } else {
+        const text = cellText(value);
+        td.className = typeClass(value);
+        if (node.children) {
+          td.classList.add('mixed');
+          td.title =
+            elem !== undefined && node.array
+              ? `This element of ${node.key} is not a sub-document\n`
+              : `${node.key} is not ${node.array ? 'an array of sub-documents' : 'a sub-document'} here\n`;
+        }
+        td.textContent = text.length > 300 ? text.slice(0, 300) + '…' : text;
+        td.title = (td.title ?? '') + (text.length > 2000 ? text.slice(0, 2000) + '…' : text);
+        td.draggable = true;
+      }
+      if (elem !== undefined) td.classList.add('elem');
+      groupClasses(td, first.starts.length > 0, last.ends.length > 0);
+      return td;
+    };
+
+    /** Cells of `nodes`, with values read from `source` (the document, or an array element at path length `base`). */
+    const renderNodes = (nodes: ColumnNode[], source: unknown, base: number, tr: HTMLTableRowElement, rowSpan: number, elem?: number) => {
       for (const node of nodes) {
-        const value = getAt(doc, node.path);
-        if (node.children && isSubdocument(value)) {
-          renderCells(node.children);
-          continue;
-        }
-        // A leaf, or an expanded group whose value here isn't a sub-document: one cell spanning the group.
-        const width = node.children ? leafCount(node) : 1;
-        const first = leafList[leafIndex];
-        const last = leafList[leafIndex + width - 1];
-        leafIndex += width;
-        const td = tr.insertCell();
-        td.colSpan = width;
-        td.dataset.path = JSON.stringify(node.path);
-        if (value === MISSING) {
-          td.className = 'missing';
-        } else {
-          const text = cellText(value);
-          td.className = typeClass(value);
-          if (node.children) {
-            td.classList.add('mixed');
-            td.title = `${node.key} is not a sub-document here\n`;
-          }
-          td.textContent = text.length > 300 ? text.slice(0, 300) + '…' : text;
-          td.title = (td.title ?? '') + (text.length > 2000 ? text.slice(0, 2000) + '…' : text);
-          td.draggable = true;
-        }
-        groupClasses(td, first.starts.length > 0, last.ends.length > 0);
+        const value = getAt(source, node.path.slice(base));
+        if (node.children && isSubdocument(value)) renderNodes(node.children, source, base, tr, rowSpan, elem);
+        else if (node.children && node.array && elem === undefined && Array.isArray(value) && value.length) renderElements(node, value);
+        else addCell(tr, node, value, rowSpan, elem);
       }
     };
-    renderCells(columns);
+
+    const renderElements = (node: ColumnNode, array: unknown[]) => {
+      const shown = Math.min(array.length, MAX_ELEMENTS);
+      for (let i = 0; i < shown; i++) {
+        const element = array[i];
+        if (isSubdocument(element)) renderNodes(node.children!, element, node.path.length, rows[i], 1, i);
+        else addCell(rows[i], node, element, 1, i);
+      }
+      let next = shown;
+      if (array.length > shown) {
+        const more = addCell(rows[next++], node, MISSING, 1);
+        more.classList.replace('missing', 'more');
+        more.textContent = `… ${array.length - shown} more elements — open the document to see all`;
+      }
+      if (next < height) addCell(rows[next], node, MISSING, height - next);
+    };
+
+    renderNodes(columns, doc, 0, rows[0], height);
   });
 }
 
@@ -362,12 +426,28 @@ function renderStatus(durationMs: number): void {
   el<HTMLButtonElement>('next').disabled = count !== null ? to >= count : docs.length < state.limit;
 }
 
-function cellValue(td: HTMLElement): { key: string; value: unknown } | null {
+function cellValue(td: HTMLElement): { key: string; value: unknown; within?: string } | null {
   const tr = td.closest('tr');
   if (!tr?.dataset.row || !td.dataset.path) return null;
   const path = JSON.parse(td.dataset.path) as string[];
-  const value = getAt(docs[Number(tr.dataset.row)], path);
-  return value === MISSING ? null : { key: path.join('.'), value };
+  const doc = docs[Number(tr.dataset.row)];
+  if (td.dataset.elem === undefined) {
+    const value = getAt(doc, path);
+    return value === MISSING ? null : { key: path.join('.'), value };
+  }
+  // A field of an array element: the array, the element, then the path inside the element.
+  const depth = Number(td.dataset.depth);
+  const array = getAt(doc, path.slice(0, depth));
+  if (!Array.isArray(array)) return null;
+  const element = array[Number(td.dataset.elem)];
+  const value = path.length === depth ? element : getAt(element, path.slice(depth));
+  if (value === MISSING) return null;
+  return { key: path.join('.'), value, within: path.length > depth ? path.slice(0, depth).join('.') : undefined };
+}
+
+/** "items[].sku" for a field of an array element, else the dotted key. */
+function displayKey(p: DragPayload): string {
+  return p.kind === 'cell' && p.within ? `${p.within}[].${p.key.slice(p.within.length + 1)}` : p.key;
 }
 
 grid.addEventListener('click', (e) => {
@@ -380,7 +460,8 @@ grid.addEventListener('click', (e) => {
   const expand = target.closest<HTMLElement>('[data-expand]');
   if (expand) {
     const key = expand.dataset.expand!;
-    setExpanded(e.altKey ? expandableBelow(docs, key.split('.')) : [key], true);
+    const node = columnsByKey.get(key);
+    setExpanded(e.altKey && node ? expandableBelow(docs, node) : [key], true);
     return;
   }
   const th = target.closest('th');
@@ -455,7 +536,8 @@ function showDropzones(p: DragPayload): void {
     const div = document.createElement('div');
     div.className = 'dropzone';
     div.title = zone.title;
-    div.append(span('dz-label', zone.label), span('dz-key', p.key));
+    div.append(span('dz-label', zone.label), span('dz-key', displayKey(p)));
+    if (p.kind === 'cell' && p.within) div.title += ` · same element of ${p.within} ($elemMatch)`;
     div.addEventListener('dragover', (e) => {
       e.preventDefault();
       e.dataTransfer!.dropEffect = 'copy';
@@ -464,7 +546,7 @@ function showDropzones(p: DragPayload): void {
     div.addEventListener('dragleave', () => div.classList.remove('over'));
     div.addEventListener('drop', (e) => {
       e.preventDefault();
-      if (drag) addCondition(drag.key, zone.condition(drag));
+      if (drag) addCondition(drag.key, zone.condition(drag), drag.kind === 'cell' ? drag.within : undefined);
       endDrag();
     });
     container.append(div);
@@ -490,7 +572,7 @@ grid.addEventListener('dragstart', (e) => {
   } else {
     return;
   }
-  const label = drag.kind === 'cell' ? `${drag.key}: ${toShell(drag.value)}` : drag.key;
+  const label = drag.kind === 'cell' ? `${displayKey(drag)}: ${toShell(drag.value)}` : drag.key;
   e.dataTransfer!.setData('text/plain', label);
   e.dataTransfer!.effectAllowed = 'copy';
   showDropzones(drag);
@@ -498,13 +580,13 @@ grid.addEventListener('dragstart', (e) => {
 
 grid.addEventListener('dragend', endDrag);
 
-function addCondition(key: string, condition: unknown): void {
+function addCondition(key: string, condition: unknown, within?: string): void {
   if (state.mode === 'aggregate') {
-    pipeline.addCondition(key, condition);
+    pipeline.addCondition(key, condition, within);
     return;
   }
   try {
-    filterInput.value = mergeCondition(filterInput.value, key, condition);
+    filterInput.value = mergeCondition(filterInput.value, key, condition, within);
   } catch (err) {
     showError(`Fix the filter before adding conditions by drag & drop: ${(err as Error).message}`);
     filterInput.classList.add('invalid');
