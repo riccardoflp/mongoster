@@ -204,6 +204,12 @@
         "title": "Open Server Monitor",
         "category": "Mongoster",
         "icon": "$(pulse)"
+      },
+      {
+        "command": "mongoster.copyCollection",
+        "title": "Copy Collection To…",
+        "category": "Mongoster",
+        "icon": "$(copy)"
       }
     ],
     "menus": {
@@ -364,6 +370,11 @@
           "command": "mongoster.openMonitor",
           "when": "view == mongoster.connections && viewItem =~ /^connection/",
           "group": "2_monitor@1"
+        },
+        {
+          "command": "mongoster.copyCollection",
+          "when": "view == mongoster.connections && viewItem =~ /^(collection|view)/",
+          "group": "2_transfer@3"
         }
       ],
       "commandPalette": [
@@ -461,6 +472,10 @@
         },
         {
           "command": "mongoster.openMonitor",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.copyCollection",
           "when": "false"
         }
       ],

@@ -8,6 +8,7 @@ import { CollectionRef, DOC_SCHEME, DocumentFileSystem } from './documentFs';
 import { DEF_SCHEME, DefinitionFileSystem } from './definitionFs';
 import { Playgrounds } from './playground/playground';
 import { MonitorPanel } from './monitor';
+import { Copier } from './copy';
 
 export function activate(context: vscode.ExtensionContext): void {
   const connections = new ConnectionManager(context);
@@ -221,6 +222,23 @@ export function activate(context: vscode.ExtensionContext): void {
         CollectionPanel.show(context, connections, documents, to);
       }
       tree.refresh();
+    }),
+
+    vscode.commands.registerCommand('mongoster.copyCollection', (node?: CollectionNode) => {
+      if (!node) return;
+      const copier = new Copier(connections, (ref) => {
+        const info = connections.get(ref.connectionId);
+        if (!info) return;
+        CollectionPanel.show(context, connections, documents, {
+          ...ref,
+          connectionName: info.name,
+          readOnly: !!info.readOnly,
+          view: false,
+          locked: !!info.readOnly,
+          color: info.color,
+        });
+      });
+      return copier.start({ connection: node.connection, database: node.database, collection: node.collection, isView: node.isView });
     }),
 
     vscode.commands.registerCommand('mongoster.dropCollection', async (node?: CollectionNode) => {

@@ -70,6 +70,12 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - Le pipeline che finiscono con `$out`/`$merge` non si esportano: seleziona uno stage precedente.
 - **Import**: clic destro su una collezione → `Import Documents…` accetta JSON (array o singolo documento), JSON Lines, CSV e anche la sintassi mongosh (`ObjectId(...)`, `ISODate(...)`). Chiede conferma, inserisce a blocchi di 1000 e segnala i documenti scartati (es. `_id` già esistente) senza fermarsi.
   - Nel CSV le intestazioni con il punto creano sotto-documenti (`address.city`), le celle vuote vengono omesse e numeri, booleani, `null`, date ISO (`…Z`), JSON e `_id` esadecimali vengono riconosciuti.
+- **Copia di collezioni**: clic destro su una collezione o view → `Copy Collection To…` la copia in un altro database, anche su un'altra connessione (es. da produzione a locale). Si scelgono connessione, database (anche nuovo) e nome della collezione, poi:
+  - se la collezione di destinazione esiste: `Append` (i documenti con un `_id` già presente vengono saltati), `Replace matching` (sostituiti per `_id`) o `Drop and recreate`;
+  - un filtro facoltativo in sintassi mongosh, per copiare solo una parte dei documenti;
+  - se copiare anche gli indici e le opzioni della collezione (regole di validazione, capped, collation, time series…).
+  - Dopo la conferma con il numero di documenti, la copia avanza a blocchi di 1000 con l'avanzamento nella notifica; `Cancel` la interrompe dopo il blocco in corso (i documenti già copiati restano). I tipi BSON restano identici (Int32, Double, Long, Decimal128, regex…). Alla fine `Open` apre la collezione copiata.
+  - Le connessioni in sola lettura possono essere la sorgente ma non la destinazione; una view viene copiata come collezione con i suoi documenti.
 - **Schema**: la scheda `Schema` analizza i documenti che corrispondono al filtro (tutti, o un campione casuale di 100 / 1.000 / 10.000) e per ogni campo mostra:
   - quanto spesso è presente e con quali tipi BSON (`int`, `double`, `long`, `decimal`, `date`, `objectId`, …), con le percentuali;
   - i valori più frequenti, oppure un istogramma per numeri e date con minimo e massimo; per gli array la lunghezza e i valori degli elementi.
@@ -131,6 +137,7 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/queries.ts` – testo di filtri e pipeline → argomenti del driver
 - `src/transfer.ts` – export (JSON, JSON Lines, CSV) e import
 - `src/manage.ts` – creazione, rinomina ed eliminazione di database e collezioni
+- `src/copy.ts` – copia di una collezione verso un altro database o un'altra connessione
 - `src/shared/query.ts` – parsing/formattazione della sintassi mongosh ⇄ EJSON
 - `src/shared/columns.ts` – modello delle colonne (annidate e array) e del layout scelto dall'utente, usato dalla tabella e dal CSV
 - `src/shared/csv.ts` – generazione e parsing CSV
