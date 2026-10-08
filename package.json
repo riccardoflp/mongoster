@@ -248,6 +248,12 @@
         "icon": "$(eye)"
       },
       {
+        "command": "mongoster.search",
+        "title": "Search Documents…",
+        "category": "Mongoster",
+        "icon": "$(search)"
+      },
+      {
         "command": "mongoster.addConnectionWithOptions",
         "title": "Add Connection with TLS / SSH…",
         "category": "Mongoster",
@@ -495,6 +501,11 @@
           "group": "1_open@1"
         },
         {
+          "command": "mongoster.search",
+          "when": "view == mongoster.connections && viewItem =~ /^(connection|database|collection|view)/",
+          "group": "1_open@2"
+        },
+        {
           "command": "mongoster.uploadGridFS",
           "when": "view == mongoster.connections && viewItem =~ /^(database|bucket)(?!.*readonly)/",
           "group": "2_transfer@5"
@@ -678,6 +689,10 @@
         },
         {
           "command": "mongoster.watchChanges",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.search",
           "when": "false"
         },
         {

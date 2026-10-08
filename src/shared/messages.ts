@@ -706,3 +706,78 @@ export type HistoryViewMessage =
   | { type: 'remove'; id: string }
   | { type: 'clear' }
   | { type: 'settings' };
+
+// ---- global search
+
+export interface SearchOptions {
+  text: string;
+  /** text: contains the text (an id, number or date too); regex: a regular expression. */
+  mode: 'text' | 'regex';
+  matchCase: boolean;
+  /** Also match field names. */
+  fieldNames: boolean;
+  /** Also search the views (their documents usually repeat those of a collection). */
+  views: boolean;
+  /** Documents read per collection; 0 for all. */
+  limit: number;
+}
+
+/** Where the text was found in a document. */
+export interface SearchHit {
+  /** Dotted path, with array indexes: "address.city", "tags.1". */
+  path: string;
+  /** value, or the field name itself. */
+  on: 'value' | 'key';
+  /** BSON type of the value: string, objectId, date, number, … */
+  kind: string;
+  /** The text around the match, and the match within it. */
+  before: string;
+  match: string;
+  after: string;
+}
+
+export interface SearchResult {
+  /** The document's _id: relaxed EJSON, and on one line. */
+  id: unknown;
+  key: string;
+  hits: SearchHit[];
+  /** Matches beyond the hits listed. */
+  more: number;
+}
+
+export interface SearchCollection {
+  database: string;
+  collection: string;
+  view: boolean;
+  /** estimatedDocumentCount (not for views). */
+  estimate?: number;
+}
+
+export interface SearchProgress {
+  /** Index in the plan. */
+  index: number;
+  state: 'scanning' | 'done' | 'error';
+  scanned: number;
+  matches: number;
+  /** New results since the previous update. */
+  results: SearchResult[];
+  /** The scan stopped at the documents limit. */
+  partial?: boolean;
+  error?: string;
+}
+
+export type SearchHostMessage =
+  | { type: 'init'; connectionName: string; color?: string; database?: string; collection?: string }
+  | { type: 'plan'; searchId: number; collections: SearchCollection[] }
+  | { type: 'progress'; searchId: number; updates: SearchProgress[] }
+  | { type: 'done'; searchId: number; ms: number; stopped: boolean }
+  | { type: 'failed'; searchId: number; message: string };
+
+export type SearchViewMessage =
+  | { type: 'ready' }
+  | { type: 'search'; searchId: number; options: SearchOptions }
+  | { type: 'stop' }
+  | { type: 'openDocument'; database: string; collection: string; view: boolean; id: unknown }
+  /** Opens the collection's tab filtered on the matching documents. */
+  | { type: 'showInCollection'; index: number }
+  | { type: 'copy'; text: string };

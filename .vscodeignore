@@ -8,6 +8,7 @@
 !dist/gridfs.js
 !dist/undoHistory.js
 !dist/watch.js
+!dist/search.js
 !dist/connectionEditor.js
 !dist/chartjs.js
 !media/**

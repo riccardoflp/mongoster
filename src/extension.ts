@@ -15,6 +15,7 @@ import { Copier } from './copy';
 import { HistoryPanel, UndoHistory } from './history';
 import { Backups } from './backup';
 import { WatchPanel, WatchScope } from './watch';
+import { SearchPanel, SearchScope } from './search';
 import { ConnectionEditor, SaveConnection } from './connectionEditor';
 import type { QueryText } from './shared/messages';
 
@@ -61,6 +62,7 @@ export function activate(context: vscode.ExtensionContext): void {
       CollectionPanel.connectionChanged(info);
       MonitorPanel.connectionChanged(info);
       WatchPanel.connectionChanged(info);
+      SearchPanel.connectionChanged(info);
       ComparePanel.connectionChanged(info);
       UsersPanel.connectionChanged(info);
       GridFSPanel.connectionChanged(info);
@@ -221,6 +223,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (answer === 'Remove') {
         MonitorPanel.close(node.info.id);
         WatchPanel.close(node.info.id);
+        SearchPanel.close(node.info.id);
         ComparePanel.close(node.info.id);
         UsersPanel.close(node.info.id);
         GridFSPanel.close(node.info.id);
@@ -243,6 +246,20 @@ export function activate(context: vscode.ExtensionContext): void {
               : arg;
       const info = connections.get(scope.connectionId);
       if (info) WatchPanel.show(context, connections, documents, info, scope);
+    }),
+
+    vscode.commands.registerCommand('mongoster.search', (arg?: ConnectionNode | DatabaseNode | CollectionNode | SearchScope) => {
+      if (!arg) return;
+      const scope: SearchScope =
+        arg instanceof ConnectionNode
+          ? { connectionId: arg.info.id }
+          : arg instanceof DatabaseNode
+            ? { connectionId: arg.connection.id, database: arg.database }
+            : arg instanceof CollectionNode
+              ? { connectionId: arg.connection.id, database: arg.database, collection: arg.collection }
+              : arg;
+      const info = connections.get(scope.connectionId);
+      if (info) SearchPanel.show(context, connections, documents, info, scope);
     }),
 
     vscode.commands.registerCommand('mongoster.openMonitor', (node?: ConnectionNode) =>

@@ -37,6 +37,11 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - trascina una **cella** → `= equals`, `≠ not equal`, e per numeri/date/stringhe `≥ from` / `≤ to` (si combinano in un range sullo stesso campo); per gli array `∈ in`;
   - trascina l'**intestazione di una colonna** → `exists`, `missing`, `is null`.
 - **Cronologia query**: `History` nella toolbar mostra le query salvate con un nome e le ultime 50 eseguite con successo su quella collezione (senza duplicati, ricordate anche chiudendo VS Code). Clic o `Invio` per rieseguirne una; ricerca, `☆` per salvarla con un nome, `✕` per toglierla, `Clear` per svuotare le recenti.
+- **Ricerca globale**: clic destro su una connessione, un database, una collezione o una view → `Search Documents…` apre una tab che cerca un testo in **qualsiasi campo** dei documenti, anche annidato o dentro un array, in tutte le collezioni:
+  - `Contains` trova il testo dentro le stringhe (senza distinguere maiuscole, salvo `Match case`), ma anche un `_id` o un riferimento: incollando un ObjectId (o una parte, o `ObjectId("…")`) si trovano il documento e quelli che lo citano; lo stesso per UUID e date (`2024-03-15`). Numeri e booleani si confrontano come valore intero: `42` trova `42`, `NumberLong(42)` e `NumberDecimal("42.0")`, non `420`. `Regex` cerca con un'espressione regolare (`^mario` o `/^ma/i`);
+  - `Field names` cerca anche nei nomi dei campi; `Views` include le view (escluse di solito, perché mostrano documenti di collezioni già cercate); `Read` limita i documenti letti per collezione (tutti, o i primi 1.000 / 10.000 / 100.000). Sono esclusi i database `admin`, `local`, `config`, le collezioni `system.*` e i contenuti dei file GridFS (`*.chunks`);
+  - MongoDB non ha una query "in qualsiasi campo": i documenti vengono letti e confrontati da Mongoster, tre collezioni alla volta, con l'avanzamento per collezione (letti / stimati). `Stop` (o `Esc`) interrompe;
+  - i risultati sono raggruppati per collezione: per ogni documento l'`_id` e i campi trovati con il testo evidenziato. Clic su un documento per aprirlo nell'editor; `Open in Collection` apre la collezione filtrata sui documenti trovati (`{ _id: { $in: [...] } }`, fino a 1.000). Sono elencati i primi 50 documenti per collezione, gli altri sono contati; le collezioni che non si possono leggere (permessi) sono segnalate.
 - **Ordinamento**: clic sull'intestazione (▲ → ▼ → nessuno).
 - **Colonne personalizzabili**, ricordate per ogni collezione (anche dopo una rinomina):
   - **nascondere**: clic destro sull'intestazione → `Hide`, oppure le checkbox del pannello `Columns` nella barra sopra la tabella (con ricerca, `Show all` e `Reset`);
@@ -204,6 +209,7 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/definitionFs.ts` – file system virtuale `mongoster-def://` per le definizioni delle view e le regole di validazione
 - `src/monitor.ts`, `src/webview/monitor.ts`, `media/monitor.css` – monitor del server: operazioni in corso, profiler, statistiche, replica set e oplog
 - `src/watch.ts`, `src/webview/watch.ts`, `media/watch.css` – change stream di una collezione, un database o una connessione
+- `src/search.ts`, `src/webview/search.ts`, `media/search.css` – ricerca globale in qualsiasi campo dei documenti
 - `src/playground/` – playground: riscrittura dello script (`rewrite.ts`, con `acorn`), runtime stile mongosh (`shell.ts`), contesto del cursore per l'autocompletamento (`context.ts`), comandi, CodeLens e completion (`playground.ts`), tab del risultato (`resultPanel.ts`, `src/webview/playground.ts`, `media/playground.css`)
 - `src/queries.ts` – testo di filtri e pipeline → argomenti del driver
 - `src/transfer.ts` – export (JSON, JSON Lines, CSV) e import
