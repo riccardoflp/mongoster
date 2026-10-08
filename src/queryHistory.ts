@@ -1,5 +1,6 @@
 import type { Memento } from 'vscode';
 import type { QueryText, SavedQuery } from './shared/messages';
+import type { PipelineStage } from './shared/pipeline';
 import { parseQuery } from './shared/query';
 
 const MAX_RECENT = 50;
@@ -28,7 +29,7 @@ export class QueryHistory {
   /** Adds a successful query on top; an identical older entry is moved instead of duplicated. */
   async record(query: QueryText): Promise<boolean> {
     const q = normalize(query);
-    if (!q.filter && !q.sort && !q.projection) return false;
+    if (q.pipeline ? !q.pipeline.some((s) => s.enabled) : !q.filter && !q.sort && !q.projection) return false;
     const rest = this.recent.filter((e) => !sameQuery(e, q));
     const entry: SavedQuery = { id: newId(), ...q, at: Date.now() };
     await this.state.update(this.recentKey, [entry, ...rest].slice(0, MAX_RECENT));
@@ -52,12 +53,18 @@ export class QueryHistory {
 }
 
 function normalize(q: QueryText): QueryText {
-  return { filter: q.filter.trim(), sort: q.sort.trim(), projection: q.projection.trim() };
+  const base = { filter: q.filter.trim(), sort: q.sort.trim(), projection: q.projection.trim() };
+  return q.pipeline ? { ...base, pipeline: q.pipeline.map((s) => ({ op: s.op.trim(), body: s.body, enabled: s.enabled })) } : base;
 }
 
 /** Same query, ignoring formatting (whitespace, quoting style): compares the parsed values. */
 export function sameQuery(a: QueryText, b: QueryText): boolean {
+  if (a.pipeline || b.pipeline) return canonicalPipeline(a.pipeline) === canonicalPipeline(b.pipeline);
   return canonical(a.filter) === canonical(b.filter) && canonical(a.sort) === canonical(b.sort) && canonical(a.projection) === canonical(b.projection);
+}
+
+function canonicalPipeline(stages: PipelineStage[] | undefined): string {
+  return JSON.stringify((stages ?? []).map((s) => [s.op.trim(), canonical(s.body), s.enabled]));
 }
 
 function canonical(text: string): string {

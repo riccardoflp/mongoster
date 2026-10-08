@@ -1,5 +1,6 @@
 // "History" popover: recent and saved queries of the collection.
 import type { QueryText, SavedQuery } from '../shared/messages';
+import { pipelineToText, summarizePipeline } from '../shared/pipeline';
 
 export interface HistoryCallbacks {
   apply(query: QueryText): void;
@@ -23,8 +24,9 @@ export class HistoryPopover {
     this.search.addEventListener('input', () => this.render());
     document.getElementById('saveCurrent')!.addEventListener('click', () => {
       const q = cb.current();
-      if (!q.filter.trim() && !q.sort.trim() && !q.projection.trim()) cb.notify('Nothing to save: filter, sort and projection are empty.');
-      else cb.save(q);
+      if (q.pipeline ? !q.pipeline.length : !q.filter.trim() && !q.sort.trim() && !q.projection.trim()) {
+        cb.notify(q.pipeline ? 'Nothing to save: the pipeline has no stages.' : 'Nothing to save: filter, sort and projection are empty.');
+      } else cb.save(q);
     });
     this.panel.addEventListener('keydown', (e) => this.onKey(e));
     document.addEventListener('mousedown', (e) => {
@@ -57,7 +59,10 @@ export class HistoryPopover {
   private render(): void {
     const q = this.search.value.trim().toLowerCase();
     const match = (e: SavedQuery) =>
-      !q || [e.name ?? '', e.filter, e.sort, e.projection].some((t) => t.toLowerCase().includes(q));
+      !q ||
+      [e.name ?? '', e.filter, e.sort, e.projection, e.pipeline ? pipelineToText(e.pipeline) : ''].some((t) =>
+        t.toLowerCase().includes(q),
+      );
     const saved = this.saved.filter(match);
     const recent = this.recent.filter(match);
     this.body.replaceChildren();
@@ -141,6 +146,11 @@ export class HistoryPopover {
 function preview(q: QueryText): HTMLElement {
   const wrap = text('span', '', 'hi-query');
   const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
+  if (q.pipeline) {
+    wrap.append(text('span', 'aggregate ', 'hi-label'), text('span', summarizePipeline(q.pipeline), 'hi-filter'));
+    wrap.title = pipelineToText(q.pipeline);
+    return wrap;
+  }
   wrap.append(text('span', oneLine(q.filter) || '{}', 'hi-filter'));
   if (q.sort) wrap.append(text('span', ' sort ', 'hi-label'), text('span', oneLine(q.sort)));
   if (q.projection) wrap.append(text('span', ' project ', 'hi-label'), text('span', oneLine(q.projection)));

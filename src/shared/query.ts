@@ -274,10 +274,38 @@ export function toShell(v: unknown, indent?: number, level = 0): string {
   return String(v);
 }
 
+/** Mongosh text where each value stays on one line when it fits in `width`, otherwise its entries go one per line. */
+export function prettyShell(v: unknown, level = 0, width = 76): string {
+  const single = toShell(v);
+  const pad = '  '.repeat(level);
+  if (pad.length + single.length <= width) return single;
+  if (Array.isArray(v) && v.length) {
+    const lines = v.map((x) => `${pad}  ${prettyShell(x, level + 1, width)}`);
+    return `[\n${lines.join(',\n')}\n${pad}]`;
+  }
+  if (isPlainObject(v) && !isEjsonWrapper(v) && Object.keys(v).length) {
+    const lines = Object.entries(v).map(([k, x]) => `${pad}  ${formatKey(k)}: ${prettyShell(x, level + 1, width)}`);
+    return `{\n${lines.join(',\n')}\n${pad}}`;
+  }
+  return single;
+}
+
 /** Formats a filter: single line when short, otherwise one top-level field per line. */
 export function formatFilter(obj: Record<string, unknown>): string {
   const single = toShell(obj);
   if (single.length <= 70) return single;
   const lines = Object.entries(obj).map(([k, v]) => `  ${formatKey(k)}: ${toShell(v)}`);
   return `{\n${lines.join(',\n')}\n}`;
+}
+
+/**
+ * Adds `key: condition` to a filter-like object text and returns the reformatted text.
+ * Operator objects on the same key are merged ({ $gte } + { $lte } → a range). Throws if the text isn't an object.
+ */
+export function mergeCondition(text: string, key: string, condition: unknown): string {
+  const filter = text.trim() ? parseQuery(text) : {};
+  if (!isPlainObject(filter)) throw new Error('must be an object');
+  const existing = filter[key];
+  filter[key] = isOperatorObject(condition) && isOperatorObject(existing) ? { ...existing, ...condition } : condition;
+  return formatFilter(filter);
 }

@@ -1,6 +1,8 @@
-import { formatFilter, isEjsonWrapper, isOperatorObject, isPlainObject, parseQuery, toShell } from '../shared/query';
+import { isEjsonWrapper, isPlainObject, mergeCondition, parseQuery, toShell } from '../shared/query';
 import type { HostMessage, WebviewMessage } from '../shared/messages';
+import type { PipelineStage } from '../shared/pipeline';
 import { HistoryPopover } from './history';
+import { PipelineEditor } from './pipeline';
 import { ColumnNode, MISSING, buildColumns, expandableBelow, getAt, isSubdocument, leafCount, leaves } from './columns';
 
 declare function acquireVsCodeApi(): {
@@ -9,7 +11,13 @@ declare function acquireVsCodeApi(): {
   setState(state: QueryState): void;
 };
 
+type Mode = 'find' | 'aggregate';
+
 interface QueryState {
+  mode: Mode;
+  stages: PipelineStage[];
+  /** Stage whose output is previewed, or null for the whole pipeline. */
+  previewUpto: number | null;
   filter: string;
   sort: string;
   projection: string;
@@ -28,7 +36,18 @@ interface DropZone {
 }
 
 const vscode = acquireVsCodeApi();
-const state: QueryState = { filter: '', sort: '', projection: '', limit: 50, skip: 0, expanded: [], ...vscode.getState() };
+const state: QueryState = {
+  mode: 'find',
+  stages: [],
+  previewUpto: null,
+  filter: '',
+  sort: '',
+  projection: '',
+  limit: 50,
+  skip: 0,
+  expanded: [],
+  ...vscode.getState(),
+};
 let expanded = new Set(state.expanded);
 
 let docs: Record<string, unknown>[] = [];
@@ -46,17 +65,22 @@ const projectionInput = el<HTMLInputElement>('projection');
 const limitSelect = el<HTMLSelectElement>('limit');
 const grid = el<HTMLTableElement>('grid');
 const dropzones = el('dropzones');
+const pipelineDrop = el('pipelineDrop');
 const modal = el('modal');
 
 // ---------------------------------------------------------------------------
 // Querying
 
 function run(resetSkip = false): void {
+  state.limit = Number(limitSelect.value);
+  if (resetSkip) state.skip = 0;
+  if (state.mode === 'aggregate') {
+    runAggregate();
+    return;
+  }
   state.filter = filterInput.value;
   state.sort = sortInput.value;
   state.projection = projectionInput.value;
-  state.limit = Number(limitSelect.value);
-  if (resetSkip) state.skip = 0;
 
   let invalid = false;
   for (const input of [filterInput, sortInput, projectionInput]) {
@@ -81,6 +105,39 @@ function run(resetSkip = false): void {
     skip: state.skip,
     limit: state.limit,
   });
+}
+
+function runAggregate(): void {
+  if (!pipeline.prepare()) return;
+  pipeline.markError(null);
+  savePipelineState();
+  currentRequest++;
+  setLoading(true);
+  vscode.postMessage({
+    type: 'aggregate',
+    requestId: currentRequest,
+    stages: pipeline.stages,
+    upto: pipeline.upto,
+    skip: state.skip,
+    limit: state.limit,
+  });
+}
+
+function savePipelineState(): void {
+  state.stages = pipeline.stages;
+  state.previewUpto = pipeline.previewUpto;
+  vscode.setState(state);
+}
+
+function setMode(mode: Mode, runNow = true): void {
+  state.mode = mode;
+  document.body.classList.toggle('mode-aggregate', mode === 'aggregate');
+  el('modeFind').setAttribute('aria-selected', String(mode === 'find'));
+  el('modeAggregate').setAttribute('aria-selected', String(mode === 'aggregate'));
+  vscode.setState(state);
+  if (!runNow) return;
+  showError(null);
+  run(true);
 }
 
 function isValidObject(text: string): boolean {
@@ -133,8 +190,11 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       showError(null);
       docs = m.docs as Record<string, unknown>[];
       count = m.count;
+      el('empty').textContent =
+        m.note ?? (state.mode === 'aggregate' ? 'The pipeline returned no documents.' : 'No documents match this query.');
       renderGrid();
       renderStatus(m.durationMs);
+      if (m.note) el('status').textContent = `${m.note} · ${m.durationMs} ms`;
       if (openDocIndex >= 0) {
         if (openDocIndex < docs.length) openDocument(openDocIndex);
         else closeDocument();
@@ -144,6 +204,7 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       if (m.requestId !== currentRequest) return;
       setLoading(false);
       showError(m.message);
+      if (m.stage !== undefined) pipeline.markError(m.stage);
       break;
   }
 });
@@ -181,6 +242,7 @@ function cellText(v: unknown): string {
 }
 
 function currentSort(): Record<string, unknown> {
+  if (state.mode === 'aggregate') return pipeline.currentSort();
   try {
     const v = sortInput.value.trim() ? parseQuery(sortInput.value) : {};
     return isPlainObject(v) ? v : {};
@@ -343,6 +405,10 @@ grid.addEventListener('dblclick', (e) => {
 });
 
 function toggleSort(key: string): void {
+  if (state.mode === 'aggregate') {
+    pipeline.toggleSort(key);
+    return;
+  }
   const dir = currentSort()[key];
   sortInput.value = dir === 1 ? toShell({ [key]: -1 }) : dir === -1 ? '' : toShell({ [key]: 1 });
   run(true);
@@ -378,6 +444,12 @@ function zonesFor(p: DragPayload): DropZone[] {
 }
 
 function showDropzones(p: DragPayload): void {
+  const aggregate = state.mode === 'aggregate';
+  const container = aggregate ? document.createElement('div') : dropzones;
+  if (aggregate) {
+    container.className = 'dz-row';
+    pipelineDrop.replaceChildren(span('dz-caption', `Drop to add the condition ${pipeline.dropTarget()}`), container);
+  }
   dropzones.replaceChildren();
   for (const zone of zonesFor(p)) {
     const div = document.createElement('div');
@@ -395,7 +467,7 @@ function showDropzones(p: DragPayload): void {
       if (drag) addCondition(drag.key, zone.condition(drag));
       endDrag();
     });
-    dropzones.append(div);
+    container.append(div);
   }
   document.body.classList.add('dragging');
 }
@@ -404,6 +476,7 @@ function endDrag(): void {
   drag = null;
   document.body.classList.remove('dragging');
   dropzones.replaceChildren();
+  pipelineDrop.replaceChildren();
 }
 
 grid.addEventListener('dragstart', (e) => {
@@ -426,22 +499,17 @@ grid.addEventListener('dragstart', (e) => {
 grid.addEventListener('dragend', endDrag);
 
 function addCondition(key: string, condition: unknown): void {
-  let filter: unknown;
+  if (state.mode === 'aggregate') {
+    pipeline.addCondition(key, condition);
+    return;
+  }
   try {
-    filter = filterInput.value.trim() ? parseQuery(filterInput.value) : {};
-  } catch {
-    showError('Fix the filter syntax before adding conditions by drag & drop.');
+    filterInput.value = mergeCondition(filterInput.value, key, condition);
+  } catch (err) {
+    showError(`Fix the filter before adding conditions by drag & drop: ${(err as Error).message}`);
     filterInput.classList.add('invalid');
     return;
   }
-  if (!isPlainObject(filter)) {
-    showError('The filter must be an object.');
-    return;
-  }
-  const existing = filter[key];
-  filter[key] =
-    isOperatorObject(condition) && isOperatorObject(existing) ? { ...existing, ...condition } : condition;
-  filterInput.value = formatFilter(filter);
   autosize();
   flash(el('filterWrap'));
   run(true);
@@ -614,7 +682,7 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
   } else if (e.key === 'Enter') {
     openDocument(Number(selectedCell.closest('tr')!.dataset.row));
-  } else if (e.key === 'Delete' && !readOnly) {
+  } else if (e.key === 'Delete' && !readOnly && state.mode === 'find') {
     const doc = docs[Number(selectedCell.closest('tr')!.dataset.row)];
     if (doc && '_id' in doc) vscode.postMessage({ type: 'deleteDocument', id: doc._id });
   }
@@ -632,18 +700,42 @@ function span(className: string, text: string): HTMLSpanElement {
 
 const history = new HistoryPopover({
   apply(q) {
+    if (q.pipeline) {
+      pipeline.setStages(q.pipeline);
+      setMode('aggregate');
+      return;
+    }
     filterInput.value = q.filter;
     sortInput.value = q.sort;
     projectionInput.value = q.projection;
     autosize();
-    run(true);
+    setMode('find');
   },
-  save: (q) => vscode.postMessage({ type: 'saveQuery', query: { filter: q.filter, sort: q.sort, projection: q.projection } }),
+  save: (q) =>
+    vscode.postMessage({
+      type: 'saveQuery',
+      query: { filter: q.filter, sort: q.sort, projection: q.projection, ...(q.pipeline && { pipeline: q.pipeline }) },
+    }),
   remove: (id) => vscode.postMessage({ type: 'removeQuery', id }),
   clear: () => vscode.postMessage({ type: 'clearHistory' }),
-  current: () => ({ filter: filterInput.value, sort: sortInput.value, projection: projectionInput.value }),
+  current: () =>
+    state.mode === 'aggregate'
+      ? { filter: '', sort: '', projection: '', pipeline: pipeline.prepare() ? pipeline.stages : [] }
+      : { filter: filterInput.value, sort: sortInput.value, projection: projectionInput.value },
   notify: showError,
 });
+
+// ---------------------------------------------------------------------------
+// Aggregation pipeline
+
+const pipeline = new PipelineEditor({
+  run: () => run(true),
+  changed: savePipelineState,
+  notify: showError,
+  copy: (text) => vscode.postMessage({ type: 'copy', text }),
+});
+el('modeFind').addEventListener('click', () => state.mode !== 'find' && setMode('find'));
+el('modeAggregate').addEventListener('click', () => state.mode !== 'aggregate' && setMode('aggregate'));
 
 // ---------------------------------------------------------------------------
 // Boot
@@ -652,5 +744,7 @@ filterInput.value = state.filter;
 sortInput.value = state.sort;
 projectionInput.value = state.projection;
 limitSelect.value = String(state.limit);
+pipeline.setStages(state.stages, state.previewUpto);
+setMode(state.mode, false);
 new ResizeObserver(autosize).observe(filterInput.parentElement!);
 vscode.postMessage({ type: 'ready' });

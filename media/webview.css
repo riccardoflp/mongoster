@@ -729,3 +729,227 @@ button.link:hover {
   color: var(--muted);
   text-align: center;
 }
+
+/* ---------- find / aggregate mode ---------- */
+
+.row.top {
+  align-items: center;
+}
+
+.mode {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.mode button {
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-radius: 0;
+  padding: 3px 12px;
+}
+
+.mode button:hover {
+  color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+}
+
+.mode button[aria-selected='true'] {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+body:not(.mode-aggregate) .aggregate-only,
+body.mode-aggregate .find-only,
+body.mode-aggregate .doc-write {
+  display: none !important;
+}
+
+.find-only,
+.pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stages-wrap {
+  position: relative;
+}
+
+.stages {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.stage {
+  flex: none;
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+}
+
+.stage.previewed {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.stage.skipped,
+.stage.disabled {
+  opacity: 0.5;
+}
+
+.stage.disabled .stage-body {
+  text-decoration: line-through;
+}
+
+.stage.write {
+  border-color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.stage.error {
+  border-color: var(--vscode-inputValidation-errorBorder, #be1100);
+  box-shadow: 0 0 0 1px var(--vscode-inputValidation-errorBorder, #be1100);
+}
+
+.stage.flash {
+  animation: flash 0.6s ease-out;
+}
+
+.stage-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.stage-num {
+  flex: none;
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 0.85em;
+  background: var(--vscode-badge-background, rgba(128, 128, 128, 0.3));
+  color: var(--vscode-badge-foreground, var(--vscode-foreground));
+}
+
+.stage-num:hover,
+.stage.previewed .stage-num {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.stage-op {
+  width: 120px;
+  min-width: 0;
+  padding: 2px 4px;
+  font-weight: 600;
+  color: var(--c-key);
+}
+
+.stage-head input[type='checkbox'] {
+  margin: 0 2px;
+  accent-color: var(--accent);
+}
+
+.stage-head button.icon {
+  padding: 0 4px;
+  font-size: 1em;
+}
+
+.stage-badge {
+  font-size: 0.8em;
+  padding: 0 5px;
+  border-radius: 3px;
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  border: 1px solid currentColor;
+}
+
+.stage-body {
+  border: none;
+  border-radius: 0 0 3px 3px;
+  min-height: 60px;
+  resize: none;
+  line-height: 1.4;
+  overflow-y: auto;
+  tab-size: 2;
+}
+
+.stage-body.invalid {
+  border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+}
+
+.stage-arrow {
+  flex: none;
+  align-self: center;
+  color: var(--muted);
+}
+
+.stage-add {
+  flex: none;
+  align-self: stretch;
+  min-width: 40px;
+  border: 1px dashed var(--border) !important;
+  background: transparent !important;
+  color: var(--muted) !important;
+}
+
+.stage-add:hover {
+  color: var(--vscode-foreground) !important;
+  border-color: var(--accent) !important;
+}
+
+.pipeline-text {
+  width: 100%;
+  min-height: 120px;
+  max-height: 40vh;
+  resize: vertical;
+  line-height: 1.4;
+}
+
+.pipeline-actions {
+  align-items: center;
+}
+
+.pipeline-actions button.active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.preview-info {
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.pipeline-drop {
+  flex-direction: column;
+  padding: 6px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 85%, transparent);
+  border-radius: 3px;
+}
+
+.pipeline-drop .dz-caption {
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.pipeline-drop .dz-row {
+  flex: 1;
+  display: flex;
+  gap: 4px;
+  min-height: 32px;
+}
+
+.stages-empty {
+  padding: 6px 0;
+  color: var(--muted);
+  font-size: 0.92em;
+}

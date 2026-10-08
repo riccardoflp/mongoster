@@ -12,6 +12,14 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - trascina l'**intestazione di una colonna** → `exists`, `missing`, `is null`.
 - **Cronologia query**: `History` nella toolbar mostra le query salvate con un nome e le ultime 50 eseguite con successo su quella collezione (senza duplicati, ricordate anche chiudendo VS Code). Clic o `Invio` per rieseguirne una; ricerca, `☆` per salvarla con un nome, `✕` per toglierla, `Clear` per svuotare le recenti.
 - **Ordinamento**: clic sull'intestazione (▲ → ▼ → nessuno).
+- **Aggregate**: il selettore `Find / Aggregate` in alto passa all'editor di pipeline.
+  - Ogni stage è una scheda: operatore (con suggerimenti e un modello per gli stage comuni), corpo in sintassi mongosh, checkbox per disattivarlo, `‹ ›` per spostarlo, `✕` per toglierlo. `Ctrl+Enter` in uno stage esegue.
+  - Clic sul **numero di uno stage** mostra l'output fino a quello stage (con paginazione e conteggio); gli stage successivi vengono attenuati. `Run` esegue la pipeline intera.
+  - Il drag & drop funziona anche qui: la condizione va nel `$match` mostrato, oppure in un nuovo `$match` subito dopo lo stage mostrato. Il clic sull'intestazione aggiunge o modifica uno `$sort` nello stesso punto.
+  - `Edit as text` per incollare o modificare l'intera pipeline (`[ { $match: … }, … ]`), `Copy` per copiarla.
+  - Gli stage che scrivono (`$out`, `$merge`) chiedono conferma prima di eseguire; l'anteprima di uno stage precedente non scrive nulla.
+  - Gli errori indicano lo stage che li ha causati. Le pipeline finiscono nella stessa cronologia delle query.
+  - I risultati dell'aggregate non sono modificabili: per modificare un documento torna a `Find`.
 - **Colonne annidate**: le colonne con sotto-documenti hanno un pulsante `▸` che le espande in colonne con il punto (`address` → `address.city`, `address.zip`, …), un livello alla volta; `Alt+clic` espande tutti i livelli. Clic sul prefisso (`address.`) per richiudere il gruppo. Filtri, range e ordinamento funzionano anche sui campi annidati (`{ "address.city": "Milano" }`). Se in un documento il campo non è un oggetto, il valore occupa tutto il gruppo. Le espansioni sono ricordate per ogni collezione.
 - **Documento JSON**: doppio clic su una riga (o clic sul numero di riga) apre una dialog con l'albero JSON espandibile; `↑/↓` per scorrere i documenti, `Copy`.
 - **Modifica**: `Edit` apre il documento in una tab dell'editor; `Ctrl+S` lo salva su MongoDB.
@@ -48,4 +56,5 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/queryHistory.ts` – cronologia e query salvate per collezione
 - `src/documentFs.ts` – file system virtuale `mongoster://` per aprire, modificare e salvare i documenti
 - `src/shared/query.ts` – parsing/formattazione della sintassi mongosh ⇄ EJSON
-- `src/webview/main.ts`, `src/webview/columns.ts`, `src/webview/history.ts`, `media/webview.css` – UI della tabella e modello delle colonne
+- `src/shared/pipeline.ts` – modello degli stage di aggregazione, modelli e conversione testo ⇄ stage
+- `src/webview/main.ts`, `src/webview/columns.ts`, `src/webview/history.ts`, `src/webview/pipeline.ts`, `media/webview.css` – UI della tabella, modello delle colonne ed editor della pipeline

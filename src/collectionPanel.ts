@@ -5,7 +5,8 @@ import { byId, CollectionRef, DocumentFileSystem } from './documentFs';
 import { errorMessage } from './tree';
 import { QueryHistory, sameQuery } from './queryHistory';
 import { isPlainObject, parseQuery, relaxEjson, toShell } from './shared/query';
-import type { HostMessage, QueryRequest, WebviewMessage } from './shared/messages';
+import { isWriteStage, parseStageBody } from './shared/pipeline';
+import type { AggregateRequest, HostMessage, QueryRequest, WebviewMessage } from './shared/messages';
 
 const { EJSON } = BSON;
 
@@ -120,6 +121,9 @@ export class CollectionPanel {
       case 'query':
         await this.runQuery(m);
         break;
+      case 'aggregate':
+        await this.runAggregate(m);
+        break;
       case 'editDocument':
         await this.documents.open(this.target, fromRelaxed(m.id));
         break;
@@ -192,6 +196,80 @@ export class CollectionPanel {
     }
   }
 
+  private async runAggregate(m: AggregateRequest): Promise<void> {
+    const started = Date.now();
+    const active = m.stages
+      .slice(0, m.upto + 1)
+      .map((stage, index) => ({ stage, index }))
+      .filter(({ stage }) => stage.enabled);
+
+    const pipeline: Document[] = [];
+    for (const { stage, index } of active) {
+      try {
+        pipeline.push({ [stage.op.trim()]: fromRelaxed(parseStageBody(stage)) });
+      } catch (err) {
+        this.post({ type: 'error', requestId: m.requestId, stage: index, message: `Stage ${index + 1} (${stage.op}): ${errorMessage(err)}` });
+        return;
+      }
+    }
+    const writes = active.filter(({ stage }) => isWriteStage(stage));
+    const misplaced = writes.find((w) => w !== active[active.length - 1]);
+    if (misplaced) {
+      this.post({ type: 'error', requestId: m.requestId, stage: misplaced.index, message: `${misplaced.stage.op} must be the last stage of the pipeline` });
+      return;
+    }
+
+    try {
+      const client = await this.connections.getClient(this.target.connectionId);
+      const coll = client.db(this.target.database).collection(this.target.collection);
+
+      if (writes.length) {
+        const { stage } = writes[0];
+        const target = toShell(parseStageBody(stage));
+        const answer = await vscode.window.showWarningMessage(
+          `Run this pipeline? Its ${stage.op} stage writes to ${target}.`,
+          { modal: true, detail: 'This modifies the database. Select an earlier stage to preview without writing.' },
+          'Run',
+        );
+        if (answer !== 'Run') {
+          this.post({ type: 'error', requestId: m.requestId, message: `Not run: the ${stage.op} stage was cancelled.` });
+          return;
+        }
+        await coll.aggregate(pipeline, { maxTimeMS: 600_000, allowDiskUse: true }).toArray();
+        this.post({
+          type: 'result',
+          requestId: m.requestId,
+          docs: [],
+          count: 0,
+          durationMs: Date.now() - started,
+          note: `Pipeline output written by ${stage.op} to ${target}.`,
+        });
+        void vscode.commands.executeCommand('mongoster.refresh');
+      } else {
+        const [docs, count] = await Promise.all([
+          coll
+            .aggregate([...pipeline, { $skip: m.skip }, { $limit: m.limit }], {
+              maxTimeMS: 60_000,
+              allowDiskUse: true,
+              promoteLongs: false,
+            })
+            .toArray(),
+          countPipeline(coll, pipeline),
+        ]);
+        this.post({
+          type: 'result',
+          requestId: m.requestId,
+          docs: relaxEjson(EJSON.serialize(docs, { relaxed: false })) as unknown[],
+          count,
+          durationMs: Date.now() - started,
+        });
+      }
+      if (await this.history.record({ filter: '', sort: '', projection: '', pipeline: m.stages })) this.postHistory();
+    } catch (err) {
+      this.post({ type: 'error', requestId: m.requestId, message: errorMessage(err) });
+    }
+  }
+
   private html(): string {
     const webview = this.panel.webview;
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...p));
@@ -208,23 +286,49 @@ export class CollectionPanel {
 <body>
   <div id="progress" class="progress"></div>
   <header class="toolbar">
-    <div class="ns" id="ns"></div>
-    <div class="row">
-      <label for="filter">Filter</label>
-      <div class="filter-wrap" id="filterWrap">
-        <textarea id="filter" rows="1" spellcheck="false" placeholder="{ field: &quot;value&quot; }  —  or drag a cell / column here"></textarea>
-        <div class="dropzones" id="dropzones"></div>
+    <div class="row top">
+      <div class="ns" id="ns"></div>
+      <span class="spacer"></span>
+      <div class="mode" role="tablist" aria-label="Query mode">
+        <button id="modeFind" role="tab" aria-selected="true" title="Filter, sort and project documents">Find</button>
+        <button id="modeAggregate" role="tab" aria-selected="false" title="Build an aggregation pipeline">Aggregate</button>
       </div>
-      <button id="run" class="primary" title="Run query (Ctrl+Enter)">Find</button>
-      <button id="reset" class="secondary" title="Clear filter, sort and projection">Reset</button>
       <button id="historyBtn" class="secondary" title="Recent and saved queries" aria-haspopup="true" aria-expanded="false">History ▾</button>
       <button id="insert" class="secondary editable" title="Insert a new document">Insert</button>
     </div>
-    <div class="row options">
-      <label for="sort">Sort</label>
-      <input id="sort" spellcheck="false" placeholder="{ field: -1 }">
-      <label for="projection">Project</label>
-      <input id="projection" spellcheck="false" placeholder="{ field: 1 }">
+    <div class="find-only">
+      <div class="row">
+        <label for="filter">Filter</label>
+        <div class="filter-wrap" id="filterWrap">
+          <textarea id="filter" rows="1" spellcheck="false" placeholder="{ field: &quot;value&quot; }  —  or drag a cell / column here"></textarea>
+          <div class="dropzones" id="dropzones"></div>
+        </div>
+        <button id="run" class="primary" title="Run query (Ctrl+Enter)">Find</button>
+        <button id="reset" class="secondary" title="Clear filter, sort and projection">Reset</button>
+      </div>
+      <div class="row options">
+        <label for="sort">Sort</label>
+        <input id="sort" spellcheck="false" placeholder="{ field: -1 }">
+        <label for="projection">Project</label>
+        <input id="projection" spellcheck="false" placeholder="{ field: 1 }">
+      </div>
+    </div>
+    <div class="aggregate-only pipeline">
+      <div class="stages-wrap" id="stagesWrap">
+        <div class="stages" id="stages"></div>
+        <textarea id="pipelineText" class="pipeline-text hidden" spellcheck="false" placeholder="[ { $match: { field: &quot;value&quot; } }, { $group: { _id: &quot;$field&quot;, n: { $sum: 1 } } } ]"></textarea>
+        <div class="dropzones pipeline-drop" id="pipelineDrop"></div>
+      </div>
+      <datalist id="stageOps"></datalist>
+      <div class="row pipeline-actions">
+        <button id="runPipeline" class="primary" title="Run the whole pipeline (Ctrl+Enter in a stage)">Run</button>
+        <button id="clearPipeline" class="secondary" title="Remove all stages">Clear</button>
+        <button id="addStage" class="secondary" title="Add a stage at the end">+ Stage</button>
+        <button id="pipelineTextToggle" class="secondary" title="Edit or paste the whole pipeline as text">Edit as text</button>
+        <button id="copyPipeline" class="secondary" title="Copy the pipeline (mongosh syntax)">Copy</button>
+        <span class="spacer"></span>
+        <span id="previewInfo" class="preview-info"></span>
+      </div>
     </div>
   </header>
   <div id="historyPanel" class="history hidden" role="dialog" aria-label="Query history">
@@ -260,9 +364,9 @@ export class CollectionPanel {
         <button id="docExpand" class="icon" title="Expand all">⊞</button>
         <button id="docCollapse" class="icon" title="Collapse all">⊟</button>
         <button id="docCopy" class="secondary">Copy</button>
-        <button id="docDuplicate" class="secondary editable" title="Open a copy without _id as a new document">Duplicate</button>
-        <button id="docDelete" class="secondary editable danger">Delete</button>
-        <button id="docEdit" class="primary" title="Open in an editor tab (Ctrl+S saves to the database)">Edit</button>
+        <button id="docDuplicate" class="secondary editable doc-write" title="Open a copy without _id as a new document">Duplicate</button>
+        <button id="docDelete" class="secondary editable danger doc-write">Delete</button>
+        <button id="docEdit" class="primary doc-write" title="Open in an editor tab (Ctrl+S saves to the database)">Edit</button>
         <button id="docClose" class="icon" title="Close (Esc)">✕</button>
       </div>
       <div class="modal-body" id="docBody"></div>
@@ -290,6 +394,15 @@ function toBson(text: string, label: string): Document | undefined {
   if (!isPlainObject(value)) throw new Error(`${label} must be an object`);
   // Non-relaxed keeps NumberLong/NumberDecimal exact instead of collapsing them to JS numbers.
   return EJSON.deserialize(value, { relaxed: false }) as Document;
+}
+
+async function countPipeline(coll: Collection, pipeline: Document[]): Promise<number | null> {
+  try {
+    const [res] = await coll.aggregate([...pipeline, { $count: 'n' }], { maxTimeMS: 10_000, allowDiskUse: true }).toArray();
+    return res?.n ?? 0;
+  } catch {
+    return null;
+  }
 }
 
 async function countDocuments(coll: Collection, filter: Document): Promise<number | null> {
