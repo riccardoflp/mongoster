@@ -13,6 +13,7 @@ import { UsersPanel } from './users';
 import { GridFSPanel, dropBucket, uploadFiles } from './gridfs';
 import { Copier } from './copy';
 import { HistoryPanel, UndoHistory } from './history';
+import { Backups } from './backup';
 import { WatchPanel, WatchScope } from './watch';
 import { ConnectionEditor, SaveConnection } from './connectionEditor';
 import type { QueryText } from './shared/messages';
@@ -28,6 +29,7 @@ interface OpenQueryArgs {
 export function activate(context: vscode.ExtensionContext): void {
   const connections = new ConnectionManager(context);
   const history = UndoHistory.init(context, connections);
+  const backups = new Backups(context, connections);
   const tree = new MongoTreeProvider(connections);
   const documents = new DocumentFileSystem(connections);
   const manager = new Manager(connections);
@@ -414,6 +416,20 @@ export function activate(context: vscode.ExtensionContext): void {
       } catch (err) {
         void vscode.window.showErrorMessage(errorMessage(err));
       }
+    }),
+
+    vscode.commands.registerCommand('mongoster.backup', (node?: ConnectionNode | DatabaseNode | CollectionNode) => {
+      if (node instanceof ConnectionNode) return backups.backup(node.info);
+      if (node instanceof DatabaseNode) return backups.backup(node.connection, node.database);
+      if (node instanceof CollectionNode) return backups.backup(node.connection, node.database, node.collection);
+      return undefined;
+    }),
+
+    vscode.commands.registerCommand('mongoster.restore', (node?: ConnectionNode | DatabaseNode | CollectionNode) => {
+      if (node instanceof ConnectionNode) return backups.restore(node.info);
+      if (node instanceof DatabaseNode) return backups.restore(node.connection, node.database);
+      if (node instanceof CollectionNode) return backups.restore(node.connection, node.database, node.collection);
+      return undefined;
     }),
 
     vscode.commands.registerCommand('mongoster.importDocuments', async (node?: CollectionNode) => {

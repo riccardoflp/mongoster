@@ -44,7 +44,7 @@ export interface CopyHooks {
 }
 
 /** Collection options that make sense on a copy. */
-const COPIED_OPTIONS = [
+export const COPIED_OPTIONS = [
   'validator',
   'validationLevel',
   'validationAction',

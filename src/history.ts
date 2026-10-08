@@ -206,6 +206,12 @@ export class UndoHistory implements vscode.Disposable {
     return new Recorder(history, target, label, limits);
   }
 
+  /** Documents an operation through the connection may change and still be recorded; undefined when not recorded. */
+  static maxDocuments(connectionId: string): number | undefined {
+    const limits = historyLimits();
+    return UndoHistory.current?.recording(connectionId, limits) ? limits.maxDocuments : undefined;
+  }
+
   /** The line of a write's confirmation telling whether it can be undone. */
   static note(connectionId: string, documents: number): string {
     const limits = historyLimits();

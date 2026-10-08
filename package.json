@@ -286,6 +286,18 @@
         "command": "mongoster.enableHistory",
         "title": "Keep Undo History",
         "category": "Mongoster"
+      },
+      {
+        "command": "mongoster.backup",
+        "title": "Back Up…",
+        "category": "Mongoster",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "mongoster.restore",
+        "title": "Restore from Backup…",
+        "category": "Mongoster",
+        "icon": "$(history)"
       }
     ],
     "menus": {
@@ -521,6 +533,26 @@
           "command": "mongoster.addConnectionWithOptions",
           "when": "view == mongoster.connections && viewItem == folder",
           "group": "0_create@2"
+        },
+        {
+          "command": "mongoster.backup",
+          "when": "view == mongoster.connections && viewItem =~ /^(connection|database)/",
+          "group": "2_backup@1"
+        },
+        {
+          "command": "mongoster.restore",
+          "when": "view == mongoster.connections && viewItem =~ /^(connection|database)(?!.*readonly)/",
+          "group": "2_backup@2"
+        },
+        {
+          "command": "mongoster.backup",
+          "when": "view == mongoster.connections && viewItem =~ /^(collection|view)/",
+          "group": "2_transfer@6"
+        },
+        {
+          "command": "mongoster.restore",
+          "when": "view == mongoster.connections && viewItem == collection",
+          "group": "2_transfer@7"
         }
       ],
       "commandPalette": [
@@ -658,6 +690,14 @@
         },
         {
           "command": "mongoster.enableHistory",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.backup",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.restore",
           "when": "false"
         }
       ],
