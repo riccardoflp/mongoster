@@ -261,6 +261,84 @@ export interface CollectionStats {
   error?: string;
 }
 
+export interface ReplMember {
+  id: number;
+  /** host:port */
+  name: string;
+  /** PRIMARY, SECONDARY, ARBITER, RECOVERING, (not reachable/healthy)… */
+  state: string;
+  health: number;
+  /** The server Mongoster is connected to. */
+  self: boolean;
+  /** Seconds. */
+  uptime?: number;
+  /** ISO time of the last operation applied. */
+  optime?: string;
+  /** Seconds behind the primary (or the most recent member when there's no primary). */
+  lag?: number;
+  /** ISO time. */
+  lastHeartbeat?: string;
+  pingMs?: number;
+  syncSource?: string;
+  /** infoMessage or lastHeartbeatMessage. */
+  message?: string;
+  priority?: number;
+  votes?: number;
+  hidden?: boolean;
+  arbiter?: boolean;
+  /** secondaryDelaySecs (slaveDelay before 5.0). */
+  delay?: number;
+  tags?: Record<string, string>;
+  buildIndexes?: boolean;
+  /** The member's entries of replSetGetStatus and replSetGetConfig, relaxed EJSON. */
+  raw: unknown;
+}
+
+export interface OplogStats {
+  /** Bytes. */
+  size?: number;
+  maxSize?: number;
+  count?: number;
+  /** ISO times of the oldest and newest entries. */
+  first?: string;
+  last?: string;
+  /** Seconds between them: how far behind a member can fall and still catch up. */
+  window?: number;
+}
+
+export interface ReplStatus {
+  kind: 'replicaSet' | 'standalone' | 'mongos';
+  setName?: string;
+  /** The connected server, host:port. */
+  me?: string;
+  primary?: string;
+  term?: number;
+  members?: ReplMember[];
+  settings?: { electionTimeoutMillis?: number; heartbeatIntervalMillis?: number; chainingAllowed?: boolean; protocolVersion?: number };
+  /** replSetGetStatus / replSetGetConfig failed (e.g. missing the clusterMonitor role). */
+  statusError?: string;
+  oplog?: OplogStats;
+  oplogError?: string;
+  at: number;
+}
+
+export interface OplogEntry {
+  /** Timestamp as "seconds:increment", unique. */
+  key: string;
+  /** ISO time (wall clock, or the timestamp's seconds). */
+  time: string;
+  /** insert, update, delete, command, noop, transaction */
+  op: string;
+  ns: string;
+  /** The document's _id on one line. */
+  id?: string;
+  summary: string;
+  raw: unknown;
+}
+
+/** Oplog operation filter: '' every operation except no-ops; '*' everything. */
+export type OplogOp = '' | '*' | 'i' | 'u' | 'd' | 'c' | 'n';
+
 export type MonitorHostMessage =
   | { type: 'init'; connectionName: string; readOnly: boolean; color?: string; databases: string[] }
   | { type: 'ops'; requestId: number; ops?: MonitorOp[]; error?: string; at: number }
@@ -281,7 +359,10 @@ export type MonitorHostMessage =
   | { type: 'profileAction'; ok: boolean; message?: string }
   | { type: 'server'; requestId: number; stats?: ServerStats; error?: string }
   | { type: 'databases'; requestId: number; databases?: DatabaseStats[]; error?: string }
-  | { type: 'collections'; requestId: number; database: string; collections?: CollectionStats[]; error?: string };
+  | { type: 'collections'; requestId: number; database: string; collections?: CollectionStats[]; error?: string }
+  | { type: 'replication'; requestId: number; status?: ReplStatus; error?: string }
+  | { type: 'oplog'; requestId: number; entries?: OplogEntry[]; limited?: boolean; error?: string }
+  | { type: 'replAction'; ok: boolean; message?: string };
 
 export type MonitorViewMessage =
   | { type: 'ready' }
@@ -299,6 +380,10 @@ export type MonitorViewMessage =
   | { type: 'loadServer'; requestId: number }
   | { type: 'loadDatabases'; requestId: number }
   | { type: 'loadCollections'; requestId: number; database: string }
+  | { type: 'loadReplication'; requestId: number }
+  /** `ns`: a database or a collection ('' for all). */
+  | { type: 'loadOplog'; requestId: number; ns: string; op: OplogOp; limit: number }
+  | { type: 'stepDown' }
   | { type: 'copy'; text: string };
 
 // ---- change streams

@@ -1,5 +1,6 @@
 // Server monitor: one tab per connection with the running operations (currentOp, killOp), the slow
-// queries recorded by the profiler or logged by the server, and server, database and collection statistics.
+// queries recorded by the profiler or logged by the server, server, database and collection statistics,
+// and the replica set's members and oplog.
 import * as vscode from 'vscode';
 import { BSON, Db, Document, MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
@@ -9,14 +10,19 @@ import type {
   MonitorHostMessage,
   MonitorOp,
   MonitorViewMessage,
+  OplogOp,
+  ReplStatus,
   ServerStats,
 } from './shared/messages';
 import { relaxEjson, toShell } from './shared/query';
 import { OpQuery, SlowOp, SlowOpSource, fromLogLine, fromProfileDoc, isNoise, splitNs } from './shared/profile';
+import { helloMembers, oplogEntry, oplogFilter, replMembers } from './replication';
 import { errorMessage } from './tree';
 
 const { EJSON } = BSON;
 
+/** Longest scan of the oplog for its most recent entries matching a filter. */
+const OPLOG_MAX_TIME_MS = 10_000;
 /** Profiler documents read: the most recent ones. */
 const PROFILE_LIMIT = 1000;
 /** Databases and collections whose statistics are read in parallel. */
@@ -135,6 +141,15 @@ export class MonitorPanel {
         break;
       case 'loadCollections':
         await this.loadCollections(m.requestId, m.database);
+        break;
+      case 'loadReplication':
+        await this.loadReplication(m.requestId);
+        break;
+      case 'loadOplog':
+        await this.loadOplog(m.requestId, m.ns, m.op, m.limit);
+        break;
+      case 'stepDown':
+        await this.stepDown();
         break;
       case 'copy':
         await vscode.env.clipboard.writeText(m.text);
@@ -378,6 +393,99 @@ export class MonitorPanel {
     }
   }
 
+  // ---- replication
+
+  private async loadReplication(requestId: number): Promise<void> {
+    try {
+      const client = await this.client();
+      const admin = client.db('admin');
+      const hello = await admin.command({ hello: 1 });
+      const status: ReplStatus = { kind: 'replicaSet', setName: hello.setName, me: hello.me, primary: hello.primary, at: Date.now() };
+      if (hello.msg === 'isdbgrid') status.kind = 'mongos';
+      else if (!hello.setName) status.kind = 'standalone';
+      if (status.kind !== 'replicaSet') return this.post({ type: 'replication', requestId, status });
+
+      const [st, conf] = await Promise.allSettled([admin.command({ replSetGetStatus: 1 }), admin.command({ replSetGetConfig: 1 })]);
+      if (st.status === 'fulfilled') {
+        const config = conf.status === 'fulfilled' ? (conf.value.config as Document) : undefined;
+        status.members = replMembers(relaxed(st.value.members) as unknown[], (relaxed(config?.members ?? []) as unknown[]) ?? []);
+        status.term = st.value.term === undefined ? undefined : Number(st.value.term);
+        const settings = (config?.settings ?? {}) as Document;
+        const n = (v: unknown) => (v === undefined ? undefined : Number(v));
+        status.settings = {
+          electionTimeoutMillis: n(settings.electionTimeoutMillis),
+          heartbeatIntervalMillis: n(settings.heartbeatIntervalMillis),
+          chainingAllowed: settings.chainingAllowed,
+          protocolVersion: n(config?.protocolVersion),
+        };
+      } else {
+        status.statusError = errorMessage(st.reason);
+        status.members = helloMembers(hello);
+      }
+
+      try {
+        const oplog = client.db('local').collection('oplog.rs');
+        const [stats] = await oplog.aggregate([{ $collStats: { storageStats: {} } }]).toArray();
+        const storage = (stats?.storageStats ?? {}) as Document;
+        const [first] = await oplog.find({}, { sort: { $natural: 1 }, limit: 1, projection: { ts: 1, wall: 1 } }).toArray();
+        const [last] = await oplog.find({}, { sort: { $natural: -1 }, limit: 1, projection: { ts: 1, wall: 1 } }).toArray();
+        const [from, to] = [first, last].map((e) => (e ? oplogEntry(relaxed(e) as Record<string, unknown>) : undefined));
+        const seconds = (e: typeof from) => Number(e?.key.split(':')[0]);
+        const n = (v: unknown) => (v === undefined ? undefined : Number(v));
+        status.oplog = { size: n(storage.size), maxSize: n(storage.maxSize), count: n(storage.count), first: from?.time, last: to?.time };
+        if (from && to) status.oplog.window = Math.max(0, seconds(to) - seconds(from));
+      } catch (err) {
+        status.oplogError = errorMessage(err);
+      }
+      this.post({ type: 'replication', requestId, status });
+    } catch (err) {
+      this.post({ type: 'replication', requestId, error: errorMessage(err) });
+    }
+  }
+
+  /** The most recent oplog entries, newest first. */
+  private async loadOplog(requestId: number, ns: string, op: OplogOp, limit: number): Promise<void> {
+    try {
+      const docs = await (await this.client())
+        .db('local')
+        .collection('oplog.rs')
+        .find(oplogFilter(ns, op), { sort: { $natural: -1 }, limit: limit + 1, maxTimeMS: OPLOG_MAX_TIME_MS })
+        .toArray();
+      const entries = docs.slice(0, limit).map((d) => oplogEntry(relaxed(d) as Record<string, unknown>));
+      this.post({ type: 'oplog', requestId, entries, limited: docs.length > limit });
+    } catch (err) {
+      const message = errorMessage(err);
+      this.post({
+        type: 'oplog',
+        requestId,
+        error: /MaxTimeMSExpired|time limit/i.test(message) ? `Few entries match and the oplog is long: reading it took more than ${OPLOG_MAX_TIME_MS / 1000} s. ${message}` : message,
+      });
+    }
+  }
+
+  private async stepDown(): Promise<void> {
+    const reply = (ok: boolean, message?: string) => this.post({ type: 'replAction', ok, message });
+    if (this.info.readOnly) return reply(false, `The connection ${this.info.name} is read-only.`);
+    try {
+      const admin = (await this.client()).db('admin');
+      const hello = await admin.command({ hello: 1 });
+      if (!hello.setName || !hello.primary) return reply(false, 'There is no primary to step down.');
+      const answer = await vscode.window.showWarningMessage(
+        `Step down the primary ${hello.primary} of ${hello.setName}?`,
+        {
+          modal: true,
+          detail: 'The members elect a new primary: writes fail until then (usually a few seconds). The current primary can not be elected again for 60 seconds.',
+        },
+        'Step Down',
+      );
+      if (answer !== 'Step Down') return reply(false);
+      await admin.command({ replSetStepDown: 60, secondaryCatchUpPeriodSecs: 10 });
+      reply(true, `${hello.primary} stepped down: a new primary is being elected.`);
+    } catch (err) {
+      reply(false, errorMessage(err));
+    }
+  }
+
   private html(): string {
     const webview = this.panel.webview;
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...p));
@@ -398,6 +506,7 @@ export class MonitorPanel {
       <button id="tabOps" role="tab" aria-selected="true">Operations</button>
       <button id="tabProfile" role="tab" aria-selected="false">Slow queries</button>
       <button id="tabStats" role="tab" aria-selected="false">Stats</button>
+      <button id="tabRepl" role="tab" aria-selected="false">Replication</button>
     </div>
     <div class="spacer"></div>
     <label class="auto" title="Refresh the current tab periodically">Auto
@@ -479,6 +588,47 @@ export class MonitorPanel {
     <h3 id="collTitle" class="hidden"></h3>
     <div id="collError" class="error hidden"></div>
     <div class="table-wrap"><table id="collTable" class="sortable"></table></div>
+  </section>
+  <section id="replView" class="view hidden">
+    <div id="replError" class="error hidden"></div>
+    <div id="replMessage" class="message hidden"></div>
+    <div id="replCards" class="cards"></div>
+    <div id="replMembers" class="hidden">
+      <div class="toolbar">
+        <h3 class="inline">Members</h3>
+        <span id="replInfo" class="info"></span>
+        <span class="spacer"></span>
+        <button id="stepDown" class="secondary not-locked" title="Make the primary step down so that the members elect another one (replSetStepDown), e.g. to try a failover">Step Down…</button>
+      </div>
+      <div class="table-wrap"><table id="memberTable"></table></div>
+    </div>
+    <div id="oplogSection" class="hidden">
+      <div class="toolbar">
+        <h3 class="inline">Oplog</h3>
+        <input id="oplogNs" type="search" placeholder="Database or collection (shop, shop.users)" spellcheck="false">
+        <label>Operation
+          <select id="oplogOp">
+            <option value="">all but no-ops</option>
+            <option value="i">insert</option>
+            <option value="u">update</option>
+            <option value="d">delete</option>
+            <option value="c">command / transaction</option>
+            <option value="n">no-op</option>
+            <option value="*">everything</option>
+          </select>
+        </label>
+        <label>Last
+          <select id="oplogLimit">
+            <option value="50">50</option>
+            <option value="200">200</option>
+            <option value="1000">1,000</option>
+          </select>
+        </label>
+        <span id="oplogInfo" class="info"></span>
+      </div>
+      <div id="oplogError" class="error hidden"></div>
+      <div class="table-wrap"><table id="oplogTable"></table></div>
+    </div>
   </section>
   <script nonce="${nonce}" src="${asset('dist', 'monitor.js')}"></script>
 </body>

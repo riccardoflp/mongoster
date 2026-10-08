@@ -409,3 +409,69 @@ tr.detail summary {
   cursor: pointer;
   color: var(--muted);
 }
+
+/* ---------- replication ---------- */
+
+#replView {
+  display: block;
+  padding-bottom: 16px;
+}
+
+h3.inline {
+  margin: 0;
+}
+
+td.state-primary {
+  color: var(--vscode-charts-green, #89d185);
+  font-weight: 600;
+}
+
+td.state-secondary {
+  color: var(--vscode-charts-blue, #3794ff);
+}
+
+td.state-arbiter {
+  color: var(--muted);
+}
+
+td.state-other {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+td.state-down {
+  color: var(--vscode-errorForeground, #f48771);
+  font-weight: 600;
+}
+
+td.self {
+  font-weight: 600;
+}
+
+td.ok {
+  color: var(--vscode-charts-green, #89d185);
+}
+
+#oplogNs {
+  min-width: 240px;
+}
+
+#oplogTable td.time,
+#oplogTable td.ns {
+  color: var(--muted);
+}
+
+#oplogTable td.key {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#oplogTable td.op {
+  font-weight: 600;
+  color: var(--op-color, var(--muted));
+}
+
+tr.op-insert { --op-color: var(--vscode-charts-green, #89d185); }
+tr.op-update { --op-color: var(--vscode-charts-blue, #3794ff); }
+tr.op-delete { --op-color: var(--vscode-charts-red, #f14c4c); }
+tr.op-other { --op-color: var(--vscode-charts-orange, #d18616); }

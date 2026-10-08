@@ -1,16 +1,20 @@
-// Server monitor tab: running operations, profiler entries and statistics, refreshed on demand or periodically.
+// Server monitor tab: running operations, profiler entries, statistics and replication, refreshed on demand or periodically.
 import type {
   CollectionStats,
   DatabaseStats,
   MonitorHostMessage,
   MonitorOp,
   MonitorViewMessage,
+  OplogEntry,
+  OplogOp,
+  ReplMember,
+  ReplStatus,
   ServerStats,
 } from '../shared/messages';
 import { prettyShell, toShell } from '../shared/query';
 import { SlowOp, SlowOpGroup, SlowOpSource, canOpen, groupOps, splitNs } from '../shared/profile';
 
-type Tab = 'ops' | 'profile' | 'stats';
+type Tab = 'ops' | 'profile' | 'stats' | 'repl';
 
 interface State {
   tab: Tab;
@@ -31,6 +35,9 @@ interface State {
   statsDb?: string;
   dbSort?: SortState;
   collSort?: SortState;
+  oplogNs: string;
+  oplogOp: OplogOp;
+  oplogLimit: number;
 }
 
 interface SortState {
@@ -56,6 +63,9 @@ const state: State = {
   profileSince: 60,
   profileView: 'grouped',
   profileFilter: '',
+  oplogNs: '',
+  oplogOp: '',
+  oplogLimit: 50,
   ...vscode.getState(),
 };
 const save = () => vscode.setState(state);
@@ -71,6 +81,11 @@ let collStats: CollectionStats[] = [];
 /** Previous server sample, for rates. */
 let lastServer: ServerStats | undefined;
 let server: ServerStats | undefined;
+let repl: ReplStatus | undefined;
+let oplog: OplogEntry[] = [];
+let oplogLimited = false;
+const expandedMembers = new Set<string>();
+const expandedOplog = new Set<string>();
 const expandedOps = new Set<string>();
 const expandedProfile = new Set<string>();
 const killing = new Set<string>();
@@ -166,6 +181,7 @@ function setTab(tab: Tab): void {
     ['ops', 'opsView', 'tabOps'],
     ['profile', 'profileView', 'tabProfile'],
     ['stats', 'statsView', 'tabStats'],
+    ['repl', 'replView', 'tabRepl'],
   ] as const) {
     el(view).classList.toggle('hidden', t !== tab);
     el(button).setAttribute('aria-selected', String(t === tab));
@@ -177,7 +193,10 @@ function setTab(tab: Tab): void {
 function refresh(full: boolean): void {
   if (state.tab === 'ops') vscode.postMessage({ type: 'loadOps', requestId: request('ops'), includeIdle: state.idle });
   else if (state.tab === 'profile') profileRequest();
-  else {
+  else if (state.tab === 'repl') {
+    vscode.postMessage({ type: 'loadReplication', requestId: request('repl') });
+    oplogRequest();
+  } else {
     vscode.postMessage({ type: 'loadServer', requestId: request('server') });
     if (full) {
       vscode.postMessage({ type: 'loadDatabases', requestId: request('databases') });
@@ -680,6 +699,185 @@ function renderCollections(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Replication
+
+function oplogRequest(): void {
+  vscode.postMessage({ type: 'loadOplog', requestId: request('oplog'), ns: state.oplogNs.trim(), op: state.oplogOp, limit: state.oplogLimit });
+}
+
+/** Seconds as "45 s", "3m 20s", "41h 12m", "3d 4h". */
+function seconds(n: number): string {
+  if (n < 60) return `${Math.round(n)} s`;
+  return uptime(n);
+}
+
+function clock(iso: string, withMs = false): string {
+  const d = new Date(iso);
+  const p = (n: number, w = 2) => String(n).padStart(w, '0');
+  const today = new Date().toDateString() === d.toDateString();
+  const date = today ? '' : `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} `;
+  return `${date}${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}${withMs ? `.${p(d.getMilliseconds(), 3)}` : ''}`;
+}
+
+const stateClass = (m: ReplMember) =>
+  !m.health && m.state !== '?' ? 'state-down' : m.state === 'PRIMARY' ? 'state-primary' : m.state === 'SECONDARY' ? 'state-secondary' : m.state === 'ARBITER' ? 'state-arbiter' : 'state-other';
+
+function card(cards: HTMLElement, label: string, value: string, sub?: string, valueClass = ''): void {
+  const c = document.createElement('div');
+  c.className = 'card';
+  const l = document.createElement('div');
+  l.className = 'card-label';
+  l.textContent = label;
+  const v = document.createElement('div');
+  v.className = `card-value ${valueClass}`;
+  v.textContent = value;
+  c.append(l, v);
+  if (sub) {
+    const d = document.createElement('div');
+    d.className = 'card-sub';
+    d.textContent = sub;
+    c.append(d);
+  }
+  cards.append(c);
+}
+
+function replMessage(text: string, failed = false): void {
+  const box = el('replMessage');
+  box.textContent = text;
+  box.classList.toggle('hidden', !text);
+  box.classList.toggle('failed', failed);
+}
+
+function renderRepl(): void {
+  const cards = el('replCards');
+  cards.replaceChildren();
+  const r = repl;
+  const isSet = r?.kind === 'replicaSet';
+  el('replMembers').classList.toggle('hidden', !isSet);
+  el('oplogSection').classList.toggle('hidden', !isSet);
+  if (!r) return;
+  if (!isSet) {
+    replMessage(
+      r.kind === 'mongos'
+        ? 'Connected to a mongos (sharded cluster): add a connection to a shard to see its replica set and oplog.'
+        : `${r.me ?? 'This server'} is a standalone server: it is not part of a replica set, so there is no replication and no oplog.`,
+    );
+    return;
+  }
+  const members = r.members ?? [];
+  const self = members.find((m) => m.self);
+  card(cards, 'Replica set', r.setName ?? '', [r.term !== undefined ? `term ${r.term}` : '', r.settings?.protocolVersion !== undefined ? `protocol v${r.settings.protocolVersion}` : ''].filter(Boolean).join(' · '));
+  card(cards, 'Primary', r.primary ?? 'none', self ? `connected to ${self.name} (${self.state.toLowerCase()})` : r.me ? `connected to ${r.me}` : undefined, r.primary ? '' : 'very-slow');
+  const byState = new Map<string, number>();
+  for (const m of members) byState.set(m.state.toLowerCase(), (byState.get(m.state.toLowerCase()) ?? 0) + 1);
+  const healthy = members.filter((m) => m.health === 1).length;
+  card(cards, 'Members', `${healthy} / ${members.length} healthy`, [...byState].map(([k, n]) => `${n} ${k}`).join(' · '), healthy < members.length ? 'very-slow' : '');
+  const lagging = members.filter((m) => m.lag !== undefined && !m.delay);
+  if (lagging.length) {
+    const max = lagging.reduce((a, m) => (m.lag! > a.lag! ? m : a));
+    const delayed = members.some((m) => m.delay);
+    card(cards, 'Replication lag', max.lag ? seconds(max.lag) : '0 s', [max.lag ? max.name : 'every member is up to date', delayed ? 'delayed members left out' : ''].filter(Boolean).join(' · '), max.lag! >= 60 ? 'very-slow' : max.lag! >= 10 ? 'slow' : '');
+  }
+  if (r.oplog) {
+    const o = r.oplog;
+    card(
+      cards,
+      'Oplog window',
+      o.window !== undefined ? seconds(o.window) : '',
+      [o.size !== undefined ? `${bytes(o.size)}${o.maxSize ? ` of ${bytes(o.maxSize)}` : ''}` : '', o.count !== undefined ? `${count(o.count)} entries` : '', o.first ? `since ${clock(o.first)}` : '']
+        .filter(Boolean)
+        .join(' · '),
+    );
+  }
+  const st = r.settings;
+  if (st?.electionTimeoutMillis !== undefined) {
+    card(
+      cards,
+      'Elections',
+      `${st.electionTimeoutMillis / 1000} s timeout`,
+      [st.heartbeatIntervalMillis !== undefined ? `heartbeat every ${st.heartbeatIntervalMillis / 1000} s` : '', st.chainingAllowed === false ? 'chaining not allowed' : 'chaining allowed'].filter(Boolean).join(' · '),
+    );
+  }
+  replMessage([r.statusError ? `Member details need the clusterMonitor role: ${r.statusError}` : '', r.oplogError ? `Oplog: ${r.oplogError}` : ''].filter(Boolean).join('\n'), true);
+  el('replInfo').textContent = r.at ? `as of ${clock(new Date(r.at).toISOString())}` : '';
+  const step = el<HTMLButtonElement>('stepDown');
+  step.disabled = !r.primary;
+  step.title = r.primary ? `Make ${r.primary} step down so that the members elect another primary (replSetStepDown), e.g. to try a failover` : 'There is no primary';
+  renderMembers();
+}
+
+function renderMembers(): void {
+  const table = el<HTMLTableElement>('memberTable');
+  table.replaceChildren();
+  const members = repl?.members ?? [];
+  header(table, ['member', 'state', 'lag', 'last applied', 'heartbeat', 'ping', 'sync source', 'priority', 'votes', 'notes', 'uptime']);
+  const body = table.createTBody();
+  const at = repl?.at ?? Date.now();
+  for (const m of members) {
+    const row = body.insertRow();
+    row.className = 'clickable';
+    if (expandedMembers.has(m.name)) row.classList.add('expanded');
+    cell(row, m.name + (m.self ? ' ★' : ''), m.self ? 'self' : '', m.self ? 'The server Mongoster is connected to' : undefined);
+    cell(row, m.health || m.state === '?' || m.state.startsWith('(') ? m.state : `${m.state} (down)`, stateClass(m));
+    const lagCell = cell(row, m.lag === undefined ? '' : seconds(m.lag), 'num');
+    if (m.lag !== undefined && !m.delay) lagCell.classList.add(m.lag >= 60 ? 'very-slow' : m.lag >= 10 ? 'slow' : 'ok');
+    if (m.delay) lagCell.title = `Delayed by ${seconds(m.delay)} on purpose`;
+    cell(row, m.optime ? clock(m.optime) : '', '', m.optime);
+    cell(row, m.lastHeartbeat ? `${seconds(Math.max(0, (at - Date.parse(m.lastHeartbeat)) / 1000))} ago` : m.self ? '—' : '', 'num', m.lastHeartbeat);
+    cell(row, m.pingMs === undefined ? '' : `${m.pingMs} ms`, 'num');
+    cell(row, m.syncSource ?? '');
+    cell(row, m.priority === undefined ? '' : String(m.priority), 'num');
+    cell(row, m.votes === undefined ? '' : String(m.votes), 'num');
+    const notes = [
+      m.hidden ? 'hidden' : '',
+      m.delay ? `delayed ${seconds(m.delay)}` : '',
+      m.priority === 0 && !m.arbiter ? 'never primary' : '',
+      m.buildIndexes === false ? 'no index builds' : '',
+      m.tags ? Object.entries(m.tags).map(([k, v]) => `${k}: ${v}`).join(', ') : '',
+      m.message ?? '',
+    ].filter(Boolean);
+    cell(row, notes.join(' · '), m.message ? 'command' : '', notes.join('\n'));
+    cell(row, m.uptime === undefined ? '' : uptime(m.uptime), 'num');
+    row.addEventListener('click', () => {
+      if (expandedMembers.has(m.name)) expandedMembers.delete(m.name);
+      else expandedMembers.add(m.name);
+      renderMembers();
+    });
+    if (expandedMembers.has(m.name)) detailRow(table, 11, m.raw);
+  }
+}
+
+function renderOplog(): void {
+  const table = el<HTMLTableElement>('oplogTable');
+  table.replaceChildren();
+  header(table, ['time', 'op', 'namespace', '_id', 'change']);
+  const body = table.createTBody();
+  for (const e of oplog) {
+    const row = body.insertRow();
+    row.className = `clickable op-${['insert', 'update', 'delete'].includes(e.op) ? e.op : e.op === 'noop' ? 'noop' : 'other'}`;
+    if (expandedOplog.has(e.key)) row.classList.add('expanded');
+    cell(row, clock(e.time, true), 'time', `${e.time} · timestamp ${e.key}`);
+    cell(row, e.op, 'op');
+    cell(row, e.ns, 'ns');
+    cell(row, e.id ?? '', 'key', e.id);
+    cell(row, e.summary, 'command', e.summary);
+    row.addEventListener('click', () => {
+      if (expandedOplog.has(e.key)) expandedOplog.delete(e.key);
+      else expandedOplog.add(e.key);
+      renderOplog();
+    });
+    if (expandedOplog.has(e.key)) detailRow(table, 5, e.raw);
+  }
+  if (!oplog.length) {
+    const c = body.insertRow().insertCell();
+    c.colSpan = 5;
+    c.className = 'empty';
+    c.textContent = state.oplogNs.trim() || state.oplogOp ? 'No entry matches.' : 'The oplog is empty.';
+  }
+  el('oplogInfo').textContent = oplog.length ? `${oplogLimited ? 'the' : 'all'} ${count(oplog.length)} most recent${oplogLimited ? '' : ' matching'} entr${oplog.length === 1 ? 'y' : 'ies'}, newest first` : '';
+}
+
+// ---------------------------------------------------------------------------
 // Messages
 
 window.addEventListener('message', (e: MessageEvent<MonitorHostMessage>) => {
@@ -757,12 +955,33 @@ window.addEventListener('message', (e: MessageEvent<MonitorHostMessage>) => {
       collStats = m.collections ?? [];
       renderCollections();
       break;
+    case 'replication':
+      if (m.requestId !== latest.repl) return;
+      showError('replError', m.error);
+      if (m.status) repl = m.status;
+      for (const name of [...expandedMembers]) if (!repl?.members?.some((x) => x.name === name)) expandedMembers.delete(name);
+      renderRepl();
+      break;
+    case 'oplog':
+      if (m.requestId !== latest.oplog) return;
+      showError('oplogError', m.error);
+      oplog = m.entries ?? [];
+      oplogLimited = !!m.limited;
+      for (const key of [...expandedOplog]) if (!oplog.some((x) => x.key === key)) expandedOplog.delete(key);
+      renderOplog();
+      break;
+    case 'replAction':
+      el<HTMLButtonElement>('stepDown').disabled = false;
+      if (m.message) replMessage(m.message, !m.ok);
+      if (m.ok) setTimeout(() => refresh(false), 1500);
+      break;
   }
 });
 
 el('tabOps').addEventListener('click', () => setTab('ops'));
 el('tabProfile').addEventListener('click', () => setTab('profile'));
 el('tabStats').addEventListener('click', () => setTab('stats'));
+el('tabRepl').addEventListener('click', () => setTab('repl'));
 el('refresh').addEventListener('click', () => refresh(true));
 const auto = el<HTMLSelectElement>('auto');
 auto.value = String(state.auto);
@@ -848,6 +1067,34 @@ el('profileApply').addEventListener('click', () => {
 el('logApply').addEventListener('click', () => vscode.postMessage({ type: 'setProfile', database: '', level: -1, slowms: slowmsOf('logSlowms') }));
 el('profileClear').addEventListener('click', () => {
   if (state.profileDb) vscode.postMessage({ type: 'clearProfile', database: state.profileDb });
+});
+
+const oplogNs = el<HTMLInputElement>('oplogNs');
+oplogNs.value = state.oplogNs;
+let oplogTimer: ReturnType<typeof setTimeout> | undefined;
+oplogNs.addEventListener('input', () => {
+  state.oplogNs = oplogNs.value;
+  save();
+  clearTimeout(oplogTimer);
+  oplogTimer = setTimeout(oplogRequest, 300);
+});
+for (const [id, key] of [
+  ['oplogOp', 'oplogOp'],
+  ['oplogLimit', 'oplogLimit'],
+] as const) {
+  const select = el<HTMLSelectElement>(id);
+  select.value = String(state[key]);
+  select.addEventListener('change', () => {
+    if (key === 'oplogOp') state.oplogOp = select.value as OplogOp;
+    else state.oplogLimit = Number(select.value);
+    save();
+    expandedOplog.clear();
+    oplogRequest();
+  });
+}
+el('stepDown').addEventListener('click', () => {
+  el<HTMLButtonElement>('stepDown').disabled = true;
+  vscode.postMessage({ type: 'stepDown' });
 });
 
 setAuto(state.auto);

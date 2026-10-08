@@ -123,7 +123,7 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - La connessione e il database di default si vedono (e si cambiano) nella CodeLens in cima al file e nella barra di stato; `use("…")` nello script ha la precedenza. Con una connessione in sola lettura i metodi che scrivono, `$out`/`$merge` e i comandi che modificano vengono rifiutati.
   - Gli errori indicano la riga (clic per andarci); `Cancel` sulla notifica smette di attendere il risultato (le operazioni già inviate possono completarsi sul server).
   - Autocompletamento nel file: dopo `db.` le collezioni e i metodi del database, dopo `db.users.` i metodi della collezione, dopo `find(...).` quelli del cursore; dentro `find`, `aggregate`, `updateMany`, `sort`… gli stessi suggerimenti di campi, operatori e valori della tabella.
-- **Monitor del server**: clic destro su una connessione → `Open Server Monitor` apre una tab con tre schede, aggiornate con `Refresh` o in automatico (2, 5 o 15 secondi, solo quando la tab è visibile):
+- **Monitor del server**: clic destro su una connessione → `Open Server Monitor` apre una tab con quattro schede, aggiornate con `Refresh` o in automatico (2, 5 o 15 secondi, solo quando la tab è visibile):
   - `Operations`: le operazioni in corso (`currentOp`) con tipo, namespace, durata (gialla oltre 5 s, rossa oltre 30 s), client e applicazione, piano (`COLLSCAN` evidenziato), attesa di lock e comando; filtro per testo e per durata minima, connessioni inattive e operazioni interne del server su richiesta. Clic su una riga per il dettaglio completo; `Kill` interrompe l'operazione (`killOp`) dopo conferma.
   - `Slow queries`: le operazioni lente, da due sorgenti:
     - `Profiler`: quelle registrate in `system.profile` del database scelto (le ultime 1.000). Il livello del profiler (spento, operazioni oltre N ms, tutte) si cambia da lì; `Clear` svuota le operazioni registrate mantenendo le impostazioni.
@@ -133,7 +133,13 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
     - Quando la query scansiona tutta la collezione (`COLLSCAN`), ordina in memoria o esamina molti più documenti di quanti ne restituisce, il dettaglio (⚑) propone un indice secondo la regola ESR (uguaglianze, ordinamento, intervalli) e `Create Index…` lo crea dopo conferma; se esiste già lo segnala.
     - `Open in Collection` apre il filtro (con ordinamento e proiezione) o la pipeline nella tab della collezione, `Explain` lo apre e mostra subito il piano attuale; `Copy Query`, `Show Operations` (le singole esecuzioni) e il documento completo del profiler o del log.
   - `Stats`: versione, uptime, connessioni, operazioni al secondo per tipo, rete e memoria del server; tabella dei database (collezioni, view, documenti, dati, storage, indici) e, cliccandone uno, delle sue collezioni, ordinabili per colonna.
-  - Con una connessione in sola lettura le operazioni non si possono interrompere, il profiler e la soglia non si possono cambiare e gli indici suggeriti non si possono creare.
+  - `Replication`: lo stato del replica set:
+    - riquadri con nome del replica set e term, primario attuale (e server a cui si è connessi), membri in salute, ritardo di replica massimo (giallo oltre 10 s, rosso oltre 60 s; i membri ritardati di proposito sono esclusi), finestra dell'oplog (quanto tempo copre: fin dove un membro può restare indietro e riallinearsi), dimensione e numero di voci, impostazioni delle elezioni;
+    - la tabella dei membri: stato (`PRIMARY`, `SECONDARY`, `ARBITER`, non raggiungibile…), ritardo rispetto al primario, ultima operazione applicata, ultimo heartbeat, ping, sorgente di sincronizzazione, priorità e voti, note (nascosto, ritardato di N s, mai primario, tag, messaggi di errore), uptime. Clic su un membro per i dati completi di `replSetGetStatus` e `replSetGetConfig`;
+    - `Step Down…` fa dimettere il primario dopo conferma (`replSetStepDown`) perché ne venga eletto un altro, ad esempio per provare un failover;
+    - l'**oplog**: le ultime 50, 200 o 1.000 operazioni replicate, le più recenti in alto, filtrabili per database o collezione (anche dentro le transazioni) e per tipo. Per ogni voce: ora, tipo, namespace, `_id` e cosa cambia (`set status, address.city · unset tempToken` per gli aggiornamenti, il documento inserito, il comando, le operazioni di una transazione); clic per la voce completa. Le no-op periodiche sono escluse se non richieste.
+    - Su un server standalone o un mongos la scheda lo segnala. Senza il ruolo `clusterMonitor` i membri vengono letti da `hello` con meno dettagli.
+  - Con una connessione in sola lettura le operazioni non si possono interrompere, il profiler e la soglia non si possono cambiare, gli indici suggeriti non si possono creare e il primario non si può far dimettere.
 - **Watch (change stream)**: clic destro su una collezione, un database o una connessione → `Watch Changes` (o `Watch` nella toolbar della collezione) apre una tab che mostra in tempo reale inserimenti, modifiche, sostituzioni ed eliminazioni (e `drop`, `rename`, …), i più recenti in alto:
   - clic su un evento per il dettaglio: per le modifiche la tabella dei campi cambiati (prima → dopo), per gli inserimenti il documento, poi il documento attuale, l'evento completo con `Copy event` e `Open document` per aprirlo nell'editor;
   - i valori **prima** della modifica (e il documento eliminato) si vedono se la collezione registra le pre-image: `Enable…` le attiva (`changeStreamPreAndPostImages`, dopo conferma; non con le connessioni in sola lettura);
@@ -170,7 +176,7 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/queryHistory.ts` – cronologia e query salvate per collezione
 - `src/documentFs.ts` – file system virtuale `mongoster://` per aprire, modificare e salvare i documenti
 - `src/definitionFs.ts` – file system virtuale `mongoster-def://` per le definizioni delle view e le regole di validazione
-- `src/monitor.ts`, `src/webview/monitor.ts`, `media/monitor.css` – monitor del server: operazioni in corso, profiler, statistiche
+- `src/monitor.ts`, `src/webview/monitor.ts`, `media/monitor.css` – monitor del server: operazioni in corso, profiler, statistiche, replica set e oplog
 - `src/watch.ts`, `src/webview/watch.ts`, `media/watch.css` – change stream di una collezione, un database o una connessione
 - `src/playground/` – playground: riscrittura dello script (`rewrite.ts`, con `acorn`), runtime stile mongosh (`shell.ts`), contesto del cursore per l'autocompletamento (`context.ts`), comandi, CodeLens e completion (`playground.ts`), tab del risultato (`resultPanel.ts`, `src/webview/playground.ts`, `media/playground.css`)
 - `src/queries.ts` – testo di filtri e pipeline → argomenti del driver
@@ -186,6 +192,7 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/shared/schema.ts` – analisi dello schema di un campione di documenti e `$jsonSchema` generato
 - `src/shared/complete.ts` – autocompletamento: contesto del cursore nel testo mongosh, campi, operatori e valori suggeriti
 - `src/shared/compare.ts` – quando due documenti sono uguali (ordine dei campi, tipi numerici, campi ignorati) e differenze campo per campo
+- `src/replication.ts` – membri del replica set con il loro ritardo e voci dell'oplog (campi cambiati da un aggiornamento, operazioni di una transazione)
 - `src/shared/profile.ts` – operazioni lente dal profiler o dal log del server: forma della query, raggruppamento e indice suggerito
 - `src/shared/codegen.ts`, `src/webview/codeDialog.ts` – query e pipeline come codice per mongosh e i driver (Node.js, Python, Java, C#, Go)
 - `src/shared/chart.ts`, `src/webview/chartView.ts`, `src/webview/chartjs.ts` – pipeline dei grafici e loro risultati in serie; disegno con Chart.js, caricato solo quando si apre la scheda `Chart`
