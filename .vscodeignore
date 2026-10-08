@@ -9,6 +9,7 @@
 !dist/undoHistory.js
 !dist/watch.js
 !dist/search.js
+!dist/advisor.js
 !dist/connectionEditor.js
 !dist/chartjs.js
 !media/**

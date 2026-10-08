@@ -26,6 +26,8 @@ const FLUSH_MS = 200;
 /** Collections read at the same time. */
 const WORKERS = 3;
 const SKIPPED_DATABASES = ['admin', 'local', 'config'];
+/** Characters needed to match part of an ObjectId or UUID. */
+const ID_MIN = 6;
 
 export interface SearchScope {
   connectionId: string;
@@ -86,6 +88,8 @@ interface Leaf {
   whole?: boolean;
   /** Matched ignoring case (hex, dates). */
   ci?: boolean;
+  /** Text mode: shorter texts don't match part of it ("42" is a number, not a piece of an ObjectId). */
+  minLength?: number;
 }
 
 /** The text a value is matched on; undefined for values not searched (null, MinKey, binary data…). */
@@ -97,7 +101,7 @@ function leafOf(v: unknown): Leaf | undefined {
   const b = v as { _bsontype?: string } & Record<string, unknown>;
   switch (b?._bsontype) {
     case 'ObjectId':
-      return { kind: 'objectId', text: (v as BSON.ObjectId).toHexString(), ci: true };
+      return { kind: 'objectId', text: (v as BSON.ObjectId).toHexString(), ci: true, minLength: ID_MIN };
     case 'Int32':
     case 'Double':
       return { kind: 'number', text: String((v as BSON.Double).value), whole: true };
@@ -106,7 +110,7 @@ function leafOf(v: unknown): Leaf | undefined {
       return { kind: 'number', text: String(v), whole: true };
     case 'Binary': {
       const bin = v as BSON.Binary;
-      return bin.sub_type === BSON.Binary.SUBTYPE_UUID && bin.position === 16 ? { kind: 'uuid', text: bin.toUUID().toHexString(true), ci: true } : undefined;
+      return bin.sub_type === BSON.Binary.SUBTYPE_UUID && bin.position === 16 ? { kind: 'uuid', text: bin.toUUID().toHexString(true), ci: true, minLength: ID_MIN } : undefined;
     }
     case 'BSONRegExp':
       return { kind: 'regex', text: (v as BSON.BSONRegExp).pattern };
@@ -178,6 +182,7 @@ export function matchDocument(doc: Document, needle: Needle, fieldNames: boolean
     if (!leaf) return;
     let m: [number, number] | undefined;
     if (leaf.whole && needle.exact !== undefined) m = sameNumber(leaf.text, needle.exact) ? [0, leaf.text.length] : undefined;
+    else if (leaf.minLength && needle.exact !== undefined && needle.exact.length < leaf.minLength && needle.exact.toLowerCase() !== leaf.text) m = undefined;
     else m = find(leaf.ci ? needle.ci : needle.re, leaf.text);
     if (m) add(() => hit(path, 'value', leaf.kind, leaf.text, m[0], m[1]));
   };

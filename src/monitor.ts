@@ -125,7 +125,7 @@ export class MonitorPanel {
         await this.clearProfile(m.database);
         break;
       case 'openQuery':
-        await this.openQuery(m.ns, m.kind, m.query, m.explain);
+        await openOperation(this.info.id, m.ns, m.kind, m.query, m.explain);
         break;
       case 'createIndex':
         await this.createIndex(m.ns, m.keys);
@@ -283,22 +283,6 @@ export class MonitorPanel {
     } catch (err) {
       reply(false, errorMessage(err));
     }
-  }
-
-  /** Shows the query in the collection's tab (filter, sort and projection, or the pipeline). */
-  private async openQuery(ns: string, kind: string, query: OpQuery, explain: boolean): Promise<void> {
-    const { database, collection } = splitNs(ns);
-    const text = (v: unknown) => (v === undefined ? '' : toShell(v));
-    await vscode.commands.executeCommand('mongoster.openQuery', {
-      connectionId: this.info.id,
-      database,
-      collection,
-      query:
-        kind === 'aggregate'
-          ? { filter: '', sort: '', projection: '', pipeline: (query.pipeline ?? []).map((stage) => ({ op: Object.keys(stage)[0], body: toShell(Object.values(stage)[0]), enabled: true })) }
-          : { filter: text(query.filter), sort: text(query.sort), projection: kind === 'find' ? text(query.projection) : '' },
-      explain,
-    });
   }
 
   private async createIndex(ns: string, keys: Record<string, 1 | -1>): Promise<void> {
@@ -681,4 +665,20 @@ async function collectionStats(db: Db, name: string, type: string): Promise<Coll
   } catch (err) {
     return { name, type, error: errorMessage(err) };
   }
+}
+
+/** Shows the query in the collection's tab (filter, sort and projection, or the pipeline). */
+export async function openOperation(connectionId: string, ns: string, kind: string, query: OpQuery, explain: boolean): Promise<void> {
+  const { database, collection } = splitNs(ns);
+  const text = (v: unknown) => (v === undefined ? '' : toShell(v));
+  await vscode.commands.executeCommand('mongoster.openQuery', {
+    connectionId,
+    database,
+    collection,
+    query:
+      kind === 'aggregate'
+        ? { filter: '', sort: '', projection: '', pipeline: (query.pipeline ?? []).map((stage) => ({ op: Object.keys(stage)[0], body: toShell(Object.values(stage)[0]), enabled: true })) }
+        : { filter: text(query.filter), sort: text(query.sort), projection: kind === 'find' ? text(query.projection) : '' },
+    explain,
+  });
 }

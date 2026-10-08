@@ -781,3 +781,46 @@ export type SearchViewMessage =
   /** Opens the collection's tab filtered on the matching documents. */
   | { type: 'showInCollection'; index: number }
   | { type: 'copy'; text: string };
+
+// ---- index advisor
+
+/** Where the slow operations came from. */
+export interface AdvisorSources {
+  /** Per database: the profiler level (0 off, 1 slow operations, 2 all) and the operations read from system.profile. */
+  profiler: { database: string; level?: number; ops: number; error?: string }[];
+  /** The server log ("Slow query" lines), for the databases without profiler data. */
+  log: { ops: number; error?: string };
+  /** Operations slower than this are slow (profiler level 1 and log). */
+  slowms?: number;
+  /** The oldest operation read. */
+  since?: string;
+}
+
+export interface AdvisorReport {
+  advice: import('./advisor').Advice[];
+  collections: number;
+  indexes: number;
+  indexBytes: number;
+  /** Indexes not used yet, but observed for less than a day. */
+  tooRecent: number;
+  sources: AdvisorSources;
+  /** Collections whose indexes couldn't be read. */
+  failed: { ns: string; error: string }[];
+}
+
+export type AdvisorHostMessage =
+  | { type: 'init'; connectionName: string; color?: string; readOnly: boolean; database?: string; collection?: string }
+  | { type: 'report'; requestId: number; report?: AdvisorReport; error?: string }
+  | { type: 'actionResult'; ok: boolean; message?: string };
+
+export type AdvisorViewMessage =
+  | { type: 'ready' }
+  | { type: 'analyze'; requestId: number }
+  /** Creates the index of a 'create' advice. */
+  | { type: 'create'; id: string }
+  | { type: 'hide'; database: string; collection: string; name: string; hidden: boolean }
+  | { type: 'drop'; database: string; collection: string; name: string; why: string }
+  /** Opens a query of a 'create' advice in the collection's tab. */
+  | { type: 'openQuery'; id: string; query: number; explain: boolean }
+  | { type: 'enableProfiler'; database: string }
+  | { type: 'copy'; text: string };

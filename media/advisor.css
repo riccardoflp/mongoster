@@ -1,0 +1,194 @@
+/* Index advisor tab: monitor.css provides the base (bar, buttons, inputs, errors). */
+
+.view {
+  padding: 0 14px 20px;
+}
+
+.summary {
+  padding: 10px 0 2px;
+  font-weight: 600;
+}
+
+.sources p {
+  margin: 4px 0;
+  color: var(--muted);
+}
+
+.sources .warn {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.sources .off {
+  color: var(--vscode-foreground);
+}
+
+.message {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--vscode-charts-green, #89d185);
+  background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.1));
+}
+
+.message.failed {
+  border-left-color: var(--vscode-errorForeground, #f48771);
+}
+
+.view > .error {
+  margin-top: 8px;
+}
+
+.group {
+  margin-top: 18px;
+}
+
+.group h2 {
+  font-size: 1.05em;
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.group h2 .count {
+  font-size: 0.85em;
+  font-weight: normal;
+  padding: 0 7px;
+  border-radius: 9px;
+  background: var(--vscode-badge-background, #4d4d4d);
+  color: var(--vscode-badge-foreground, #fff);
+}
+
+.group .note,
+.group .empty {
+  color: var(--muted);
+  margin: 4px 0 8px;
+}
+
+.advice {
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 3px;
+  padding: 8px 10px;
+  margin: 8px 0;
+}
+
+.advice.kind-create {
+  border-left-color: var(--vscode-charts-blue, #3794ff);
+}
+
+.advice.kind-redundant {
+  border-left-color: var(--vscode-charts-orange, #d18616);
+}
+
+.advice.kind-unused,
+.advice.kind-hidden {
+  border-left-color: var(--vscode-charts-yellow, #cca700);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.card-head .ns {
+  font-weight: 600;
+  font-family: var(--mono);
+}
+
+.card-head .spacer {
+  flex: 1;
+}
+
+.advice .actions {
+  display: flex;
+  gap: 6px;
+}
+
+button.danger {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+code {
+  font-family: var(--mono);
+}
+
+code.keys {
+  color: var(--c-string);
+}
+
+.index {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.index-name {
+  font-family: var(--mono);
+}
+
+.opts,
+.size {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.why {
+  margin: 6px 0 0;
+}
+
+.why.muted {
+  color: var(--muted);
+}
+
+.queries {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.query {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas:
+    'op shape actions'
+    '. stats stats';
+  gap: 0 8px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.08));
+}
+
+.query .op {
+  grid-area: op;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.query .shape {
+  grid-area: shape;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.query .qstats {
+  grid-area: stats;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.query .qactions {
+  grid-area: actions;
+  display: flex;
+  gap: 10px;
+}
+
+.queries .more {
+  align-self: flex-start;
+  font-size: 0.9em;
+}

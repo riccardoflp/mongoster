@@ -254,6 +254,12 @@
         "icon": "$(search)"
       },
       {
+        "command": "mongoster.indexAdvisor",
+        "title": "Index Advisor",
+        "category": "Mongoster",
+        "icon": "$(lightbulb)"
+      },
+      {
         "command": "mongoster.addConnectionWithOptions",
         "title": "Add Connection with TLS / SSH…",
         "category": "Mongoster",
@@ -536,6 +542,11 @@
           "group": "2_monitor@2"
         },
         {
+          "command": "mongoster.indexAdvisor",
+          "when": "view == mongoster.connections && viewItem =~ /^(connection|database|collection)/",
+          "group": "2_monitor@3"
+        },
+        {
           "command": "mongoster.connectionOptions",
           "when": "view == mongoster.connections && viewItem =~ /^connection/",
           "group": "1_connection@0.5"
@@ -693,6 +704,10 @@
         },
         {
           "command": "mongoster.search",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.indexAdvisor",
           "when": "false"
         },
         {
