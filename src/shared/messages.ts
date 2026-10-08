@@ -18,10 +18,11 @@ export type WebviewMessage =
   | { type: 'duplicateDocument'; doc: Record<string, unknown> }
   | { type: 'deleteDocument'; id: unknown }
   | { type: 'insertDocument' }
+  | { type: 'saveExpanded'; expanded: string[] }
   | { type: 'copy'; text: string };
 
 export type HostMessage =
-  | { type: 'init'; connectionName: string; database: string; collection: string; readOnly: boolean }
+  | { type: 'init'; connectionName: string; database: string; collection: string; readOnly: boolean; expanded: string[] }
   | { type: 'result'; requestId: number; docs: unknown[]; count: number | null; durationMs: number }
   | { type: 'error'; requestId: number; message: string }
   | { type: 'refresh' };

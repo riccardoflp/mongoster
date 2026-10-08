@@ -10,6 +10,7 @@
   --c-date: var(--vscode-terminal-ansiCyan, #4ec9b0);
   --c-regex: var(--vscode-terminal-ansiYellow, #d7ba7d);
   --accent: var(--vscode-focusBorder, #007fd4);
+  --group-border: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 * {
@@ -346,6 +347,43 @@ body.dragging .dropzones {
 
 .grid th:hover {
   background: var(--vscode-list-hoverBackground);
+}
+
+.col-prefix {
+  color: var(--muted);
+  font-weight: normal;
+}
+
+.col-prefix:hover {
+  color: var(--vscode-foreground);
+  text-decoration: underline;
+}
+
+.expander {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 1.15em;
+  line-height: 1;
+  color: var(--vscode-textLink-foreground, var(--accent));
+  background: var(--vscode-badge-background, rgba(128, 128, 128, 0.2));
+}
+
+.expander:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+}
+
+.grid .group-start {
+  border-left: 2px solid var(--group-border);
+}
+
+.grid .group-end {
+  border-right: 2px solid var(--group-border);
+}
+
+.grid td.mixed {
+  font-style: italic;
 }
 
 .sort-indicator {

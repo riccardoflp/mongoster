@@ -1,5 +1,6 @@
 import { formatFilter, isEjsonWrapper, isOperatorObject, isPlainObject, parseQuery, toShell } from '../shared/query';
 import type { HostMessage, WebviewMessage } from '../shared/messages';
+import { ColumnNode, MISSING, buildColumns, expandableBelow, getAt, isSubdocument, leafCount, leaves } from './columns';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: WebviewMessage): void;
@@ -13,6 +14,8 @@ interface QueryState {
   projection: string;
   limit: number;
   skip: number;
+  /** Dotted paths of expanded sub-document columns. */
+  expanded: string[];
 }
 
 type DragPayload = { kind: 'cell'; key: string; value: unknown } | { kind: 'column'; key: string };
@@ -24,7 +27,8 @@ interface DropZone {
 }
 
 const vscode = acquireVsCodeApi();
-const state: QueryState = { filter: '', sort: '', projection: '', limit: 50, skip: 0, ...vscode.getState() };
+const state: QueryState = { filter: '', sort: '', projection: '', limit: 50, skip: 0, expanded: [], ...vscode.getState() };
+let expanded = new Set(state.expanded);
 
 let docs: Record<string, unknown>[] = [];
 let count: number | null = null;
@@ -110,6 +114,7 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
         span('ns-coll', m.collection),
       );
       readOnly = m.readOnly;
+      if (m.expanded.length) expanded = new Set(m.expanded);
       document.body.classList.toggle('readonly', readOnly);
       el('docEdit').textContent = readOnly ? 'Open in editor' : 'Edit';
       if (readOnly) el('docEdit').title = el('docEdit').dataset.title = 'Open in a read-only editor tab';
@@ -142,14 +147,6 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
 // ---------------------------------------------------------------------------
 // Grid
 
-function collectColumns(rows: Record<string, unknown>[]): string[] {
-  const seen = new Set<string>();
-  for (const row of rows) for (const key of Object.keys(row)) seen.add(key);
-  const cols = [...seen];
-  const idIndex = cols.indexOf('_id');
-  if (idIndex > 0) cols.unshift(...cols.splice(idIndex, 1));
-  return cols;
-}
 
 function typeClass(v: unknown): string {
   if (v === null || v === undefined) return 't-null';
@@ -189,7 +186,8 @@ function currentSort(): Record<string, unknown> {
 }
 
 function renderGrid(): void {
-  const columns = collectColumns(docs);
+  const columns = buildColumns(docs, expanded);
+  const leafList = leaves(columns);
   const sort = currentSort();
   selectedCell = null;
   grid.replaceChildren();
@@ -202,13 +200,28 @@ function renderGrid(): void {
   corner.className = 'rownum';
   corner.textContent = '#';
   headRow.append(corner);
-  for (const col of columns) {
+  for (const leaf of leafList) {
+    const { node } = leaf;
     const th = document.createElement('th');
-    th.dataset.key = col;
+    th.dataset.key = node.key;
     th.draggable = true;
-    th.title = `${col}\nClick to sort · drag to the filter`;
-    th.append(span('col-name', col));
-    const dir = sort[col];
+    th.title = `${node.key}\nClick to sort · drag to the filter`;
+    groupClasses(th, leaf.starts.length > 0, leaf.ends.length > 0);
+    // Parent segments of an expanded column: click one to collapse that group.
+    node.path.slice(0, -1).forEach((segment, i) => {
+      const prefix = span('col-prefix', `${segment}.`);
+      prefix.dataset.collapse = node.path.slice(0, i + 1).join('.');
+      prefix.title = `Collapse ${prefix.dataset.collapse}`;
+      th.append(prefix);
+    });
+    th.append(span('col-name', node.path[node.path.length - 1]));
+    if (node.expandable && !node.children) {
+      const expander = span('expander', '▸');
+      expander.dataset.expand = node.key;
+      expander.title = `Expand ${node.key} into columns (Alt+click: expand all levels)`;
+      th.append(expander);
+    }
+    const dir = sort[node.key];
     if (dir === 1 || dir === -1) th.append(span('sort-indicator', dir === 1 ? ' ▲' : ' ▼'));
     headRow.append(th);
   }
@@ -221,21 +234,56 @@ function renderGrid(): void {
     num.className = 'rownum';
     num.title = 'Open document (double-click row)';
     num.append(span('expand', '{ }'), document.createTextNode(String(state.skip + rowIndex + 1)));
-    for (const col of columns) {
-      const td = tr.insertCell();
-      td.dataset.key = col;
-      if (!(col in doc)) {
-        td.className = 'missing';
-        continue;
+    let leafIndex = 0;
+    const renderCells = (nodes: ColumnNode[]) => {
+      for (const node of nodes) {
+        const value = getAt(doc, node.path);
+        if (node.children && isSubdocument(value)) {
+          renderCells(node.children);
+          continue;
+        }
+        // A leaf, or an expanded group whose value here isn't a sub-document: one cell spanning the group.
+        const width = node.children ? leafCount(node) : 1;
+        const first = leafList[leafIndex];
+        const last = leafList[leafIndex + width - 1];
+        leafIndex += width;
+        const td = tr.insertCell();
+        td.colSpan = width;
+        td.dataset.path = JSON.stringify(node.path);
+        if (value === MISSING) {
+          td.className = 'missing';
+        } else {
+          const text = cellText(value);
+          td.className = typeClass(value);
+          if (node.children) {
+            td.classList.add('mixed');
+            td.title = `${node.key} is not a sub-document here\n`;
+          }
+          td.textContent = text.length > 300 ? text.slice(0, 300) + '…' : text;
+          td.title = (td.title ?? '') + (text.length > 2000 ? text.slice(0, 2000) + '…' : text);
+          td.draggable = true;
+        }
+        groupClasses(td, first.starts.length > 0, last.ends.length > 0);
       }
-      const value = doc[col];
-      const text = cellText(value);
-      td.className = typeClass(value);
-      td.textContent = text.length > 300 ? text.slice(0, 300) + '…' : text;
-      td.title = text.length > 2000 ? text.slice(0, 2000) + '…' : text;
-      td.draggable = true;
-    }
+    };
+    renderCells(columns);
   });
+}
+
+function groupClasses(cell: HTMLElement, start: boolean, end: boolean): void {
+  if (start) cell.classList.add('group-start');
+  if (end) cell.classList.add('group-end');
+}
+
+function setExpanded(keys: string[], on: boolean): void {
+  for (const key of keys) {
+    if (on) expanded.add(key);
+    else expanded.delete(key);
+  }
+  state.expanded = [...expanded];
+  vscode.setState(state);
+  vscode.postMessage({ type: 'saveExpanded', expanded: state.expanded });
+  renderGrid();
 }
 
 function renderStatus(durationMs: number): void {
@@ -250,14 +298,25 @@ function renderStatus(durationMs: number): void {
 
 function cellValue(td: HTMLElement): { key: string; value: unknown } | null {
   const tr = td.closest('tr');
-  const key = td.dataset.key;
-  if (!tr?.dataset.row || key === undefined) return null;
-  const doc = docs[Number(tr.dataset.row)];
-  return key in doc ? { key, value: doc[key] } : null;
+  if (!tr?.dataset.row || !td.dataset.path) return null;
+  const path = JSON.parse(td.dataset.path) as string[];
+  const value = getAt(docs[Number(tr.dataset.row)], path);
+  return value === MISSING ? null : { key: path.join('.'), value };
 }
 
 grid.addEventListener('click', (e) => {
   const target = e.target as HTMLElement;
+  const collapse = target.closest<HTMLElement>('[data-collapse]');
+  if (collapse) {
+    setExpanded([collapse.dataset.collapse!], false);
+    return;
+  }
+  const expand = target.closest<HTMLElement>('[data-expand]');
+  if (expand) {
+    const key = expand.dataset.expand!;
+    setExpanded(e.altKey ? expandableBelow(docs, key.split('.')) : [key], true);
+    return;
+  }
   const th = target.closest('th');
   if (th?.dataset.key) {
     toggleSort(th.dataset.key);

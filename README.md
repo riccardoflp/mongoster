@@ -11,6 +11,7 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - trascina una **cella** → `= equals`, `≠ not equal`, e per numeri/date/stringhe `≥ from` / `≤ to` (si combinano in un range sullo stesso campo); per gli array `∈ in`;
   - trascina l'**intestazione di una colonna** → `exists`, `missing`, `is null`.
 - **Ordinamento**: clic sull'intestazione (▲ → ▼ → nessuno).
+- **Colonne annidate**: le colonne con sotto-documenti hanno un pulsante `▸` che le espande in colonne con il punto (`address` → `address.city`, `address.zip`, …), un livello alla volta; `Alt+clic` espande tutti i livelli. Clic sul prefisso (`address.`) per richiudere il gruppo. Filtri, range e ordinamento funzionano anche sui campi annidati (`{ "address.city": "Milano" }`). Se in un documento il campo non è un oggetto, il valore occupa tutto il gruppo. Le espansioni sono ricordate per ogni collezione.
 - **Documento JSON**: doppio clic su una riga (o clic sul numero di riga) apre una dialog con l'albero JSON espandibile; `↑/↓` per scorrere i documenti, `Copy`.
 - **Modifica**: `Edit` apre il documento in una tab dell'editor; `Ctrl+S` lo salva su MongoDB.
   - I tipi numerici restano quelli originali (Double, Int32, Long), anche cambiando il valore; `NumberLong(...)` e simili forzano un tipo esplicito.
@@ -45,4 +46,4 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/collectionPanel.ts` – webview per collezione, esecuzione delle query
 - `src/documentFs.ts` – file system virtuale `mongoster://` per aprire, modificare e salvare i documenti
 - `src/shared/query.ts` – parsing/formattazione della sintassi mongosh ⇄ EJSON
-- `src/webview/main.ts`, `media/webview.css` – UI della tabella
+- `src/webview/main.ts`, `src/webview/columns.ts`, `media/webview.css` – UI della tabella e modello delle colonne

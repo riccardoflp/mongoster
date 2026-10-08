@@ -15,6 +15,7 @@ export interface CollectionTarget extends CollectionRef {
 }
 
 const panelKey = (ref: CollectionRef) => `${ref.connectionId}/${ref.database}/${ref.collection}`;
+const expandedStateKey = (ref: CollectionRef) => `mongoster.expanded.${panelKey(ref)}`;
 
 /** One webview tab per collection, showing a queryable grid of documents. */
 export class CollectionPanel {
@@ -77,7 +78,11 @@ export class CollectionPanel {
           database: this.target.database,
           collection: this.target.collection,
           readOnly: this.target.readOnly,
+          expanded: this.context.globalState.get<string[]>(expandedStateKey(this.target), []),
         });
+        break;
+      case 'saveExpanded':
+        await this.context.globalState.update(expandedStateKey(this.target), m.expanded.length ? m.expanded : undefined);
         break;
       case 'query':
         await this.runQuery(m);
