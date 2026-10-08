@@ -118,7 +118,11 @@ export type HostMessage =
       connectionName: string;
       database: string;
       collection: string;
+      /** No document changes: a view, or a read-only connection (`locked`). */
       readOnly: boolean;
+      view: boolean;
+      locked: boolean;
+      color?: string;
       expanded: string[];
       layout: ColumnLayout;
     }

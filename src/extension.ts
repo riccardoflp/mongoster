@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
-import { ConnectionManager } from './connections';
-import { CollectionNode, ConnectionNode, DatabaseNode, MongoTreeProvider, TreeNode, errorMessage } from './tree';
-import { CollectionPanel, expandedStateKey, layoutStateKey, moveCollectionState } from './collectionPanel';
+import { CONNECTION_COLORS, ConnectionColor, ConnectionInfo, ConnectionManager } from './connections';
+import { CollectionNode, ConnectionNode, DatabaseNode, FolderNode, MongoTreeProvider, TreeNode, errorMessage } from './tree';
+import { CollectionPanel, CollectionTarget, expandedStateKey, layoutStateKey, moveCollectionState, readOnlyMessage } from './collectionPanel';
 import { Manager } from './manage';
 import { exportDocuments, importDocuments } from './transfer';
 import { CollectionRef, DOC_SCHEME, DocumentFileSystem } from './documentFs';
@@ -11,13 +11,21 @@ export function activate(context: vscode.ExtensionContext): void {
   const tree = new MongoTreeProvider(connections);
   const documents = new DocumentFileSystem(connections);
   const manager = new Manager(connections);
-  const collectionTarget = (node: CollectionNode) => ({
+  const collectionTarget = (node: CollectionNode): CollectionTarget => ({
     connectionId: node.connection.id,
     connectionName: node.connection.name,
     database: node.database,
     collection: node.collection,
-    readOnly: node.isView,
+    readOnly: node.isView || !!node.connection.readOnly,
+    view: node.isView,
+    locked: !!node.connection.readOnly,
+    color: node.connection.color,
   });
+  /** Saves connection changes and applies them to the open collection tabs. */
+  const updateConnection = async (id: string, changes: Partial<Omit<ConnectionInfo, 'id'>>, uri?: string) => {
+    const info = await connections.update(id, changes, uri);
+    if (info) CollectionPanel.connectionChanged(info);
+  };
 
   context.subscriptions.push(
     connections,
@@ -25,7 +33,93 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.registerFileSystemProvider(DOC_SCHEME, documents, { isCaseSensitive: true }),
     documents.onDidSave((ref) => CollectionPanel.refresh(ref)),
 
-    vscode.commands.registerCommand('mongoster.addConnection', () => addConnection(connections)),
+    vscode.commands.registerCommand('mongoster.addConnection', (node?: FolderNode) =>
+      addConnection(connections, node instanceof FolderNode ? node.folder : undefined),
+    ),
+
+    vscode.commands.registerCommand('mongoster.editConnection', async (node?: ConnectionNode) => {
+      if (!node) return;
+      const edited = await askConnection(connections, node.info);
+      if (edited) await updateConnection(node.info.id, { name: edited.name }, edited.uri);
+    }),
+
+    vscode.commands.registerCommand('mongoster.copyConnectionString', async (node?: ConnectionNode) => {
+      const uri = node && (await connections.uri(node.info.id));
+      if (!uri) return;
+      await vscode.env.clipboard.writeText(uri);
+      vscode.window.setStatusBarMessage('Mongoster: connection string copied (it may contain the password)', 4000);
+    }),
+
+    vscode.commands.registerCommand('mongoster.setColor', async (node?: ConnectionNode) => {
+      if (!node) return;
+      const items = [
+        ...CONNECTION_COLORS.map((color) => ({ label: `${COLOR_EMOJI[color]} ${capitalize(color)}`, color: color as ConnectionColor | undefined })),
+        { label: '⚪ None', color: undefined },
+      ].map((i) => ({ ...i, description: i.color === node.info.color ? 'current' : undefined }));
+      const pick = await vscode.window.showQuickPick(items, {
+        title: `Color of ${node.info.name}`,
+        placeHolder: 'Shown on the tree icon and as a stripe on its collection tabs, e.g. red for production',
+      });
+      if (pick) await updateConnection(node.info.id, { color: pick.color });
+    }),
+
+    vscode.commands.registerCommand('mongoster.setReadOnly', (node?: ConnectionNode) =>
+      node ? updateConnection(node.info.id, { readOnly: true }) : undefined,
+    ),
+
+    vscode.commands.registerCommand('mongoster.clearReadOnly', async (node?: ConnectionNode) => {
+      if (!node) return;
+      const answer = await vscode.window.showWarningMessage(
+        `Allow changes through ${node.info.name}?`,
+        { modal: true, detail: 'Documents, indexes, collections and databases can then be modified from Mongoster.' },
+        'Allow Changes',
+      );
+      if (answer === 'Allow Changes') await updateConnection(node.info.id, { readOnly: false });
+    }),
+
+    vscode.commands.registerCommand('mongoster.moveToFolder', async (node?: ConnectionNode) => {
+      if (!node) return;
+      const current = node.info.folder;
+      const NEW = '$(new-folder) New Folder…';
+      const NONE = '$(close) No Folder';
+      const items = [
+        ...connections.folders().filter((f) => f !== current).map((f) => `$(folder) ${f}`),
+        NEW,
+        ...(current ? [NONE] : []),
+      ];
+      const pick = await vscode.window.showQuickPick(items, { title: `Move ${node.info.name} to Folder` });
+      if (!pick) return;
+      let folder: string | undefined = pick.replace(/^\$\(folder\) /, '');
+      if (pick === NONE) folder = undefined;
+      else if (pick === NEW) {
+        folder = (
+          await vscode.window.showInputBox({
+            title: 'New Folder',
+            prompt: 'Folder name',
+            validateInput: (v) => (v.trim() ? undefined : 'Enter a name'),
+          })
+        )?.trim();
+        if (!folder) return;
+      }
+      await connections.update(node.info.id, { folder });
+    }),
+
+    vscode.commands.registerCommand('mongoster.renameFolder', async (node?: FolderNode) => {
+      if (!node) return;
+      const name = (
+        await vscode.window.showInputBox({
+          title: `Rename Folder ${node.folder}`,
+          value: node.folder,
+          validateInput: (v) =>
+            !v.trim() ? 'Enter a name' : v.trim() !== node.folder && connections.folders().includes(v.trim()) ? 'This folder already exists' : undefined,
+        })
+      )?.trim();
+      if (name && name !== node.folder) await connections.renameFolder(node.folder, name);
+    }),
+
+    vscode.commands.registerCommand('mongoster.removeFolder', (node?: FolderNode) =>
+      node ? connections.renameFolder(node.folder, undefined) : undefined,
+    ),
 
     vscode.commands.registerCommand('mongoster.removeConnection', async (node?: ConnectionNode) => {
       if (!node) return;
@@ -47,9 +141,12 @@ export function activate(context: vscode.ExtensionContext): void {
       CollectionPanel.show(context, connections, documents, collectionTarget(node)),
     ),
 
-    vscode.commands.registerCommand('mongoster.insertDocument', (node?: CollectionNode) =>
-      node ? documents.openNew(collectionTarget(node)) : undefined,
-    ),
+    vscode.commands.registerCommand('mongoster.insertDocument', (node?: CollectionNode) => {
+      if (!node) return undefined;
+      const target = collectionTarget(node);
+      if (target.readOnly) return vscode.window.showErrorMessage(readOnlyMessage(target));
+      return documents.openNew(target);
+    }),
 
     vscode.commands.registerCommand('mongoster.exportCollection', (node?: CollectionNode) => {
       if (!node) return undefined;
@@ -70,6 +167,9 @@ export function activate(context: vscode.ExtensionContext): void {
         connectionName: node.info.name,
         ...created,
         readOnly: false,
+        view: false,
+        locked: false,
+        color: node.info.color,
       });
     }),
 
@@ -125,27 +225,39 @@ function sameCollection(a: CollectionRef, b: CollectionRef): boolean {
   return a.connectionId === b.connectionId && a.database === b.database && a.collection === b.collection;
 }
 
-async function addConnection(connections: ConnectionManager): Promise<void> {
+const COLOR_EMOJI: Record<ConnectionColor, string> = { red: '🔴', orange: '🟠', yellow: '🟡', green: '🟢', blue: '🔵', purple: '🟣' };
+const capitalize = (s: string) => s[0].toUpperCase() + s.slice(1);
+
+async function addConnection(connections: ConnectionManager, folder?: string): Promise<void> {
+  const answer = await askConnection(connections);
+  if (answer) await connections.add(answer.name, answer.uri, folder);
+}
+
+/** Asks for connection string and name (prefilled from `existing`) and tests a new connection string. */
+async function askConnection(connections: ConnectionManager, existing?: ConnectionInfo): Promise<{ uri: string; name: string } | undefined> {
+  const verb = existing ? `Edit Connection ${existing.name}` : 'Add MongoDB Connection';
+  const currentUri = existing ? await connections.uri(existing.id) : undefined;
   const uri = (
     await vscode.window.showInputBox({
-      title: 'Add MongoDB Connection (1/2)',
+      title: `${verb} (1/2)`,
       prompt: 'Connection string',
-      value: 'mongodb://localhost:27017',
+      value: currentUri ?? 'mongodb://localhost:27017',
       ignoreFocusOut: true,
       validateInput: (v) =>
         /^mongodb(\+srv)?:\/\//.test(v.trim()) ? undefined : 'Must start with mongodb:// or mongodb+srv://',
     })
   )?.trim();
-  if (!uri) return;
+  if (!uri) return undefined;
 
   const fallbackName = hostOf(uri);
   const name = await vscode.window.showInputBox({
-    title: 'Add MongoDB Connection (2/2)',
+    title: `${verb} (2/2)`,
     prompt: 'Display name',
-    value: fallbackName,
+    value: existing?.name ?? fallbackName,
     ignoreFocusOut: true,
   });
-  if (name === undefined) return;
+  if (name === undefined) return undefined;
+  if (uri === currentUri) return { uri, name: name.trim() || existing!.name };
 
   try {
     await vscode.window.withProgress(
@@ -157,9 +269,9 @@ async function addConnection(connections: ConnectionManager): Promise<void> {
       `Could not connect: ${errorMessage(err)}`,
       'Save Anyway',
     );
-    if (choice !== 'Save Anyway') return;
+    if (choice !== 'Save Anyway') return undefined;
   }
-  await connections.add(name.trim() || fallbackName, uri);
+  return { uri, name: name.trim() || existing?.name || fallbackName };
 }
 
 /** Host part of a connection string, without credentials. */

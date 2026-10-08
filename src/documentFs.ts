@@ -78,7 +78,7 @@ export class DocumentFileSystem implements vscode.FileSystemProvider {
 
   async writeFile(uri: vscode.Uri, content: Uint8Array): Promise<void> {
     const entry = this.entry(uri);
-    if (entry.ref.readOnly) throw vscode.FileSystemError.NoPermissions('Views are read-only');
+    if (entry.ref.readOnly) throw vscode.FileSystemError.NoPermissions('Read-only: a view, or a read-only connection');
 
     let parsed: unknown;
     try {

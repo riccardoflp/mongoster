@@ -1,6 +1,16 @@
 import * as vscode from 'vscode';
 import { ConnectionInfo, ConnectionManager } from './connections';
 
+export class FolderNode extends vscode.TreeItem {
+  readonly kind = 'folder';
+  constructor(readonly folder: string) {
+    super(folder, vscode.TreeItemCollapsibleState.Expanded);
+    this.id = `folder:${folder}`;
+    this.contextValue = 'folder';
+    this.iconPath = vscode.ThemeIcon.Folder;
+  }
+}
+
 export class ConnectionNode extends vscode.TreeItem {
   readonly kind = 'connection';
   constructor(
@@ -9,11 +19,12 @@ export class ConnectionNode extends vscode.TreeItem {
   ) {
     super(info.name, vscode.TreeItemCollapsibleState.Collapsed);
     this.id = `conn:${info.id}`;
-    this.contextValue = connected ? 'connection.connected' : 'connection';
-    this.iconPath = new vscode.ThemeIcon(
-      'server',
-      connected ? new vscode.ThemeColor('testing.iconPassed') : undefined,
-    );
+    this.contextValue = `connection${connected ? '.connected' : ''}${info.readOnly ? '.readonly' : ''}`;
+    // The connection's color wins over the green "connected" tint; the description then says it.
+    const color = info.color ? `charts.${info.color}` : connected ? 'testing.iconPassed' : undefined;
+    this.iconPath = new vscode.ThemeIcon(info.readOnly ? 'lock' : 'server', color ? new vscode.ThemeColor(color) : undefined);
+    this.description = [info.readOnly && 'read-only', connected && (info.color || info.readOnly) && 'connected'].filter(Boolean).join(' · ');
+    this.tooltip = `${info.name}${connected ? ' (connected)' : ''}${info.readOnly ? '\nRead-only: Mongoster refuses writes through this connection' : ''}`;
   }
 }
 
@@ -26,7 +37,7 @@ export class DatabaseNode extends vscode.TreeItem {
   ) {
     super(database, vscode.TreeItemCollapsibleState.Collapsed);
     this.id = `db:${connection.id}/${database}`;
-    this.contextValue = 'database';
+    this.contextValue = connection.readOnly ? 'database.readonly' : 'database';
     this.iconPath = new vscode.ThemeIcon('database');
     if (sizeOnDisk !== undefined) this.description = formatBytes(sizeOnDisk);
   }
@@ -42,7 +53,7 @@ export class CollectionNode extends vscode.TreeItem {
   ) {
     super(collection, vscode.TreeItemCollapsibleState.None);
     this.id = `coll:${connection.id}/${database}/${collection}`;
-    this.contextValue = isView ? 'view' : 'collection';
+    this.contextValue = `${isView ? 'view' : 'collection'}${connection.readOnly ? '.readonly' : ''}`;
     this.iconPath = new vscode.ThemeIcon(isView ? 'eye' : 'table');
     this.tooltip = `${database}.${collection}${isView ? ' (view)' : ''}`;
     this.command = {
@@ -62,7 +73,7 @@ class MessageNode extends vscode.TreeItem {
   }
 }
 
-export type TreeNode = ConnectionNode | DatabaseNode | CollectionNode | MessageNode;
+export type TreeNode = FolderNode | ConnectionNode | DatabaseNode | CollectionNode | MessageNode;
 
 export class MongoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   private readonly changeEmitter = new vscode.EventEmitter<TreeNode | undefined>();
@@ -82,11 +93,14 @@ export class MongoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
   async getChildren(node?: TreeNode): Promise<TreeNode[]> {
     try {
+      const connectionNode = (c: ConnectionInfo) => new ConnectionNode(c, this.connections.isConnected(c.id));
       if (!node) {
-        return this.connections
-          .list()
-          .map((c) => new ConnectionNode(c, this.connections.isConnected(c.id)));
+        return [
+          ...this.connections.folders().map((f) => new FolderNode(f)),
+          ...this.connections.list().filter((c) => !c.folder).map(connectionNode),
+        ];
       }
+      if (node instanceof FolderNode) return this.connections.list().filter((c) => c.folder === node.folder).map(connectionNode);
       if (node instanceof ConnectionNode) return await this.databases(node.info);
       if (node instanceof DatabaseNode) return await this.collections(node);
       return [];

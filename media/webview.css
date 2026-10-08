@@ -1760,3 +1760,30 @@ body.resizing * {
   color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground));
   outline: none;
 }
+
+/* ---------- connection color and read-only badge ---------- */
+
+body[data-color='red'] { --conn-color: var(--vscode-charts-red, #f14c4c); }
+body[data-color='orange'] { --conn-color: var(--vscode-charts-orange, #d18616); }
+body[data-color='yellow'] { --conn-color: var(--vscode-charts-yellow, #cca700); }
+body[data-color='green'] { --conn-color: var(--vscode-charts-green, #89d185); }
+body[data-color='blue'] { --conn-color: var(--vscode-charts-blue, #3794ff); }
+body[data-color='purple'] { --conn-color: var(--vscode-charts-purple, #b180d7); }
+
+body[data-color] .toolbar {
+  border-top: 3px solid var(--conn-color);
+}
+
+body[data-color] .ns-conn {
+  color: var(--conn-color);
+  font-weight: 600;
+}
+
+.ns-badge {
+  margin-left: 8px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  font-size: 0.85em;
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}

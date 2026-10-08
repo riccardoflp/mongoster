@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { BSON, Collection, Document } from 'mongodb';
-import { ConnectionManager } from './connections';
+import { ConnectionColor, ConnectionInfo, ConnectionManager } from './connections';
 import { byId, CollectionRef, DocumentFileSystem, relaxed, restoreTypes } from './documentFs';
 import { errorMessage } from './tree';
 import { QueryHistory, sameQuery } from './queryHistory';
@@ -17,8 +17,17 @@ const { EJSON } = BSON;
 
 export interface CollectionTarget extends CollectionRef {
   connectionName: string;
-  /** Views can be queried but not modified. */
+  /** No document changes: views, and every collection of a read-only connection. */
   readOnly: boolean;
+  view: boolean;
+  /** The connection is read-only: no writes of any kind (indexes, $out, …). */
+  locked: boolean;
+  color?: ConnectionColor;
+}
+
+/** Why `target` can't be modified. */
+export function readOnlyMessage(target: CollectionTarget): string {
+  return target.locked ? `The connection ${target.connectionName} is read-only.` : 'Views are read-only.';
 }
 
 const panelKey = (ref: CollectionRef) => `${ref.connectionId}/${ref.database}/${ref.collection}`;
@@ -65,6 +74,18 @@ export class CollectionPanel {
     return closed.map((p) => p.target);
   }
 
+  /** Applies a connection's new name, color or read-only setting to its open panels. */
+  static connectionChanged(info: ConnectionInfo): void {
+    for (const p of CollectionPanel.panels.values()) {
+      if (p.target.connectionId !== info.id) continue;
+      p.target.connectionName = info.name;
+      p.target.color = info.color;
+      p.target.locked = !!info.readOnly;
+      p.target.readOnly = p.target.view || p.target.locked;
+      p.postInit();
+    }
+  }
+
   /** Re-runs the current query of the collection's panel, if open (e.g. after a document was saved). */
   static refresh(ref: CollectionRef): void {
     CollectionPanel.panels.get(panelKey(ref))?.post({ type: 'refresh' });
@@ -94,6 +115,29 @@ export class CollectionPanel {
     this.panel.onDidDispose(onDispose);
   }
 
+  private postInit(): void {
+    const t = this.target;
+    this.post({
+      type: 'init',
+      connectionName: t.connectionName,
+      database: t.database,
+      collection: t.collection,
+      readOnly: t.readOnly,
+      view: t.view,
+      locked: t.locked,
+      color: t.color,
+      expanded: this.context.globalState.get<string[]>(expandedStateKey(t), []),
+      layout: this.context.globalState.get<ColumnLayout>(layoutStateKey(t), {}),
+    });
+  }
+
+  /** Shows why the collection can't be modified; true when it can't. */
+  private refuseWrite(): boolean {
+    if (!this.target.readOnly) return false;
+    void vscode.window.showErrorMessage(readOnlyMessage(this.target));
+    return true;
+  }
+
   private post(message: HostMessage): void {
     void this.panel.webview.postMessage(message);
   }
@@ -101,15 +145,7 @@ export class CollectionPanel {
   private async onMessage(m: WebviewMessage): Promise<void> {
     switch (m.type) {
       case 'ready':
-        this.post({
-          type: 'init',
-          connectionName: this.target.connectionName,
-          database: this.target.database,
-          collection: this.target.collection,
-          readOnly: this.target.readOnly,
-          expanded: this.context.globalState.get<string[]>(expandedStateKey(this.target), []),
-          layout: this.context.globalState.get<ColumnLayout>(layoutStateKey(this.target), {}),
-        });
+        this.postInit();
         this.postHistory();
         break;
       case 'saveQuery': {
@@ -160,11 +196,13 @@ export class CollectionPanel {
         await this.documents.open(this.target, fromRelaxed(m.id));
         break;
       case 'duplicateDocument': {
+        if (this.refuseWrite()) return;
         const { _id, ...rest } = m.doc;
         await this.documents.openNew(this.target, JSON.stringify(rest, null, 2) + '\n');
         break;
       }
       case 'insertDocument':
+        if (this.refuseWrite()) return;
         await this.documents.openNew(this.target);
         break;
       case 'updateField':
@@ -194,9 +232,11 @@ export class CollectionPanel {
         await this.createIndex(m.requestId, m.keys, m.options);
         break;
       case 'dropIndex':
+        if (this.refuseWrite()) return;
         await this.dropIndex(m.name);
         break;
       case 'hideIndex':
+        if (this.refuseWrite()) return;
         await this.indexCommand(async () => (await this.db()).command({ collMod: this.target.collection, index: { name: m.name, hidden: m.hidden } }));
         break;
       case 'deleteDocument':
@@ -217,6 +257,7 @@ export class CollectionPanel {
   }
 
   private async deleteDocument(id: unknown): Promise<void> {
+    if (this.refuseWrite()) return;
     const answer = await vscode.window.showWarningMessage(
       `Delete document ${toShell(id)} from ${this.target.collection}?`,
       { modal: true },
@@ -243,7 +284,7 @@ export class CollectionPanel {
   private async updateField(m: UpdateFieldRequest): Promise<void> {
     const reply = (ok: boolean, message?: string) => this.post({ type: 'fieldResult', requestId: m.requestId, ok, message });
     const key = m.path.join('.');
-    if (this.target.readOnly) return reply(false, 'Views are read-only.');
+    if (this.target.readOnly) return reply(false, readOnlyMessage(this.target));
     if (m.path[0] === '_id') return reply(false, '_id cannot be changed.');
     let next: unknown;
     try {
@@ -291,7 +332,7 @@ export class CollectionPanel {
       const filter = toBson(filterText, 'Filter') ?? {};
       const all = !Object.keys(filter).length;
       const total =
-        all && !this.target.readOnly ? await coll.estimatedDocumentCount() : await coll.countDocuments(filter, { maxTimeMS: 60_000 });
+        all && !this.target.view ? await coll.estimatedDocumentCount() : await coll.countDocuments(filter, { maxTimeMS: 60_000 });
       const pipeline: Document[] = [];
       if (!all) pipeline.push({ $match: filter });
       pipeline.push(total > size ? { $sample: { size } } : { $limit: size });
@@ -306,7 +347,7 @@ export class CollectionPanel {
 
   private async bulkApply(m: BulkRequest): Promise<void> {
     const reply = (ok: boolean, message?: string) => this.post({ type: 'bulkResult', requestId: m.requestId, ok, message });
-    if (this.target.readOnly) return reply(false, 'Views are read-only.');
+    if (this.target.readOnly) return reply(false, readOnlyMessage(this.target));
     try {
       const filter = toBson(m.filter, 'Filter') ?? {};
       const update = m.op === 'update' ? toUpdate(m.update ?? '') : undefined;
@@ -420,7 +461,8 @@ export class CollectionPanel {
 
   private async createIndex(requestId: number, keysText: string, optionsText: string): Promise<void> {
     try {
-      if (this.target.readOnly) throw new Error('Views have no indexes of their own.');
+      if (this.target.view) throw new Error('Views have no indexes of their own.');
+      if (this.target.locked) throw new Error(readOnlyMessage(this.target));
       const keys = toBson(keysText, 'Keys');
       if (!keys || !Object.keys(keys).length) throw new Error('Keys: enter the fields to index, e.g. { status: 1, age: -1 }');
       const name = await (await this.coll()).createIndex(keys, toBson(optionsText, 'Options') ?? {});
@@ -493,6 +535,10 @@ export class CollectionPanel {
       const client = await this.connections.getClient(this.target.connectionId);
       const coll = client.db(this.target.database).collection(this.target.collection);
 
+      if (write && this.target.locked) {
+        this.post({ type: 'error', requestId: m.requestId, message: `${readOnlyMessage(this.target)} Pipelines ending with ${write.op} write to the database.` });
+        return;
+      }
       if (write) {
         const stage = write;
         const target = toShell(parseStageBody(stage));

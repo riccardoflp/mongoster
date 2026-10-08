@@ -23,8 +23,16 @@ export function collectionNameError(name: string): string | undefined {
 export class Manager {
   constructor(private readonly connections: ConnectionManager) {}
 
+  /** Read-only connections: refuse before asking anything. */
+  private locked(info: ConnectionInfo): boolean {
+    if (!info.readOnly) return false;
+    void vscode.window.showErrorMessage(`The connection ${info.name} is read-only.`);
+    return true;
+  }
+
   /** A database exists only with a collection in it, so this asks for both. */
   async createDatabase(info: ConnectionInfo): Promise<{ database: string; collection: string } | undefined> {
+    if (this.locked(info)) return undefined;
     const client = await this.connections.getClient(info.id);
     const existing = await client
       .db('admin')
@@ -52,6 +60,7 @@ export class Manager {
   }
 
   async createCollection(info: ConnectionInfo, database: string): Promise<string | undefined> {
+    if (this.locked(info)) return undefined;
     const db = (await this.connections.getClient(info.id)).db(database);
     const existing = await this.collectionNames(info, database);
     const name = (
@@ -83,6 +92,7 @@ export class Manager {
 
   /** Renames within the same database; returns the new name. */
   async renameCollection(info: ConnectionInfo, database: string, collection: string): Promise<string | undefined> {
+    if (this.locked(info)) return undefined;
     const db = (await this.connections.getClient(info.id)).db(database);
     const existing = await this.collectionNames(info, database);
     const name = (
@@ -101,6 +111,7 @@ export class Manager {
   }
 
   async dropCollection(info: ConnectionInfo, database: string, collection: string, isView: boolean): Promise<boolean> {
+    if (this.locked(info)) return false;
     const db = (await this.connections.getClient(info.id)).db(database);
     if (isView) {
       const answer = await vscode.window.showWarningMessage(
@@ -128,6 +139,7 @@ export class Manager {
   }
 
   async dropDatabase(info: ConnectionInfo, database: string): Promise<boolean> {
+    if (this.locked(info)) return false;
     const db = (await this.connections.getClient(info.id)).db(database);
     const names = await this.collectionNames(info, database).then(
       (all) => all.filter((n) => !n.startsWith('system.')),

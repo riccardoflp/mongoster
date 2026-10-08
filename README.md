@@ -5,6 +5,11 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
 ## Funzionalità
 
 - **Connessioni** nella barra laterale (icona a foglia): connessione → database → collezioni. Le connection string sono salvate nel SecretStorage di VS Code.
+  - `Edit Connection…` cambia connection string e nome (una nuova connection string viene provata prima di salvarla); `Copy Connection String` la copia negli appunti.
+  - **Cartelle**: `Move to Folder…` raggruppa le connessioni (anche in una cartella nuova); sulla cartella `+` aggiunge una connessione lì dentro, `Rename Folder…` la rinomina, `Remove Folder` la toglie lasciando le connessioni.
+  - **Colore**: `Set Color…` (rosso, arancione, giallo, verde, blu, viola) colora l'icona nell'albero e aggiunge una striscia colorata in cima alle tab delle sue collezioni, per esempio rosso per la produzione.
+  - **Sola lettura**: `Make Read-Only` impedisce a Mongoster qualsiasi scrittura tramite quella connessione (modifica, insert, delete, update/delete many, import, indici, `$out`/`$merge`, creazione/rinomina/eliminazione di database e collezioni); query, aggregate, schema, explain ed export restano disponibili. `Allow Changes` la riabilita dopo conferma. È una protezione dell'estensione: i permessi veri restano quelli dell'utente MongoDB.
+  - Nome, colore e sola lettura si applicano subito alle tab già aperte.
 - **Gestione database e collezioni** dal menu contestuale dell'albero:
   - `Create Database…` sulla connessione chiede il nome del database e della prima collezione (MongoDB crea un database solo insieme a una collezione) e la apre.
   - `Create Collection…` (anche con `+` sul database) accetta opzioni facoltative, per esempio `{ capped: true, size: 1048576 }` o `{ timeseries: { timeField: "ts" } }`.
@@ -71,7 +76,7 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
 - **Explain**: il pulsante `Explain` (in `Find` e nell'editor della pipeline) mostra come MongoDB esegue la query: indice usato o `COLLSCAN`, ordinamento in memoria, documenti e chiavi esaminati rispetto a quelli restituiti, tempo, piano di esecuzione a albero; `Raw` mostra l'output completo.
   - Se la query legge tutta la collezione o ordina in memoria propone un indice (prima i campi in uguaglianza, poi l'ordinamento, poi i range); `Create…` apre la scheda `Indexes` con l'indice già compilato.
   - Per le pipeline spiega fino allo stage mostrato; quelle con `$out`/`$merge` non si spiegano.
-- Le **view** sono in sola lettura.
+- Le **view** sono in sola lettura, come le collezioni delle connessioni in sola lettura (badge `view` / `read-only` accanto al nome).
 - `Ctrl+C` su una cella selezionata copia il valore.
 
 ## Sviluppo

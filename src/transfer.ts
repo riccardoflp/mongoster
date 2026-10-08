@@ -274,6 +274,10 @@ export async function insertDocuments(
 
 /** Asks for a file, confirms, and inserts its documents. Returns the result, or undefined if cancelled. */
 export async function importDocuments(connections: ConnectionManager, ref: CollectionRef): Promise<ImportResult | undefined> {
+  if (ref.readOnly) {
+    void vscode.window.showErrorMessage(`${ref.database}.${ref.collection} is read-only.`);
+    return undefined;
+  }
   const [uri] =
     (await vscode.window.showOpenDialog({
       title: `Import into ${ref.database}.${ref.collection}`,

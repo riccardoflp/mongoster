@@ -185,7 +185,7 @@ function savePipelineState(): void {
 
 function setMode(mode: Mode, runNow = true): void {
   state.mode = mode;
-  if (mode === 'indexes' && readOnly) mode = state.mode = 'find';
+  if (mode === 'indexes' && el<HTMLButtonElement>('modeIndexes').disabled) mode = state.mode = 'find';
   document.body.classList.toggle('mode-aggregate', mode === 'aggregate');
   document.body.classList.toggle('mode-indexes', mode === 'indexes');
   document.body.classList.toggle('mode-schema', mode === 'schema');
@@ -232,16 +232,25 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
         span('ns-sep', ' › '),
         span('ns-coll', m.collection),
       );
+      if (m.view || m.locked) {
+        const badge = span('ns-badge', m.locked ? 'read-only' : 'view');
+        badge.title = m.locked ? 'The connection is read-only: no changes are made through it' : 'Views are read-only';
+        el('ns').append(badge);
+      }
+      if (m.color) document.body.dataset.color = m.color;
+      else delete document.body.dataset.color;
       readOnly = m.readOnly;
       if (m.expanded.length) expanded = new Set(m.expanded);
       layout = m.layout ?? {};
       columnsPanel.update();
       document.body.classList.toggle('readonly', readOnly);
       el('docEdit').textContent = readOnly ? 'Open in editor' : 'Edit';
-      el<HTMLButtonElement>('modeIndexes').disabled = readOnly;
-      if (readOnly) el('modeIndexes').title = 'Views use the indexes of their source collection';
-      if (readOnly && state.mode === 'indexes') setMode('find', false);
-      if (readOnly) el('docEdit').title = el('docEdit').dataset.title = 'Open in a read-only editor tab';
+      el('docEdit').title = el('docEdit').dataset.title = readOnly
+        ? 'Open in a read-only editor tab'
+        : 'Open in an editor tab (Ctrl+S saves to the database)';
+      el<HTMLButtonElement>('modeIndexes').disabled = m.view;
+      el('modeIndexes').title = m.view ? 'Views use the indexes of their source collection' : 'Indexes of the collection';
+      if (m.view && state.mode === 'indexes') setMode('find', false);
       run();
       break;
     case 'refresh':

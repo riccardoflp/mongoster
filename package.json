@@ -123,6 +123,51 @@
         "title": "Drop Database…",
         "category": "Mongoster",
         "icon": "$(trash)"
+      },
+      {
+        "command": "mongoster.editConnection",
+        "title": "Edit Connection…",
+        "category": "Mongoster",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "mongoster.copyConnectionString",
+        "title": "Copy Connection String",
+        "category": "Mongoster"
+      },
+      {
+        "command": "mongoster.setColor",
+        "title": "Set Color…",
+        "category": "Mongoster",
+        "icon": "$(symbol-color)"
+      },
+      {
+        "command": "mongoster.setReadOnly",
+        "title": "Make Read-Only",
+        "category": "Mongoster",
+        "icon": "$(lock)"
+      },
+      {
+        "command": "mongoster.clearReadOnly",
+        "title": "Allow Changes",
+        "category": "Mongoster",
+        "icon": "$(unlock)"
+      },
+      {
+        "command": "mongoster.moveToFolder",
+        "title": "Move to Folder…",
+        "category": "Mongoster",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "mongoster.renameFolder",
+        "title": "Rename Folder…",
+        "category": "Mongoster"
+      },
+      {
+        "command": "mongoster.removeFolder",
+        "title": "Remove Folder (Keep Connections)",
+        "category": "Mongoster"
       }
     ],
     "menus": {
@@ -141,7 +186,7 @@
       "view/item/context": [
         {
           "command": "mongoster.disconnect",
-          "when": "view == mongoster.connections && viewItem == connection.connected",
+          "when": "view == mongoster.connections && viewItem =~ /^connection\\.connected/",
           "group": "inline@1"
         },
         {
@@ -151,7 +196,7 @@
         },
         {
           "command": "mongoster.disconnect",
-          "when": "view == mongoster.connections && viewItem == connection.connected",
+          "when": "view == mongoster.connections && viewItem =~ /^connection\\.connected/",
           "group": "1_connection@1"
         },
         {
@@ -176,12 +221,12 @@
         },
         {
           "command": "mongoster.exportCollection",
-          "when": "view == mongoster.connections && viewItem =~ /^(collection|view)$/",
+          "when": "view == mongoster.connections && viewItem =~ /^(collection|view)/",
           "group": "2_transfer@2"
         },
         {
           "command": "mongoster.createDatabase",
-          "when": "view == mongoster.connections && viewItem =~ /^connection/",
+          "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?$/",
           "group": "0_create@1"
         },
         {
@@ -208,6 +253,56 @@
           "command": "mongoster.dropCollection",
           "when": "view == mongoster.connections && viewItem =~ /^(collection|view)$/",
           "group": "9_drop@1"
+        },
+        {
+          "command": "mongoster.editConnection",
+          "when": "view == mongoster.connections && viewItem =~ /^connection/",
+          "group": "1_connection@0"
+        },
+        {
+          "command": "mongoster.copyConnectionString",
+          "when": "view == mongoster.connections && viewItem =~ /^connection/",
+          "group": "1_connection@3"
+        },
+        {
+          "command": "mongoster.moveToFolder",
+          "when": "view == mongoster.connections && viewItem =~ /^connection/",
+          "group": "4_organize@1"
+        },
+        {
+          "command": "mongoster.setColor",
+          "when": "view == mongoster.connections && viewItem =~ /^connection/",
+          "group": "4_organize@2"
+        },
+        {
+          "command": "mongoster.setReadOnly",
+          "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?$/",
+          "group": "4_organize@3"
+        },
+        {
+          "command": "mongoster.clearReadOnly",
+          "when": "view == mongoster.connections && viewItem =~ /^connection.*\\.readonly$/",
+          "group": "4_organize@3"
+        },
+        {
+          "command": "mongoster.addConnection",
+          "when": "view == mongoster.connections && viewItem == folder",
+          "group": "inline@1"
+        },
+        {
+          "command": "mongoster.addConnection",
+          "when": "view == mongoster.connections && viewItem == folder",
+          "group": "0_create@1"
+        },
+        {
+          "command": "mongoster.renameFolder",
+          "when": "view == mongoster.connections && viewItem == folder",
+          "group": "1_folder@1"
+        },
+        {
+          "command": "mongoster.removeFolder",
+          "when": "view == mongoster.connections && viewItem == folder",
+          "group": "1_folder@2"
         }
       ],
       "commandPalette": [
@@ -253,6 +348,38 @@
         },
         {
           "command": "mongoster.dropDatabase",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.editConnection",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.copyConnectionString",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.setColor",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.setReadOnly",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.clearReadOnly",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.moveToFolder",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.renameFolder",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.removeFolder",
           "when": "false"
         }
       ]
