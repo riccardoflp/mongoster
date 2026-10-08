@@ -2,6 +2,7 @@
 // Documents and _id values travel as relaxed EJSON plain values.
 import type { SchemaSummary } from './schema';
 import type { ChartSpec } from './chart';
+import type { OpQuery, SlowOp, SlowOpSource } from './profile';
 import type { FieldHint } from './complete';
 import type { ColumnLayout } from './columns';
 import type { PipelineStage } from './pipeline';
@@ -163,7 +164,9 @@ export type HostMessage =
   /** Output of the chart stages, relaxed EJSON. */
   | { type: 'chartData'; requestId: number; rows?: unknown[]; durationMs?: number; error?: string }
   /** `ok: false` without a message: the confirmation was cancelled. */
-  | { type: 'bulkResult'; requestId: number; ok: boolean; message?: string };
+  | { type: 'bulkResult'; requestId: number; ok: boolean; message?: string }
+  /** A query to show (from the server monitor), then run or explain. */
+  | { type: 'loadQuery'; query: QueryText; explain: boolean };
 
 // ---------------------------------------------------------------------------
 // Playground result tab
@@ -218,21 +221,6 @@ export interface MonitorOp {
   raw: unknown;
 }
 
-export interface ProfileEntry {
-  /** ISO date. */
-  ts: string;
-  op: string;
-  ns: string;
-  millis: number;
-  docsExamined?: number;
-  keysExamined?: number;
-  nreturned?: number;
-  plan?: string;
-  user?: string;
-  summary: string;
-  raw: unknown;
-}
-
 export interface ServerStats {
   host: string;
   version: string;
@@ -276,7 +264,20 @@ export type MonitorHostMessage =
   | { type: 'init'; connectionName: string; readOnly: boolean; color?: string; databases: string[] }
   | { type: 'ops'; requestId: number; ops?: MonitorOp[]; error?: string; at: number }
   | { type: 'killResult'; opid: number | string; ok: boolean; message?: string }
-  | { type: 'profile'; requestId: number; database: string; level?: number; slowms?: number; entries?: ProfileEntry[]; error?: string }
+  | {
+      type: 'profile';
+      requestId: number;
+      source: SlowOpSource;
+      /** The database (profiler), or the one the log is narrowed to ('' for all). */
+      database: string;
+      level?: number;
+      slowms?: number;
+      entries?: SlowOp[];
+      /** More operations matched than were read. */
+      limited?: boolean;
+      error?: string;
+    }
+  | { type: 'profileAction'; ok: boolean; message?: string }
   | { type: 'server'; requestId: number; stats?: ServerStats; error?: string }
   | { type: 'databases'; requestId: number; databases?: DatabaseStats[]; error?: string }
   | { type: 'collections'; requestId: number; database: string; collections?: CollectionStats[]; error?: string };
@@ -285,8 +286,15 @@ export type MonitorViewMessage =
   | { type: 'ready' }
   | { type: 'loadOps'; requestId: number; includeIdle: boolean }
   | { type: 'killOp'; opid: number | string; summary: string }
-  | { type: 'loadProfile'; requestId: number; database: string }
-  | { type: 'setProfile'; requestId: number; database: string; level: 0 | 1 | 2; slowms: number }
+  /** `sinceMinutes` 0: everything recorded. */
+  | { type: 'loadProfile'; requestId: number; source: SlowOpSource; database: string; sinceMinutes: number }
+  /** Level -1 changes only the threshold of slow operations (server-wide, also for the log). */
+  | { type: 'setProfile'; database: string; level: -1 | 0 | 1 | 2; slowms: number }
+  /** Empties system.profile of the database. */
+  | { type: 'clearProfile'; database: string }
+  /** Opens the operation's query in the collection's tab, optionally explaining it. */
+  | { type: 'openQuery'; ns: string; kind: string; query: OpQuery; explain: boolean }
+  | { type: 'createIndex'; ns: string; keys: Record<string, 1 | -1> }
   | { type: 'loadServer'; requestId: number }
   | { type: 'loadDatabases'; requestId: number }
   | { type: 'loadCollections'; requestId: number; database: string }

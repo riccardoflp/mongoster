@@ -11,6 +11,15 @@ import { MonitorPanel } from './monitor';
 import { Copier } from './copy';
 import { WatchPanel, WatchScope } from './watch';
 import { ConnectionEditor, SaveConnection } from './connectionEditor';
+import type { QueryText } from './shared/messages';
+
+interface OpenQueryArgs {
+  connectionId: string;
+  database: string;
+  collection: string;
+  query: QueryText;
+  explain: boolean;
+}
 
 export function activate(context: vscode.ExtensionContext): void {
   const connections = new ConnectionManager(context);
@@ -203,6 +212,23 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mongoster.openCollection', (node: CollectionNode) =>
       CollectionPanel.show(context, connections, documents, collectionTarget(node)),
     ),
+
+    /** Internal: shows a query in a collection's tab (from the server monitor), and explains it if asked. */
+    vscode.commands.registerCommand('mongoster.openQuery', async (args: OpenQueryArgs) => {
+      const info = connections.get(args.connectionId);
+      if (!info) return;
+      let isView = false;
+      try {
+        const db = (await connections.getClient(info.id)).db(args.database);
+        const [found] = await db.listCollections({ name: args.collection }, { nameOnly: false }).toArray();
+        if (!found) return vscode.window.showErrorMessage(`The collection ${args.database}.${args.collection} doesn't exist.`);
+        isView = found.type === 'view';
+      } catch (err) {
+        return vscode.window.showErrorMessage(errorMessage(err));
+      }
+      const node = new CollectionNode(info, args.database, args.collection, isView);
+      CollectionPanel.show(context, connections, documents, collectionTarget(node), { query: args.query, explain: args.explain });
+    }),
 
     vscode.commands.registerCommand('mongoster.insertDocument', (node?: CollectionNode) => {
       if (!node) return undefined;

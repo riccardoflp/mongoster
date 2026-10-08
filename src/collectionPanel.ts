@@ -9,7 +9,7 @@ import { parseQuery, relaxEjson, toShell } from './shared/query';
 import { PipelineStage, parseStageBody } from './shared/pipeline';
 import { StageError, buildPipeline, fromRelaxed, toBson, toUpdate } from './queries';
 import { exportDocuments } from './transfer';
-import type { AggregateRequest, BulkRequest, HostMessage, IndexInfo, QueryRequest, QuerySource, UpdateFieldRequest, WebviewMessage } from './shared/messages';
+import type { AggregateRequest, BulkRequest, HostMessage, IndexInfo, QueryRequest, QuerySource, QueryText, UpdateFieldRequest, WebviewMessage } from './shared/messages';
 import { suggestIndex, summarizeExplain } from './shared/explain';
 import { analyzeSchema } from './shared/schema';
 import { ChartSpec, chartStages, normalizeSpec, specError } from './shared/chart';
@@ -61,16 +61,21 @@ export class CollectionPanel {
     connections: ConnectionManager,
     documents: DocumentFileSystem,
     target: CollectionTarget,
+    /** A query to show instead of the last one. */
+    initial?: { query: QueryText; explain: boolean },
   ): void {
     const key = panelKey(target);
     const existing = CollectionPanel.panels.get(key);
     if (existing) {
       existing.panel.reveal();
+      if (initial) existing.post({ type: 'loadQuery', ...initial });
       return;
     }
-    CollectionPanel.panels.set(key, new CollectionPanel(context, connections, documents, target, () => {
+    const panel = new CollectionPanel(context, connections, documents, target, () => {
       CollectionPanel.panels.delete(key);
-    }));
+    });
+    panel.pending = initial;
+    CollectionPanel.panels.set(key, panel);
   }
 
   /** Closes the panels of the collections matching `which` (e.g. dropped ones); returns their targets. */
@@ -99,6 +104,8 @@ export class CollectionPanel {
 
   private readonly panel: vscode.WebviewPanel;
   private readonly history: QueryHistory;
+  /** Query to load once the webview is ready. */
+  private pending?: { query: QueryText; explain: boolean };
 
   private constructor(
     private readonly context: vscode.ExtensionContext,
@@ -153,6 +160,8 @@ export class CollectionPanel {
       case 'ready':
         this.postInit();
         this.postHistory();
+        if (this.pending) this.post({ type: 'loadQuery', ...this.pending });
+        this.pending = undefined;
         break;
       case 'saveQuery': {
         const name = await vscode.window.showInputBox({

@@ -1,5 +1,5 @@
 // Server monitor: one tab per connection with the running operations (currentOp, killOp), the slow
-// queries recorded by the profiler, and server, database and collection statistics.
+// queries recorded by the profiler or logged by the server, and server, database and collection statistics.
 import * as vscode from 'vscode';
 import { BSON, Db, Document, MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
@@ -9,15 +9,16 @@ import type {
   MonitorHostMessage,
   MonitorOp,
   MonitorViewMessage,
-  ProfileEntry,
   ServerStats,
 } from './shared/messages';
 import { relaxEjson, toShell } from './shared/query';
+import { OpQuery, SlowOp, SlowOpSource, fromLogLine, fromProfileDoc, isNoise, splitNs } from './shared/profile';
 import { errorMessage } from './tree';
 
 const { EJSON } = BSON;
 
-const PROFILE_LIMIT = 200;
+/** Profiler documents read: the most recent ones. */
+const PROFILE_LIMIT = 1000;
 /** Databases and collections whose statistics are read in parallel. */
 const PARALLEL = 8;
 /** Command fields that only add noise to a one-line summary. */
@@ -112,10 +113,19 @@ export class MonitorPanel {
         await this.killOp(m.opid, m.summary);
         break;
       case 'loadProfile':
-        await this.loadProfile(m.requestId, m.database);
+        await this.loadProfile(m.requestId, m.source, m.database, m.sinceMinutes);
+        break;
+      case 'clearProfile':
+        await this.clearProfile(m.database);
+        break;
+      case 'openQuery':
+        await this.openQuery(m.ns, m.kind, m.query, m.explain);
+        break;
+      case 'createIndex':
+        await this.createIndex(m.ns, m.keys);
         break;
       case 'setProfile':
-        await this.setProfile(m.requestId, m.database, m.level, m.slowms);
+        await this.setProfile(m.database, m.level, m.slowms);
         break;
       case 'loadServer':
         await this.loadServer(m.requestId);
@@ -169,35 +179,135 @@ export class MonitorPanel {
 
   // ---- profiler
 
-  private async loadProfile(requestId: number, database: string): Promise<void> {
+  /**
+   * Slow operations of the last `sinceMinutes` (0: all): from system.profile of `database`, or from the
+   * server log (its last 1024 lines, every database, narrowed to `database` when given).
+   */
+  private async loadProfile(requestId: number, source: SlowOpSource, database: string, sinceMinutes: number): Promise<void> {
+    const since = sinceMinutes ? new Date(Date.now() - sinceMinutes * 60_000) : undefined;
     try {
-      const db = (await this.client()).db(database);
-      const status = await db.command({ profile: -1 });
-      const docs = await db.collection('system.profile').find({}).sort({ ts: -1 }).limit(PROFILE_LIMIT).toArray();
+      const client = await this.client();
+      // The threshold (slowms) is the server's; the level is the database's.
+      const status = await client.db(database || 'admin').command({ profile: -1 });
+      let entries: SlowOp[];
+      let limited = false;
+      if (source === 'profiler') {
+        const docs = await client
+          .db(database)
+          .collection('system.profile')
+          .find(since ? { ts: { $gte: since } } : {})
+          .sort({ ts: -1 })
+          .limit(PROFILE_LIMIT + 1)
+          .toArray();
+        limited = docs.length > PROFILE_LIMIT;
+        entries = docs.slice(0, PROFILE_LIMIT).map((d) => fromProfileDoc(relaxed(d) as Record<string, unknown>));
+      } else {
+        const res = await client.db('admin').command({ getLog: 'global' });
+        const lines = (res.log ?? []) as string[];
+        limited = Number(res.totalLinesWritten ?? 0) > lines.length;
+        entries = lines
+          .map(fromLogLine)
+          .filter((e): e is SlowOp => !!e && (!database || splitNs(e.ns).database === database) && (!since || new Date(e.ts) >= since))
+          .reverse();
+      }
       this.post({
         type: 'profile',
         requestId,
+        source,
         database,
-        level: status.was,
+        level: source === 'profiler' ? status.was : undefined,
         slowms: status.slowms,
-        entries: docs.map(toProfileEntry),
+        entries: entries.filter((e) => !isNoise(e)),
+        limited,
       });
     } catch (err) {
-      this.post({ type: 'profile', requestId, database, error: errorMessage(err) });
+      this.post({ type: 'profile', requestId, source, database, error: errorMessage(err) });
     }
   }
 
-  private async setProfile(requestId: number, database: string, level: 0 | 1 | 2, slowms: number): Promise<void> {
-    if (this.info.readOnly) {
-      void vscode.window.showErrorMessage(`The connection ${this.info.name} is read-only: the profiler level can't be changed.`);
-      return this.loadProfile(requestId, database);
-    }
+  private async setProfile(database: string, level: -1 | 0 | 1 | 2, slowms: number): Promise<void> {
+    const reply = (ok: boolean, message?: string) => this.post({ type: 'profileAction', ok, message });
+    if (this.info.readOnly) return reply(false, `The connection ${this.info.name} is read-only: the profiler can't be changed.`);
     try {
-      await (await this.client()).db(database).command({ profile: level, slowms });
+      await (await this.client()).db(database || 'admin').command({ profile: level, slowms });
+      reply(
+        true,
+        level === -1
+          ? `Operations slower than ${slowms} ms are now logged.`
+          : level === 0
+            ? `The profiler of ${database} is off.`
+            : `The profiler of ${database} records ${level === 2 ? 'every operation' : `operations slower than ${slowms} ms`}.`,
+      );
     } catch (err) {
-      void vscode.window.showErrorMessage(`Profiler not changed: ${errorMessage(err)}`);
+      reply(false, `Profiler not changed: ${errorMessage(err)}`);
     }
-    await this.loadProfile(requestId, database);
+  }
+
+  /** Drops system.profile: the profiler must be off meanwhile, then it is set back as it was. */
+  private async clearProfile(database: string): Promise<void> {
+    const reply = (ok: boolean, message?: string) => this.post({ type: 'profileAction', ok, message });
+    if (this.info.readOnly) return reply(false, `The connection ${this.info.name} is read-only.`);
+    const answer = await vscode.window.showWarningMessage(
+      `Clear the operations recorded by the profiler of ${database}?`,
+      { modal: true, detail: 'The system.profile collection is emptied; the profiler keeps recording with the same settings.' },
+      'Clear',
+    );
+    if (answer !== 'Clear') return reply(false);
+    try {
+      const db = (await this.client()).db(database);
+      const status = await db.command({ profile: -1 });
+      if (status.was) await db.command({ profile: 0 });
+      try {
+        await db.collection('system.profile').drop();
+      } catch (err) {
+        if (!/ns not found/i.test(errorMessage(err))) throw err;
+      } finally {
+        if (status.was) await db.command({ profile: status.was, slowms: status.slowms });
+      }
+      reply(true, `Cleared the profiler of ${database}.`);
+    } catch (err) {
+      reply(false, errorMessage(err));
+    }
+  }
+
+  /** Shows the query in the collection's tab (filter, sort and projection, or the pipeline). */
+  private async openQuery(ns: string, kind: string, query: OpQuery, explain: boolean): Promise<void> {
+    const { database, collection } = splitNs(ns);
+    const text = (v: unknown) => (v === undefined ? '' : toShell(v));
+    await vscode.commands.executeCommand('mongoster.openQuery', {
+      connectionId: this.info.id,
+      database,
+      collection,
+      query:
+        kind === 'aggregate'
+          ? { filter: '', sort: '', projection: '', pipeline: (query.pipeline ?? []).map((stage) => ({ op: Object.keys(stage)[0], body: toShell(Object.values(stage)[0]), enabled: true })) }
+          : { filter: text(query.filter), sort: text(query.sort), projection: kind === 'find' ? text(query.projection) : '' },
+      explain,
+    });
+  }
+
+  private async createIndex(ns: string, keys: Record<string, 1 | -1>): Promise<void> {
+    const reply = (ok: boolean, message?: string) => this.post({ type: 'profileAction', ok, message });
+    if (this.info.readOnly) return reply(false, `The connection ${this.info.name} is read-only.`);
+    const { database, collection } = splitNs(ns);
+    try {
+      const coll = (await this.client()).db(database).collection(collection);
+      const same = (await coll.listIndexes().toArray()).find((ix) => JSON.stringify(ix.key) === JSON.stringify(keys));
+      if (same) return reply(false, `${ns} already has the index ${same.name} on ${toShell(keys)}.`);
+      const answer = await vscode.window.showWarningMessage(
+        `Create the index ${toShell(keys)} on ${ns}?`,
+        {
+          modal: true,
+          detail: 'Building an index reads the whole collection: on a large collection it takes time and loads the server. Every write then also updates the index.',
+        },
+        'Create Index',
+      );
+      if (answer !== 'Create Index') return reply(false);
+      const name = await coll.createIndex(keys);
+      reply(true, `Created the index ${name} on ${ns}.`);
+    } catch (err) {
+      reply(false, `Index not created: ${errorMessage(err)}`);
+    }
   }
 
   // ---- statistics
@@ -315,10 +425,31 @@ export class MonitorPanel {
 
   <section id="profileView" class="view hidden">
     <div class="toolbar">
+      <label title="Profiler: the operations recorded in system.profile of a database. Server log: the slow operations of every database in the server's recent log, without turning the profiler on.">Source
+        <select id="profileSource">
+          <option value="profiler">Profiler</option>
+          <option value="log">Server log</option>
+        </select>
+      </label>
       <label>Database <select id="profileDb"></select></label>
+      <label>Since
+        <select id="profileSince">
+          <option value="15">15 minutes</option>
+          <option value="60">1 hour</option>
+          <option value="1440">24 hours</option>
+          <option value="0">all</option>
+        </select>
+      </label>
+      <div class="tabs" role="tablist" aria-label="Show">
+        <button id="profileGrouped" role="tab" title="One row per query shape (the query with its values replaced by ?), with totals">By query</button>
+        <button id="profileAll" role="tab" title="Every operation, the most recent first">All</button>
+      </div>
+      <input id="profileFilter" type="search" placeholder="Filter by namespace, operation, plan or query" spellcheck="false">
+    </div>
+    <div class="toolbar">
       <span id="profileStatus" class="info"></span>
       <span class="spacer"></span>
-      <span class="not-locked profile-set">
+      <span class="not-locked profile-set profiler-only">
         Profile
         <select id="profileLevel" title="Profiler level of the database">
           <option value="0">off</option>
@@ -327,9 +458,15 @@ export class MonitorPanel {
         </select>
         slower than <input id="profileSlowms" type="number" min="0" step="1" value="100"> ms
         <button id="profileApply" class="secondary" title="Change the profiler of this database (a server setting)">Apply</button>
+        <button id="profileClear" class="secondary" title="Empty system.profile of this database">Clear</button>
+      </span>
+      <span class="not-locked profile-set log-only">
+        Log operations slower than <input id="logSlowms" type="number" min="0" step="1" value="100"> ms
+        <button id="logApply" class="secondary" title="Change the threshold of slow operations (slowms, a server setting)">Apply</button>
       </span>
     </div>
     <div id="profileError" class="error hidden"></div>
+    <div id="profileMessage" class="message hidden"></div>
     <div class="table-wrap"><table id="profileTable"></table></div>
   </section>
 
@@ -368,24 +505,6 @@ function toOp(op: Document): MonitorOp {
     system: !op.client && !op.client_s,
     summary: summarize(command) || op.msg || '',
     raw: relaxed(op),
-  };
-}
-
-function toProfileEntry(doc: Document): ProfileEntry {
-  const users = doc.allUsers as { user: string; db: string }[] | undefined;
-  const num = (v: unknown) => (v === undefined ? undefined : Number(v));
-  return {
-    ts: doc.ts instanceof Date ? doc.ts.toISOString() : String(doc.ts),
-    op: doc.op ?? '',
-    ns: doc.ns ?? '',
-    millis: Number(doc.millis ?? 0),
-    docsExamined: num(doc.docsExamined),
-    keysExamined: num(doc.keysExamined),
-    nreturned: num(doc.nreturned),
-    plan: doc.planSummary,
-    user: users?.map((u) => `${u.user}@${u.db}`).join(', ') || undefined,
-    summary: summarize(doc.command ?? doc.query ?? doc.updateobj),
-    raw: relaxed(doc),
   };
 }
 

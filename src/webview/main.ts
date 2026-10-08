@@ -1,5 +1,5 @@
 import { isEjsonWrapper, isPlainObject, mergeCondition, parseQuery, prettyShell, toShell } from '../shared/query';
-import type { HostMessage, QuerySource, WebviewMessage } from '../shared/messages';
+import type { HostMessage, QuerySource, QueryText, WebviewMessage } from '../shared/messages';
 import type { PipelineStage } from '../shared/pipeline';
 import { HistoryPopover } from './history';
 import { PipelineEditor } from './pipeline';
@@ -295,6 +295,10 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       break;
     case 'history':
       history.update(m.recent, m.saved);
+      break;
+    case 'loadQuery':
+      loadQuery(m.query);
+      if (m.explain) explain();
       break;
     case 'indexes':
       indexesView.render(m.indexes, m.error);
@@ -1157,19 +1161,22 @@ function span(className: string, text: string): HTMLSpanElement {
 // ---------------------------------------------------------------------------
 // History
 
+/** Shows a query (from the history or the server monitor) and runs it. */
+function loadQuery(q: QueryText): void {
+  if (q.pipeline) {
+    pipeline.setStages(q.pipeline);
+    setMode('aggregate');
+    return;
+  }
+  filterInput.value = q.filter;
+  sortInput.value = q.sort;
+  projectionInput.value = q.projection;
+  autosize();
+  setMode('find');
+}
+
 const history = new HistoryPopover({
-  apply(q) {
-    if (q.pipeline) {
-      pipeline.setStages(q.pipeline);
-      setMode('aggregate');
-      return;
-    }
-    filterInput.value = q.filter;
-    sortInput.value = q.sort;
-    projectionInput.value = q.projection;
-    autosize();
-    setMode('find');
-  },
+  apply: loadQuery,
   save: (q) =>
     vscode.postMessage({
       type: 'saveQuery',

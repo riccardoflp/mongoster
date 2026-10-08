@@ -5,10 +5,10 @@ import type {
   MonitorHostMessage,
   MonitorOp,
   MonitorViewMessage,
-  ProfileEntry,
   ServerStats,
 } from '../shared/messages';
-import { prettyShell } from '../shared/query';
+import { prettyShell, toShell } from '../shared/query';
+import { SlowOp, SlowOpGroup, SlowOpSource, canOpen, groupOps, splitNs } from '../shared/profile';
 
 type Tab = 'ops' | 'profile' | 'stats';
 
@@ -20,6 +20,14 @@ interface State {
   idle: boolean;
   system: boolean;
   profileDb?: string;
+  /** Database the server log is narrowed to ('' for all). */
+  logDb?: string;
+  profileSource: SlowOpSource;
+  /** Minutes, 0 for everything recorded. */
+  profileSince: number;
+  profileView: 'grouped' | 'all';
+  profileFilter: string;
+  profileSort?: SortState;
   statsDb?: string;
   dbSort?: SortState;
   collSort?: SortState;
@@ -37,14 +45,27 @@ declare function acquireVsCodeApi(): {
 };
 
 const vscode = acquireVsCodeApi();
-const state: State = { tab: 'ops', auto: 5, filter: '', minSeconds: 0, idle: false, system: false, ...vscode.getState() };
+const state: State = {
+  tab: 'ops',
+  auto: 5,
+  filter: '',
+  minSeconds: 0,
+  idle: false,
+  system: false,
+  profileSource: 'profiler',
+  profileSince: 60,
+  profileView: 'grouped',
+  profileFilter: '',
+  ...vscode.getState(),
+};
 const save = () => vscode.setState(state);
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 let readOnly = false;
 let databases: string[] = [];
 let ops: MonitorOp[] = [];
-let profile: ProfileEntry[] = [];
+let profile: SlowOp[] = [];
+let profileInfo: { level?: number; slowms?: number; limited?: boolean } = {};
 let dbStats: DatabaseStats[] = [];
 let collStats: CollectionStats[] = [];
 /** Previous server sample, for rates. */
@@ -155,9 +176,8 @@ function setTab(tab: Tab): void {
 /** Reloads the current tab; `full` also reloads the slower parts (database and collection statistics). */
 function refresh(full: boolean): void {
   if (state.tab === 'ops') vscode.postMessage({ type: 'loadOps', requestId: request('ops'), includeIdle: state.idle });
-  else if (state.tab === 'profile') {
-    if (state.profileDb) vscode.postMessage({ type: 'loadProfile', requestId: request('profile'), database: state.profileDb });
-  } else {
+  else if (state.tab === 'profile') profileRequest();
+  else {
     vscode.postMessage({ type: 'loadServer', requestId: request('server') });
     if (full) {
       vscode.postMessage({ type: 'loadDatabases', requestId: request('databases') });
@@ -241,51 +261,266 @@ function renderOps(): void {
 // ---------------------------------------------------------------------------
 // Profiler
 
-function renderProfile(level: number | undefined, slowms: number | undefined): void {
+function profileRequest(): void {
+  const database = state.profileSource === 'log' ? state.logDb ?? '' : state.profileDb;
+  if (database === undefined) return;
+  vscode.postMessage({ type: 'loadProfile', requestId: request('profile'), source: state.profileSource, database, sinceMinutes: state.profileSince });
+}
+
+/** The database list of the source: the log can also show every database. */
+function fillProfileDbs(): void {
+  const select = el<HTMLSelectElement>('profileDb');
+  const log = state.profileSource === 'log';
+  select.replaceChildren(...(log ? [new Option('all databases', '')] : []), ...databases.map((d) => new Option(d, d)));
+  select.value = (log ? state.logDb : state.profileDb) ?? '';
+  document.body.classList.toggle('source-log', log);
+  el<HTMLSelectElement>('profileSource').value = state.profileSource;
+}
+
+const SINCE: Record<number, string> = { 15: 'in the last 15 minutes', 60: 'in the last hour', 1440: 'in the last 24 hours', 0: '' };
+
+function matches(op: SlowOp, needle: string): boolean {
+  return !needle || [op.ns, op.kind, op.plan, op.shape, op.summary, op.app].some((v) => v?.toLowerCase().includes(needle));
+}
+
+function renderProfile(): void {
   const table = el<HTMLTableElement>('profileTable');
   table.replaceChildren();
-  if (level !== undefined) {
-    el<HTMLSelectElement>('profileLevel').value = String(level);
-    if (slowms !== undefined) el<HTMLInputElement>('profileSlowms').value = String(slowms);
-    el('profileStatus').textContent =
-      level === 0 ? 'Profiler off' : level === 1 ? `Recording operations slower than ${slowms} ms` : 'Recording all operations';
+  const { level, slowms, limited } = profileInfo;
+  const log = state.profileSource === 'log';
+  if (slowms !== undefined) {
+    el<HTMLInputElement>('profileSlowms').value = String(slowms);
+    el<HTMLInputElement>('logSlowms').value = String(slowms);
   }
-  if (!profile.length) {
+  if (level !== undefined) el<HTMLSelectElement>('profileLevel').value = String(level);
+  el('profileGrouped').setAttribute('aria-selected', String(state.profileView === 'grouped'));
+  el('profileAll').setAttribute('aria-selected', String(state.profileView === 'all'));
+
+  const needle = state.profileFilter.trim().toLowerCase();
+  const shown = profile.filter((op) => matches(op, needle));
+  const groups = groupOps(shown);
+  const recording = log
+    ? `The server logs the operations slower than ${slowms ?? '?'} ms`
+    : level === 0
+      ? 'Profiler off'
+      : level === 1
+        ? `Recording operations slower than ${slowms} ms`
+        : 'Recording all operations';
+  const found = `${count(shown.length)} operation${shown.length === 1 ? '' : 's'}${state.profileView === 'grouped' ? ` · ${count(groups.length)} quer${groups.length === 1 ? 'y' : 'ies'}` : ''}`;
+  const more = limited ? (log ? ' · older lines are no longer in the log' : ` · the latest ${count(profile.length)}`) : '';
+  el('profileStatus').textContent = `${recording} · ${found}${more}`;
+
+  if (!shown.length) {
     const p = table.createTBody().insertRow().insertCell();
     p.className = 'empty';
-    p.textContent =
-      level === 0
-        ? 'The profiler of this database is off: choose "slow operations" and Apply to record the operations slower than the threshold.'
-        : 'No operations recorded yet.';
+    const since = SINCE[state.profileSince] ?? '';
+    p.textContent = profile.length
+      ? 'No operation matches the filter.'
+      : log
+        ? `No operations slower than ${slowms} ms in the server log${since ? ` ${since}` : ''}. Lower the threshold to log more of them.`
+        : level === 0
+          ? 'The profiler of this database is off: choose "slow operations" and Apply to record the operations slower than the threshold, or look at the server log.'
+          : `No operations recorded${since ? ` ${since}` : ''}.`;
     return;
   }
-  header(table, ['time', 'op', 'namespace', 'ms', 'docs examined', 'keys examined', 'returned', 'plan', 'command']);
+  if (state.profileView === 'grouped') renderGroups(table, groups);
+  else renderOperations(table, shown);
+}
+
+type GroupSortKey = 'count' | 'totalMs' | 'avgMs' | 'maxMs' | 'scanned' | 'last';
+
+function renderGroups(table: HTMLTableElement, groups: SlowOpGroup[]): void {
+  const sort = state.profileSort ?? { key: 'totalMs', desc: true };
+  const value = (g: SlowOpGroup, key: GroupSortKey): number | string =>
+    key === 'scanned' ? g.docsExamined / Math.max(g.nreturned, 1) : key === 'last' ? g.last : g[key];
+  groups.sort((a, b) => {
+    const x = value(a, sort.key as GroupSortKey);
+    const y = value(b, sort.key as GroupSortKey);
+    const cmp = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y));
+    return sort.desc ? -cmp : cmp;
+  });
+  const head = table.createTHead().insertRow();
+  const columns: [string, GroupSortKey | null, string][] = [
+    ['count', 'count', 'Times the query ran (getMore batches included)'],
+    ['total ms', 'totalMs', 'Time spent in all the executions'],
+    ['avg ms', 'avgMs', ''],
+    ['max ms', 'maxMs', ''],
+    ['examined / returned', 'scanned', 'Documents examined and returned, in all the executions'],
+    ['op', null, ''],
+    ['namespace', null, ''],
+    ['query', null, 'The query with its values replaced by ?'],
+    ['plan', null, ''],
+    ['last', 'last', ''],
+  ];
+  for (const [label, key, title] of columns) {
+    const th = document.createElement('th');
+    th.textContent = label + (key && sort.key === key ? (sort.desc ? ' ▼' : ' ▲') : '');
+    if (title) th.title = title;
+    if (key) {
+      th.className = 'sortable-th';
+      th.addEventListener('click', () => {
+        state.profileSort = { key, desc: sort.key === key ? !sort.desc : true };
+        save();
+        renderProfile();
+      });
+    }
+    head.append(th);
+  }
   const body = table.createTBody();
-  for (const entry of profile) {
-    const id = `${entry.ts}/${entry.ns}/${entry.summary.length}`;
+  for (const g of groups) {
     const row = body.insertRow();
     row.className = 'op';
-    row.classList.toggle('expanded', expandedProfile.has(id));
-    const ts = new Date(entry.ts);
-    cell(row, ts.toLocaleTimeString(), 'num', ts.toLocaleString());
-    cell(row, entry.op);
-    cell(row, entry.ns);
-    cell(row, count(entry.millis), `num ${entry.millis >= 1000 ? 'very-slow' : entry.millis >= 100 ? 'slow' : ''}`);
-    const ratio = entry.docsExamined && entry.nreturned !== undefined ? entry.docsExamined / Math.max(entry.nreturned, 1) : 0;
-    cell(row, count(entry.docsExamined), `num ${ratio >= 100 ? 'slow' : ''}`, ratio >= 100 ? `${Math.round(ratio)} documents examined per document returned` : undefined);
-    cell(row, count(entry.keysExamined), 'num');
-    cell(row, count(entry.nreturned), 'num');
-    cell(row, entry.plan ?? '', entry.plan?.startsWith('COLLSCAN') ? 'collscan' : '');
-    cell(row, entry.summary, 'command', entry.summary);
-    row.addEventListener('click', () => {
-      if (expandedProfile.has(id)) expandedProfile.delete(id);
-      else expandedProfile.add(id);
-      renderProfile(undefined, undefined);
-    });
-    if (expandedProfile.has(id)) detailRow(table, 9, entry.raw);
+    row.classList.toggle('expanded', expandedProfile.has(g.key));
+    cell(row, count(g.count), 'num', g.getMores ? `${g.getMores} getMore batch${g.getMores === 1 ? '' : 'es'}` : undefined);
+    cell(row, count(Math.round(g.totalMs)), `num ${slowness(g.maxMs)}`);
+    cell(row, count(Math.round(g.avgMs)), 'num');
+    cell(row, count(g.maxMs), `num ${slowness(g.maxMs)}`);
+    const scanned = g.docsExamined / Math.max(g.nreturned, 1);
+    cell(row, `${count(g.docsExamined)} / ${count(g.nreturned)}`, `num ${scanned >= 100 ? 'slow' : ''}`, scanned >= 10 ? `${count(Math.round(scanned))} documents examined per document returned` : undefined);
+    cell(row, g.kind + (g.suggestion ? ' ⚑' : ''), '', g.suggestion ? 'An index could help: see the details' : undefined);
+    cell(row, g.ns);
+    cell(row, g.shape, 'command shape', g.shape);
+    cell(row, g.plans.join(' · '), g.collscan ? 'collscan' : '');
+    const last = new Date(g.last);
+    cell(row, last.toLocaleTimeString(), 'num', last.toLocaleString());
+    row.addEventListener('click', () => toggleProfile(g.key));
+    if (expandedProfile.has(g.key)) profileDetail(table, columns.length, g.slowest, g);
   }
 }
 
+function renderOperations(table: HTMLTableElement, ops: SlowOp[]): void {
+  header(table, ['time', 'op', 'namespace', 'ms', 'docs examined', 'keys examined', 'returned', 'plan', 'command']);
+  const body = table.createTBody();
+  for (const op of ops) {
+    const id = `${op.ts}/${op.ns}/${op.millis}/${op.summary}`;
+    const row = body.insertRow();
+    row.className = 'op';
+    row.classList.toggle('expanded', expandedProfile.has(id));
+    const ts = new Date(op.ts);
+    cell(row, ts.toLocaleTimeString(), 'num', ts.toLocaleString());
+    cell(row, op.kind + (op.getMore ? ' (getMore)' : ''));
+    cell(row, op.ns);
+    cell(row, count(op.millis), `num ${slowness(op.millis)}`);
+    const ratio = op.docsExamined && op.nreturned !== undefined ? op.docsExamined / Math.max(op.nreturned, 1) : 0;
+    cell(row, count(op.docsExamined), `num ${ratio >= 100 ? 'slow' : ''}`, ratio >= 100 ? `${Math.round(ratio)} documents examined per document returned` : undefined);
+    cell(row, count(op.keysExamined), 'num');
+    cell(row, count(op.nreturned), 'num');
+    cell(row, op.plan ?? '', op.plan?.includes('COLLSCAN') ? 'collscan' : '');
+    cell(row, op.summary, 'command', op.summary);
+    row.addEventListener('click', () => toggleProfile(id));
+    if (expandedProfile.has(id)) profileDetail(table, 9, op);
+  }
+}
+
+const slowness = (ms: number) => (ms >= 1000 ? 'very-slow' : ms >= 100 ? 'slow' : '');
+
+function toggleProfile(id: string): void {
+  if (expandedProfile.has(id)) expandedProfile.delete(id);
+  else expandedProfile.add(id);
+  renderProfile();
+}
+
+/** The query parts of an operation, to show and copy. */
+function queryOf(op: SlowOp): unknown {
+  if (op.kind === 'aggregate') return op.query.pipeline ?? [];
+  return Object.fromEntries(Object.entries(op.query).filter(([, v]) => v !== undefined));
+}
+
+function button(label: string, title: string, onClick: () => void, className = 'secondary small'): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.className = className;
+  b.textContent = label;
+  b.title = title;
+  b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    onClick();
+  });
+  return b;
+}
+
+/** Details of an operation, or of a group with its slowest operation as the example. */
+function profileDetail(table: HTMLTableElement, colspan: number, op: SlowOp, group?: SlowOpGroup): void {
+  const row = table.tBodies[0].insertRow();
+  row.className = 'detail';
+  const cellOf = row.insertCell();
+  cellOf.colSpan = colspan;
+  // The table can be wider than the tab: the details stay in view.
+  const c = document.createElement('div');
+  c.className = 'detail-box';
+  cellOf.append(c);
+  const { collection } = splitNs(op.ns);
+  const openable = canOpen(op.kind) && !!collection && !collection.startsWith('$cmd');
+
+  if (group?.suggestion) {
+    const box = document.createElement('div');
+    box.className = 'suggestion';
+    const scanned = group.docsExamined / Math.max(group.nreturned, 1);
+    const why = group.collscan
+      ? 'The plan scans the whole collection (COLLSCAN).'
+      : group.sortStage
+        ? 'The results are sorted in memory.'
+        : `${count(Math.round(scanned))} documents are examined per document returned.`;
+    const text = document.createElement('span');
+    text.textContent = `${why} An index on ${toShell(group.suggestion)} (equality fields, then sort, then range) could serve this query.`;
+    box.append(text);
+    box.append(
+      button('Create Index…', `Create ${toShell(group.suggestion)} on ${op.ns}`, () =>
+        vscode.postMessage({ type: 'createIndex', ns: op.ns, keys: group.suggestion! }),
+        'secondary small not-locked',
+      ),
+    );
+    c.append(box);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'detail-actions';
+  if (openable) {
+    actions.append(
+      button('Open in Collection', `Show the ${op.kind === 'aggregate' ? 'pipeline' : 'filter'} in the tab of ${op.ns}`, () =>
+        vscode.postMessage({ type: 'openQuery', ns: op.ns, kind: op.kind, query: op.query, explain: false }),
+      ),
+      button('Explain', 'How the server runs this query now (indexes created since are taken into account)', () =>
+        vscode.postMessage({ type: 'openQuery', ns: op.ns, kind: op.kind, query: op.query, explain: true }),
+      ),
+    );
+  }
+  actions.append(button('Copy Query', 'Copy the query (mongosh syntax)', () => vscode.postMessage({ type: 'copy', text: prettyShell(queryOf(op), 0, 110) })));
+  if (group) {
+    actions.append(
+      button('Show Operations', 'Every execution of this query', () => {
+        state.profileView = 'all';
+        state.profileFilter = group.shape;
+        el<HTMLInputElement>('profileFilter').value = group.shape;
+        save();
+        renderProfile();
+      }),
+    );
+    const facts = document.createElement('span');
+    facts.className = 'info';
+    facts.textContent = [
+      `example: the slowest, ${count(op.millis)} ms at ${new Date(op.ts).toLocaleString()}`,
+      group.getMores ? `${count(group.getMores)} getMore batches` : '',
+      group.apps.length ? `apps: ${group.apps.join(', ')}` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    actions.append(facts);
+  }
+  c.append(actions);
+
+  const pre = document.createElement('pre');
+  pre.textContent = prettyShell(queryOf(op), 0, 110);
+  c.append(pre);
+  const raw = document.createElement('details');
+  const summary = document.createElement('summary');
+  summary.textContent = state.profileSource === 'log' ? 'Log entry' : 'Profiler document';
+  const rawPre = document.createElement('pre');
+  raw.addEventListener('toggle', () => {
+    if (raw.open && !rawPre.textContent) rawPre.textContent = prettyShell(op.raw, 0, 110);
+  });
+  raw.append(summary, rawPre);
+  c.append(raw);
+}
 // ---------------------------------------------------------------------------
 // Statistics
 
@@ -464,12 +699,11 @@ window.addEventListener('message', (e: MessageEvent<MonitorHostMessage>) => {
         el('title').append(' ', badge);
       }
       databases = m.databases;
-      const select = el<HTMLSelectElement>('profileDb');
-      select.replaceChildren(...databases.map((d) => new Option(d, d)));
       if (!state.profileDb || !databases.includes(state.profileDb)) {
         state.profileDb = databases.find((d) => !['admin', 'local', 'config'].includes(d)) ?? databases[0];
       }
-      if (state.profileDb) select.value = state.profileDb;
+      if (state.logDb && !databases.includes(state.logDb)) state.logDb = '';
+      fillProfileDbs();
       setTab(state.tab);
       break;
     }
@@ -491,8 +725,17 @@ window.addEventListener('message', (e: MessageEvent<MonitorHostMessage>) => {
       if (m.requestId !== latest.profile) return;
       showError('profileError', m.error);
       profile = m.entries ?? [];
-      renderProfile(m.level, m.slowms);
+      profileInfo = { level: m.level, slowms: m.slowms, limited: m.limited };
+      renderProfile();
       break;
+    case 'profileAction': {
+      const box = el('profileMessage');
+      box.textContent = m.message ?? '';
+      box.classList.toggle('hidden', !m.message);
+      box.classList.toggle('failed', !m.ok);
+      if (m.ok) profileRequest();
+      break;
+    }
     case 'server':
       if (m.requestId !== latest.server) return;
       showError('serverError', m.error);
@@ -554,18 +797,57 @@ system.addEventListener('change', () => {
   renderOps();
 });
 
-el<HTMLSelectElement>('profileDb').addEventListener('change', (e) => {
-  state.profileDb = (e.target as HTMLSelectElement).value;
+/** Shows other operations: the expanded rows and the last message no longer apply. */
+function profileChanged(): void {
   save();
   profile = [];
   expandedProfile.clear();
-  refresh(true);
+  el('profileMessage').classList.add('hidden');
+  profileRequest();
+}
+el<HTMLSelectElement>('profileSource').addEventListener('change', (e) => {
+  state.profileSource = (e.target as HTMLSelectElement).value as SlowOpSource;
+  fillProfileDbs();
+  profileChanged();
 });
+el<HTMLSelectElement>('profileDb').addEventListener('change', (e) => {
+  const value = (e.target as HTMLSelectElement).value;
+  if (state.profileSource === 'log') state.logDb = value;
+  else state.profileDb = value;
+  profileChanged();
+});
+const since = el<HTMLSelectElement>('profileSince');
+since.value = String(state.profileSince);
+since.addEventListener('change', () => {
+  state.profileSince = Number(since.value);
+  profileChanged();
+});
+for (const [id, view] of [
+  ['profileGrouped', 'grouped'],
+  ['profileAll', 'all'],
+] as const) {
+  el(id).addEventListener('click', () => {
+    state.profileView = view;
+    save();
+    renderProfile();
+  });
+}
+const profileFilter = el<HTMLInputElement>('profileFilter');
+profileFilter.value = state.profileFilter;
+profileFilter.addEventListener('input', () => {
+  state.profileFilter = profileFilter.value;
+  save();
+  renderProfile();
+});
+const slowmsOf = (id: string) => Math.max(0, Math.round(Number(el<HTMLInputElement>(id).value) || 0));
 el('profileApply').addEventListener('click', () => {
   if (!state.profileDb) return;
   const level = Number(el<HTMLSelectElement>('profileLevel').value) as 0 | 1 | 2;
-  const slowms = Math.max(0, Math.round(Number(el<HTMLInputElement>('profileSlowms').value) || 0));
-  vscode.postMessage({ type: 'setProfile', requestId: request('profile'), database: state.profileDb, level, slowms });
+  vscode.postMessage({ type: 'setProfile', database: state.profileDb, level, slowms: slowmsOf('profileSlowms') });
+});
+el('logApply').addEventListener('click', () => vscode.postMessage({ type: 'setProfile', database: '', level: -1, slowms: slowmsOf('logSlowms') }));
+el('profileClear').addEventListener('click', () => {
+  if (state.profileDb) vscode.postMessage({ type: 'clearProfile', database: state.profileDb });
 });
 
 setAuto(state.auto);

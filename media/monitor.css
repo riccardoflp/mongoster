@@ -342,3 +342,70 @@ h3 {
   color: var(--muted);
   font-size: 0.9em;
 }
+
+/* ---------- slow queries ---------- */
+
+body.source-log .profiler-only,
+body:not(.source-log) .log-only {
+  display: none !important;
+}
+
+#profileFilter {
+  flex: 1;
+  min-width: 160px;
+}
+
+td.command.shape {
+  max-width: 380px;
+}
+
+th.sortable-th {
+  cursor: pointer;
+}
+
+.message {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.message.failed {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.suggestion {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 6px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--vscode-editorWarning-foreground, #cca700);
+  background: var(--vscode-inputValidation-warningBackground, rgba(204, 167, 0, 0.1));
+}
+
+.suggestion button {
+  flex: none;
+  white-space: nowrap;
+}
+
+.detail-box {
+  position: sticky;
+  left: 36px;
+  max-width: calc(100vw - 60px);
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 4px;
+}
+
+tr.detail details {
+  margin-top: 6px;
+}
+
+tr.detail summary {
+  cursor: pointer;
+  color: var(--muted);
+}
