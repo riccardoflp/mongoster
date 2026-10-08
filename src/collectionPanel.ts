@@ -1,19 +1,20 @@
 import * as vscode from 'vscode';
 import { BSON, Collection, Document } from 'mongodb';
-
-const { EJSON } = BSON;
 import { ConnectionManager } from './connections';
-import { DocumentProvider } from './documentProvider';
+import { byId, CollectionRef, DocumentFileSystem } from './documentFs';
 import { errorMessage } from './tree';
-import { isPlainObject, parseQuery, relaxEjson } from './shared/query';
+import { isPlainObject, parseQuery, relaxEjson, toShell } from './shared/query';
 import type { HostMessage, QueryRequest, WebviewMessage } from './shared/messages';
 
-export interface CollectionTarget {
-  connectionId: string;
+const { EJSON } = BSON;
+
+export interface CollectionTarget extends CollectionRef {
   connectionName: string;
-  database: string;
-  collection: string;
+  /** Views can be queried but not modified. */
+  readOnly: boolean;
 }
+
+const panelKey = (ref: CollectionRef) => `${ref.connectionId}/${ref.database}/${ref.collection}`;
 
 /** One webview tab per collection, showing a queryable grid of documents. */
 export class CollectionPanel {
@@ -22,10 +23,10 @@ export class CollectionPanel {
   static show(
     context: vscode.ExtensionContext,
     connections: ConnectionManager,
-    documents: DocumentProvider,
+    documents: DocumentFileSystem,
     target: CollectionTarget,
   ): void {
-    const key = `${target.connectionId}/${target.database}/${target.collection}`;
+    const key = panelKey(target);
     const existing = CollectionPanel.panels.get(key);
     if (existing) {
       existing.panel.reveal();
@@ -36,12 +37,17 @@ export class CollectionPanel {
     }));
   }
 
+  /** Re-runs the current query of the collection's panel, if open (e.g. after a document was saved). */
+  static refresh(ref: CollectionRef): void {
+    CollectionPanel.panels.get(panelKey(ref))?.post({ type: 'refresh' });
+  }
+
   private readonly panel: vscode.WebviewPanel;
 
   private constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly connections: ConnectionManager,
-    private readonly documents: DocumentProvider,
+    private readonly documents: DocumentFileSystem,
     private readonly target: CollectionTarget,
     onDispose: () => void,
   ) {
@@ -70,26 +76,51 @@ export class CollectionPanel {
           connectionName: this.target.connectionName,
           database: this.target.database,
           collection: this.target.collection,
+          readOnly: this.target.readOnly,
         });
         break;
       case 'query':
         await this.runQuery(m);
         break;
-      case 'openDocument': {
-        const id = isPlainObject(m.doc) ? m.doc._id : undefined;
-        const idLabel = isPlainObject(id) && typeof id.$oid === 'string' ? id.$oid : JSON.stringify(id ?? 'document');
-        await this.documents.show(
-          `${this.target.database}.${this.target.collection}`,
-          idLabel,
-          JSON.stringify(m.doc, null, 2),
-        );
+      case 'editDocument':
+        await this.documents.open(this.target, fromRelaxed(m.id));
+        break;
+      case 'duplicateDocument': {
+        const { _id, ...rest } = m.doc;
+        await this.documents.openNew(this.target, JSON.stringify(rest, null, 2) + '\n');
         break;
       }
+      case 'insertDocument':
+        await this.documents.openNew(this.target);
+        break;
+      case 'deleteDocument':
+        await this.deleteDocument(m.id);
+        break;
       case 'copy':
         await vscode.env.clipboard.writeText(m.text);
         vscode.window.setStatusBarMessage('Mongoster: copied to clipboard', 2000);
         break;
     }
+  }
+
+  private async deleteDocument(id: unknown): Promise<void> {
+    const answer = await vscode.window.showWarningMessage(
+      `Delete document ${toShell(id)} from ${this.target.collection}?`,
+      { modal: true },
+      'Delete',
+    );
+    if (answer !== 'Delete') return;
+    try {
+      const client = await this.connections.getClient(this.target.connectionId);
+      const res = await client
+        .db(this.target.database)
+        .collection(this.target.collection)
+        .deleteOne(byId(fromRelaxed(id)));
+      if (!res.deletedCount) void vscode.window.showWarningMessage('Document not found: it may have been deleted already.');
+    } catch (err) {
+      void vscode.window.showErrorMessage(`Delete failed: ${errorMessage(err)}`);
+    }
+    this.post({ type: 'refresh' });
   }
 
   private async runQuery(m: QueryRequest): Promise<void> {
@@ -143,6 +174,7 @@ export class CollectionPanel {
       </div>
       <button id="run" class="primary" title="Run query (Ctrl+Enter)">Find</button>
       <button id="reset" class="secondary" title="Clear filter, sort and projection">Reset</button>
+      <button id="insert" class="secondary editable" title="Insert a new document">Insert</button>
     </div>
     <div class="row options">
       <label for="sort">Sort</label>
@@ -174,10 +206,12 @@ export class CollectionPanel {
         <span id="docTitle" class="doc-title"></span>
         <button id="docNext" class="icon" title="Next document (↓)">›</button>
         <span class="spacer"></span>
-        <button id="docExpand" class="secondary">Expand all</button>
-        <button id="docCollapse" class="secondary">Collapse all</button>
+        <button id="docExpand" class="icon" title="Expand all">⊞</button>
+        <button id="docCollapse" class="icon" title="Collapse all">⊟</button>
         <button id="docCopy" class="secondary">Copy</button>
-        <button id="docEditor" class="secondary">Open in editor</button>
+        <button id="docDuplicate" class="secondary editable" title="Open a copy without _id as a new document">Duplicate</button>
+        <button id="docDelete" class="secondary editable danger">Delete</button>
+        <button id="docEdit" class="primary" title="Open in an editor tab (Ctrl+S saves to the database)">Edit</button>
         <button id="docClose" class="icon" title="Close (Esc)">✕</button>
       </div>
       <div class="modal-body" id="docBody"></div>
@@ -187,6 +221,11 @@ export class CollectionPanel {
 </body>
 </html>`;
   }
+}
+
+/** Relaxed EJSON plain value from the webview -> BSON value. */
+function fromRelaxed(value: unknown): unknown {
+  return EJSON.deserialize({ v: value } as Document, { relaxed: false }).v;
 }
 
 function toBson(text: string, label: string): Document | undefined {

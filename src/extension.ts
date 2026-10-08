@@ -2,17 +2,25 @@ import * as vscode from 'vscode';
 import { ConnectionManager } from './connections';
 import { CollectionNode, ConnectionNode, MongoTreeProvider, TreeNode, errorMessage } from './tree';
 import { CollectionPanel } from './collectionPanel';
-import { DOC_SCHEME, DocumentProvider } from './documentProvider';
+import { DOC_SCHEME, DocumentFileSystem } from './documentFs';
 
 export function activate(context: vscode.ExtensionContext): void {
   const connections = new ConnectionManager(context);
   const tree = new MongoTreeProvider(connections);
-  const documents = new DocumentProvider();
+  const documents = new DocumentFileSystem(connections);
+  const collectionTarget = (node: CollectionNode) => ({
+    connectionId: node.connection.id,
+    connectionName: node.connection.name,
+    database: node.database,
+    collection: node.collection,
+    readOnly: node.isView,
+  });
 
   context.subscriptions.push(
     connections,
     vscode.window.createTreeView('mongoster.connections', { treeDataProvider: tree, showCollapseAll: true }),
-    vscode.workspace.registerTextDocumentContentProvider(DOC_SCHEME, documents),
+    vscode.workspace.registerFileSystemProvider(DOC_SCHEME, documents, { isCaseSensitive: true }),
+    documents.onDidSave((ref) => CollectionPanel.refresh(ref)),
 
     vscode.commands.registerCommand('mongoster.addConnection', () => addConnection(connections)),
 
@@ -33,12 +41,11 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mongoster.refresh', (node?: TreeNode) => tree.refresh(node)),
 
     vscode.commands.registerCommand('mongoster.openCollection', (node: CollectionNode) =>
-      CollectionPanel.show(context, connections, documents, {
-        connectionId: node.connection.id,
-        connectionName: node.connection.name,
-        database: node.database,
-        collection: node.collection,
-      }),
+      CollectionPanel.show(context, connections, documents, collectionTarget(node)),
+    ),
+
+    vscode.commands.registerCommand('mongoster.insertDocument', (node?: CollectionNode) =>
+      node ? documents.openNew(collectionTarget(node)) : undefined,
     ),
   );
 }

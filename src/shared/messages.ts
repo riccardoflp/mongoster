@@ -1,4 +1,5 @@
 // Message protocol between the collection webview and the extension host.
+// Documents and _id values travel as relaxed EJSON plain values.
 
 export interface QueryRequest {
   type: 'query';
@@ -13,10 +14,14 @@ export interface QueryRequest {
 export type WebviewMessage =
   | { type: 'ready' }
   | QueryRequest
-  | { type: 'openDocument'; doc: unknown }
+  | { type: 'editDocument'; id: unknown }
+  | { type: 'duplicateDocument'; doc: Record<string, unknown> }
+  | { type: 'deleteDocument'; id: unknown }
+  | { type: 'insertDocument' }
   | { type: 'copy'; text: string };
 
 export type HostMessage =
-  | { type: 'init'; connectionName: string; database: string; collection: string }
+  | { type: 'init'; connectionName: string; database: string; collection: string; readOnly: boolean }
   | { type: 'result'; requestId: number; docs: unknown[]; count: number | null; durationMs: number }
-  | { type: 'error'; requestId: number; message: string };
+  | { type: 'error'; requestId: number; message: string }
+  | { type: 'refresh' };

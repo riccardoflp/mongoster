@@ -32,6 +32,7 @@ let currentRequest = 0;
 let drag: DragPayload | null = null;
 let selectedCell: HTMLTableCellElement | null = null;
 let openDocIndex = -1;
+let readOnly = false;
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const filterInput = el<HTMLTextAreaElement>('filter');
@@ -108,6 +109,13 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
         span('ns-sep', ' › '),
         span('ns-coll', m.collection),
       );
+      readOnly = m.readOnly;
+      document.body.classList.toggle('readonly', readOnly);
+      el('docEdit').textContent = readOnly ? 'Open in editor' : 'Edit';
+      if (readOnly) el('docEdit').title = el('docEdit').dataset.title = 'Open in a read-only editor tab';
+      run();
+      break;
+    case 'refresh':
       run();
       break;
     case 'result':
@@ -118,6 +126,10 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       count = m.count;
       renderGrid();
       renderStatus(m.durationMs);
+      if (openDocIndex >= 0) {
+        if (openDocIndex < docs.length) openDocument(openDocIndex);
+        else closeDocument();
+      }
       break;
     case 'error':
       if (m.requestId !== currentRequest) return;
@@ -388,6 +400,12 @@ function openDocument(index: number): void {
   el('docTitle').textContent = `Document ${state.skip + index + 1}${'_id' in doc ? ' · ' + toShell(doc._id) : ''}`;
   el<HTMLButtonElement>('docPrev').disabled = index === 0;
   el<HTMLButtonElement>('docNext').disabled = index === docs.length - 1;
+  for (const id of ['docEdit', 'docDelete']) {
+    const button = el<HTMLButtonElement>(id);
+    button.disabled = !('_id' in doc);
+    button.dataset.title ??= button.title;
+    button.title = '_id' in doc ? button.dataset.title : 'Not available: the document has no _id (excluded by the projection?)';
+  }
   const body = el('docBody');
   body.replaceChildren(jsonNode(null, doc, true, 0));
   body.scrollTop = 0;
@@ -461,8 +479,14 @@ el('docCollapse').addEventListener('click', () =>
 el('docCopy').addEventListener('click', () => {
   if (openDocIndex >= 0) vscode.postMessage({ type: 'copy', text: toShell(docs[openDocIndex], 2) });
 });
-el('docEditor').addEventListener('click', () => {
-  if (openDocIndex >= 0) vscode.postMessage({ type: 'openDocument', doc: docs[openDocIndex] });
+el('docEdit').addEventListener('click', () => {
+  if (openDocIndex >= 0) vscode.postMessage({ type: 'editDocument', id: docs[openDocIndex]._id });
+});
+el('docDuplicate').addEventListener('click', () => {
+  if (openDocIndex >= 0) vscode.postMessage({ type: 'duplicateDocument', doc: docs[openDocIndex] });
+});
+el('docDelete').addEventListener('click', () => {
+  if (openDocIndex >= 0) vscode.postMessage({ type: 'deleteDocument', id: docs[openDocIndex]._id });
 });
 modal.addEventListener('click', (e) => {
   if (e.target === modal) closeDocument();
@@ -478,6 +502,7 @@ function autosize(): void {
 }
 
 el('run').addEventListener('click', () => run(true));
+el('insert').addEventListener('click', () => vscode.postMessage({ type: 'insertDocument' }));
 el('reset').addEventListener('click', () => {
   filterInput.value = sortInput.value = projectionInput.value = '';
   autosize();
@@ -526,6 +551,9 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
   } else if (e.key === 'Enter') {
     openDocument(Number(selectedCell.closest('tr')!.dataset.row));
+  } else if (e.key === 'Delete' && !readOnly) {
+    const doc = docs[Number(selectedCell.closest('tr')!.dataset.row)];
+    if (doc && '_id' in doc) vscode.postMessage({ type: 'deleteDocument', id: doc._id });
   }
 });
 

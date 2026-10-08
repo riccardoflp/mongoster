@@ -76,6 +76,12 @@
         "command": "mongoster.openCollection",
         "title": "Open Collection",
         "category": "Mongoster"
+      },
+      {
+        "command": "mongoster.insertDocument",
+        "title": "Insert Document",
+        "category": "Mongoster",
+        "icon": "$(add)"
       }
     ],
     "menus": {
@@ -111,6 +117,16 @@
           "command": "mongoster.removeConnection",
           "when": "view == mongoster.connections && viewItem =~ /^connection/",
           "group": "1_connection@2"
+        },
+        {
+          "command": "mongoster.insertDocument",
+          "when": "view == mongoster.connections && viewItem == collection",
+          "group": "inline@1"
+        },
+        {
+          "command": "mongoster.insertDocument",
+          "when": "view == mongoster.connections && viewItem == collection",
+          "group": "1_document@1"
         }
       ],
       "commandPalette": [
@@ -124,6 +140,10 @@
         },
         {
           "command": "mongoster.disconnect",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.insertDocument",
           "when": "false"
         }
       ]

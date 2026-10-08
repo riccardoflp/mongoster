@@ -38,7 +38,7 @@ export class CollectionNode extends vscode.TreeItem {
     readonly connection: ConnectionInfo,
     readonly database: string,
     readonly collection: string,
-    isView: boolean,
+    readonly isView: boolean,
   ) {
     super(collection, vscode.TreeItemCollapsibleState.None);
     this.id = `coll:${connection.id}/${database}/${collection}`;
