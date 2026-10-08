@@ -1,0 +1,246 @@
+/* Compare tab: monitor.css provides the base (buttons, toolbar, tables, detail rows). */
+
+.sides {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.side {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--conn-color, var(--border));
+  border-radius: 3px;
+}
+
+.side[data-color='red'] { --conn-color: var(--vscode-charts-red, #f14c4c); }
+.side[data-color='orange'] { --conn-color: var(--vscode-charts-orange, #d18616); }
+.side[data-color='yellow'] { --conn-color: var(--vscode-charts-yellow, #cca700); }
+.side[data-color='green'] { --conn-color: var(--vscode-charts-green, #89d185); }
+.side[data-color='blue'] { --conn-color: var(--vscode-charts-blue, #3794ff); }
+.side[data-color='purple'] { --conn-color: var(--vscode-charts-purple, #b180d7); }
+
+.side-label {
+  color: var(--muted);
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.side-ns {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.side-conn {
+  color: var(--muted);
+}
+
+button.icon {
+  flex: none;
+  align-self: center;
+  font-size: 1.2em;
+  padding: 2px 8px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: 1px solid var(--border);
+}
+
+.toolbar input:not([type='checkbox']) {
+  font: inherit;
+  font-family: var(--mono);
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, inherit);
+  border: 1px solid var(--vscode-input-border, var(--border));
+  border-radius: 2px;
+  padding: 2px 6px;
+}
+
+#filter {
+  flex: 2;
+  min-width: 200px;
+}
+
+#ignore {
+  flex: 1;
+  min-width: 140px;
+}
+
+.toolbar + .toolbar {
+  padding-top: 0;
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 10px;
+  flex: none;
+}
+
+.summary:empty {
+  display: none;
+}
+
+button.chip {
+  padding: 1px 10px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: 1px solid var(--kind-color, var(--border));
+}
+
+button.chip:disabled {
+  opacity: 0.6;
+}
+
+button.chip[aria-pressed='true'] {
+  background: var(--vscode-list-inactiveSelectionBackground, rgba(128, 128, 128, 0.2));
+  box-shadow: inset 0 0 0 1px var(--kind-color, var(--border));
+}
+
+.chip-n {
+  font-weight: 600;
+}
+
+.summary .info {
+  margin-left: 6px;
+}
+
+.k-identical { --kind-color: var(--border); }
+.k-different { --kind-color: var(--vscode-charts-blue, #3794ff); }
+.k-onlyLeft { --kind-color: var(--vscode-charts-orange, #d18616); }
+.k-onlyRight { --kind-color: var(--vscode-charts-purple, #b180d7); }
+
+.bulk {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 10px 6px;
+  flex: none;
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+}
+
+.list > table {
+  min-width: 100%;
+}
+
+td.kind {
+  color: var(--kind-color);
+  font-weight: 600;
+  font-family: var(--vscode-font-family);
+  width: 1%;
+}
+
+td.id {
+  width: 1%;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+td.what {
+  max-width: 0;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+tr.entry {
+  cursor: pointer;
+}
+
+.row-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+p.empty {
+  color: var(--muted);
+  padding: 16px 10px;
+  margin: 0;
+}
+
+tr.detail pre.loading,
+tr.detail pre.failed {
+  color: var(--muted);
+}
+
+tr.detail pre.failed {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+table.diff {
+  min-width: 0;
+  margin-top: 2px;
+}
+
+tr.detail table.diff td,
+table.diff th {
+  padding: 3px 8px;
+  background: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 480px;
+  vertical-align: top;
+}
+
+table.diff th {
+  position: static;
+}
+
+tr.detail table.diff td.field {
+  white-space: nowrap;
+}
+
+tr.detail table.diff td.value {
+  min-width: 160px;
+}
+
+table.diff tr.changed td.left,
+table.diff tr.removed td.left {
+  color: var(--vscode-charts-orange, #d18616);
+}
+
+table.diff tr.changed td.right,
+table.diff tr.added td.right {
+  color: var(--vscode-charts-purple, #b180d7);
+}
+
+table.diff .type {
+  color: var(--muted);
+  font-style: italic;
+}
+
+table.diff td.missing {
+  color: var(--muted);
+}
+
+@media (max-width: 560px) {
+  .sides {
+    flex-direction: column;
+  }
+
+  button.icon {
+    align-self: flex-start;
+  }
+}

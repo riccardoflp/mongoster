@@ -3,6 +3,7 @@
 !dist/webview.js
 !dist/playground.js
 !dist/monitor.js
+!dist/compare.js
 !dist/watch.js
 !dist/connectionEditor.js
 !dist/chartjs.js

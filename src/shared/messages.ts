@@ -3,6 +3,7 @@
 import type { SchemaSummary } from './schema';
 import type { ChartSpec } from './chart';
 import type { OpQuery, SlowOp, SlowOpSource } from './profile';
+import type { CompareCounts, CompareOptions, DiffKind, FieldDiff } from './compare';
 import type { FieldHint } from './complete';
 import type { ColumnLayout } from './columns';
 import type { PipelineStage } from './pipeline';
@@ -405,3 +406,55 @@ export type ConnectionEditorViewMessage =
   | { type: 'test'; form: ConnectionForm }
   | { type: 'save'; form: ConnectionForm }
   | { type: 'cancel' };
+
+// ---------------------------------------------------------------------------
+// Comparing two collections
+
+export interface CompareSide {
+  connectionName: string;
+  database: string;
+  collection: string;
+  /** No writes: a view, or a read-only connection. */
+  readOnly: boolean;
+  why?: string;
+  color?: string;
+}
+
+export interface CompareEntry {
+  kind: DiffKind;
+  /** The canonical EJSON of the _id, which identifies the document in messages. */
+  key: string;
+  /** The _id, relaxed EJSON. */
+  id: unknown;
+  /** Changed fields (different documents). */
+  fields?: FieldDiff[];
+  /** The document on one line (documents on one side only). */
+  preview?: string;
+}
+
+export type CompareHostMessage =
+  | { type: 'init'; left: CompareSide; right: CompareSide; options?: CompareOptions }
+  | { type: 'progress'; phase: 'left' | 'right' | 'details'; left: number; right: number }
+  | {
+      type: 'result';
+      counts: CompareCounts;
+      /** The first differences of each kind, with their details. */
+      entries: CompareEntry[];
+      durationMs: number;
+    }
+  | { type: 'error'; message: string }
+  | { type: 'cancelled' }
+  | { type: 'document'; key: string; side: 'left' | 'right'; doc?: unknown; error?: string }
+  /** A write finished (or was refused or cancelled: `ok` false). */
+  | { type: 'applied'; ok: boolean; message?: string };
+
+export type CompareViewMessage =
+  | { type: 'ready' }
+  | { type: 'compare'; options: CompareOptions }
+  | { type: 'cancel' }
+  /** Makes side `to` like the other for these documents (null: every difference found). */
+  | { type: 'apply'; to: 'left' | 'right'; keys: string[] | null }
+  | { type: 'loadDocument'; key: string; side: 'left' | 'right' }
+  | { type: 'openDocument'; key: string; side: 'left' | 'right' }
+  | { type: 'swap' }
+  | { type: 'copy'; text: string };

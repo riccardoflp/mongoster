@@ -8,6 +8,7 @@ import { CollectionRef, DOC_SCHEME, DocumentFileSystem } from './documentFs';
 import { DEF_SCHEME, DefinitionFileSystem } from './definitionFs';
 import { Playgrounds } from './playground/playground';
 import { MonitorPanel } from './monitor';
+import { ComparePanel } from './compare';
 import { Copier } from './copy';
 import { WatchPanel, WatchScope } from './watch';
 import { ConnectionEditor, SaveConnection } from './connectionEditor';
@@ -54,6 +55,7 @@ export function activate(context: vscode.ExtensionContext): void {
       CollectionPanel.connectionChanged(info);
       MonitorPanel.connectionChanged(info);
       WatchPanel.connectionChanged(info);
+      ComparePanel.connectionChanged(info);
     }
   };
 
@@ -180,6 +182,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (answer === 'Remove') {
         MonitorPanel.close(node.info.id);
         WatchPanel.close(node.info.id);
+        ComparePanel.close(node.info.id);
         ConnectionEditor.close(node.info.id);
         await connections.remove(node.info.id);
       }
@@ -281,6 +284,12 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       tree.refresh();
     }),
+
+    vscode.commands.registerCommand('mongoster.compareCollection', (node?: CollectionNode) =>
+      node
+        ? ComparePanel.start(context, connections, documents, { connectionId: node.connection.id, database: node.database, collection: node.collection, isView: node.isView })
+        : undefined,
+    ),
 
     vscode.commands.registerCommand('mongoster.copyCollection', (node?: CollectionNode) => {
       if (!node) return;

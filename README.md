@@ -82,6 +82,12 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - se copiare anche gli indici e le opzioni della collezione (regole di validazione, capped, collation, time series…).
   - Dopo la conferma con il numero di documenti, la copia avanza a blocchi di 1000 con l'avanzamento nella notifica; `Cancel` la interrompe dopo il blocco in corso (i documenti già copiati restano). I tipi BSON restano identici (Int32, Double, Long, Decimal128, regex…). Alla fine `Open` apre la collezione copiata.
   - Le connessioni in sola lettura possono essere la sorgente ma non la destinazione; una view viene copiata come collezione con i suoi documenti.
+- **Confronto di collezioni**: clic destro su una collezione o view → `Compare With…` la confronta con un'altra, anche su un'altra connessione (es. staging e produzione): si scelgono connessione, database e collezione (proposti con lo stesso nome). I documenti sono abbinati per `_id` e divisi in identici, diversi, solo a sinistra e solo a destra.
+  - `Filter` (sintassi mongosh) limita il confronto ai documenti che vi corrispondono, su entrambi i lati; `Ignore` esclude dei campi (`updatedAt, __v`, anche annidati come `address.zip` o i campi degli elementi di un array come `items.price`).
+  - `Ignore field order` (attivo) considera uguali documenti con gli stessi campi in ordine diverso; `Compare numbers by value` (attivo) considera uguali `1` (int), `1.0` (double) e `NumberLong(1)`. Disattivandoli si vedono anche queste differenze, con il tipo BSON accanto al valore.
+  - I conteggi in alto filtrano l'elenco per tipo di differenza. Per i documenti diversi l'elenco mostra i campi cambiati; clic sulla riga per il confronto campo per campo (sinistra / destra, `—` se il campo manca); per quelli presenti da un solo lato, il documento completo. `Open Left` / `Open Right` aprono il documento nell'editor.
+  - `→ Right` / `← Left` su una riga copiano il documento da un lato all'altro (inserimento o sostituzione, con i tipi BSON identici) o, se manca dall'altro lato, `Delete` lo elimina. `Make right like left…` / `Make left like right…` fanno lo stesso per tutte le differenze: dopo la conferma copiano i documenti mancanti o diversi e, se scelto, eliminano quelli presenti solo dal lato di destinazione. Poi il confronto viene rifatto.
+  - `⇄` scambia i lati. Le connessioni in sola lettura e le view si possono confrontare ma non modificare. Il confronto legge un lato alla volta tenendo in memoria solo un'impronta per documento (fino a 1.000.000 di documenti per lato); l'elenco mostra le prime 300 differenze di ogni tipo.
 - **Schema**: la scheda `Schema` analizza i documenti che corrispondono al filtro (tutti, o un campione casuale di 100 / 1.000 / 10.000) e per ogni campo mostra:
   - quanto spesso è presente e con quali tipi BSON (`int`, `double`, `long`, `decimal`, `date`, `objectId`, …), con le percentuali;
   - i valori più frequenti, oppure un istogramma per numeri e date con minimo e massimo; per gli array la lunghezza e i valori degli elementi.
@@ -171,6 +177,7 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/transfer.ts` – export (JSON, JSON Lines, CSV) e import
 - `src/manage.ts` – creazione, rinomina ed eliminazione di database e collezioni
 - `src/copy.ts` – copia di una collezione verso un altro database o un'altra connessione
+- `src/compare.ts`, `src/webview/compare.ts`, `media/compare.css` – confronto di due collezioni per `_id` e allineamento di un lato all'altro
 - `src/shared/query.ts` – parsing/formattazione della sintassi mongosh ⇄ EJSON
 - `src/shared/columns.ts` – modello delle colonne (annidate e array) e del layout scelto dall'utente, usato dalla tabella e dal CSV
 - `src/shared/csv.ts` – generazione e parsing CSV
@@ -178,6 +185,7 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/shared/explain.ts` – riassunto dell'output di explain e suggerimento dell'indice
 - `src/shared/schema.ts` – analisi dello schema di un campione di documenti e `$jsonSchema` generato
 - `src/shared/complete.ts` – autocompletamento: contesto del cursore nel testo mongosh, campi, operatori e valori suggeriti
+- `src/shared/compare.ts` – quando due documenti sono uguali (ordine dei campi, tipi numerici, campi ignorati) e differenze campo per campo
 - `src/shared/profile.ts` – operazioni lente dal profiler o dal log del server: forma della query, raggruppamento e indice suggerito
 - `src/shared/codegen.ts`, `src/webview/codeDialog.ts` – query e pipeline come codice per mongosh e i driver (Node.js, Python, Java, C#, Go)
 - `src/shared/chart.ts`, `src/webview/chartView.ts`, `src/webview/chartjs.ts` – pipeline dei grafici e loro risultati in serie; disegno con Chart.js, caricato solo quando si apre la scheda `Chart`

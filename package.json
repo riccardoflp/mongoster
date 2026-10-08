@@ -206,6 +206,12 @@
         "icon": "$(pulse)"
       },
       {
+        "command": "mongoster.compareCollection",
+        "title": "Compare With…",
+        "category": "Mongoster",
+        "icon": "$(diff)"
+      },
+      {
         "command": "mongoster.copyCollection",
         "title": "Copy Collection To…",
         "category": "Mongoster",
@@ -400,6 +406,11 @@
           "group": "2_transfer@3"
         },
         {
+          "command": "mongoster.compareCollection",
+          "when": "view == mongoster.connections && viewItem =~ /^(collection|view)/",
+          "group": "2_transfer@4"
+        },
+        {
           "command": "mongoster.watchChanges",
           "when": "view == mongoster.connections && viewItem =~ /^(connection|database|collection)/",
           "group": "2_monitor@2"
@@ -514,6 +525,10 @@
         },
         {
           "command": "mongoster.copyCollection",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.compareCollection",
           "when": "false"
         },
         {
