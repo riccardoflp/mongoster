@@ -66,15 +66,23 @@ export class CodeDialog {
   }
 
   open(source: QuerySource, database: string, collection: string): void {
-    this.target = { database, collection };
+    let query: CodeQuery | undefined;
+    let error: string | undefined;
     try {
-      this.query = toCodeQuery(source);
+      query = toCodeQuery(source);
     } catch (err) {
-      this.query = undefined;
-      this.error.textContent = `Invalid query: ${(err as Error).message}`;
+      error = `Invalid query: ${(err as Error).message}`;
     }
-    this.error.classList.toggle('hidden', !!this.query);
-    const what = source.kind === 'aggregate' ? `aggregate (${this.query?.kind === 'aggregate' ? this.query.pipeline.length : 0} stages)` : 'find';
+    const what = source.kind === 'aggregate' ? `aggregate (${query?.kind === 'aggregate' ? query.pipeline.length : 0} stages)` : 'find';
+    this.show(query, error, what, database, collection);
+  }
+
+  /** A query built elsewhere (e.g. the chart's pipeline); `what` goes in the title. */
+  show(query: CodeQuery | undefined, error: string | undefined, what: string, database: string, collection: string): void {
+    this.target = { database, collection };
+    this.query = query;
+    this.error.textContent = error ?? '';
+    this.error.classList.toggle('hidden', !error);
     this.title.textContent = `Code · ${collection} · ${what}`;
     this.render();
     this.modal.classList.remove('hidden');

@@ -6,7 +6,9 @@ import { PipelineEditor } from './pipeline';
 import { IndexesView } from './indexes';
 import { ExplainView } from './explainView';
 import { BulkDialog, BulkOp } from './bulk';
-import { CodeDialog } from './codeDialog';
+import { CodeDialog, toCodeQuery } from './codeDialog';
+import { ChartView } from './chartView';
+import { ChartSpec, chartStages } from '../shared/chart';
 import type { CodeLanguage } from '../shared/codegen';
 import { SchemaView } from './schemaView';
 import {
@@ -37,7 +39,7 @@ declare function acquireVsCodeApi(): {
   setState(state: QueryState): void;
 };
 
-type Mode = 'find' | 'aggregate' | 'schema' | 'indexes';
+type Mode = 'find' | 'aggregate' | 'schema' | 'indexes' | 'chart';
 
 interface QueryState {
   mode: Mode;
@@ -55,6 +57,9 @@ interface QueryState {
   schemaSize?: number;
   codeLanguage?: CodeLanguage;
   codeProgram?: boolean;
+  chart?: ChartSpec;
+  /** Data of the chart: the filter or the pipeline. */
+  chartSource?: 'find' | 'aggregate';
 }
 
 /** `within`: the array a dragged element field belongs to; its conditions go into an $elemMatch. */
@@ -124,6 +129,10 @@ function run(resetSkip = false): void {
   }
   if (state.mode === 'schema') {
     runSchema();
+    return;
+  }
+  if (state.mode === 'chart') {
+    runChart();
     return;
   }
   state.filter = filterInput.value;
@@ -197,13 +206,18 @@ function savePipelineState(): void {
 }
 
 function setMode(mode: Mode, runNow = true): void {
+  // The chart draws what the previous tab showed: the filter's documents or the pipeline's output.
+  if (mode === 'chart' && (state.mode === 'aggregate' || state.mode === 'find')) setChartSource(state.mode);
   state.mode = mode;
   if (mode === 'indexes' && el<HTMLButtonElement>('modeIndexes').disabled) mode = state.mode = 'find';
   document.body.classList.toggle('mode-aggregate', mode === 'aggregate');
   document.body.classList.toggle('mode-indexes', mode === 'indexes');
   document.body.classList.toggle('mode-schema', mode === 'schema');
+  document.body.classList.toggle('mode-chart', mode === 'chart');
   el('modeSchema').setAttribute('aria-selected', String(mode === 'schema'));
-  el('run').textContent = mode === 'schema' ? 'Analyze' : 'Find';
+  el('modeChart').setAttribute('aria-selected', String(mode === 'chart'));
+  el('run').textContent = mode === 'schema' ? 'Analyze' : mode === 'chart' ? 'Draw' : 'Find';
+  el('run').title = mode === 'chart' ? 'Draw the chart (Ctrl+Enter)' : 'Run query (Ctrl+Enter)';
   el('modeFind').setAttribute('aria-selected', String(mode === 'find'));
   el('modeAggregate').setAttribute('aria-selected', String(mode === 'aggregate'));
   el('modeIndexes').setAttribute('aria-selected', String(mode === 'indexes'));
@@ -290,6 +304,18 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       setLoading(false);
       schemaView.show(m);
       break;
+    case 'chartData': {
+      const pending = chartPending;
+      if (m.requestId !== chartRequest || !pending) break;
+      setLoading(false);
+      if (m.error) {
+        chartView.showError();
+        showError(m.error);
+        break;
+      }
+      void chartView.show(pending.spec, m.rows ?? [], m.durationMs ?? 0, pending.source.kind === 'find');
+      break;
+    }
     case 'indexResult':
       pendingIndex.get(m.requestId)?.(m.ok ? undefined : m.message ?? 'Failed');
       pendingIndex.delete(m.requestId);
@@ -1212,6 +1238,7 @@ el('modeFind').addEventListener('click', () => state.mode !== 'find' && setMode(
 el('watch').addEventListener('click', () => vscode.postMessage({ type: 'watch' }));
 el('modeIndexes').addEventListener('click', () => state.mode !== 'indexes' && setMode('indexes'));
 el('modeSchema').addEventListener('click', () => state.mode !== 'schema' && setMode('schema'));
+el('modeChart').addEventListener('click', () => state.mode !== 'chart' && setMode('chart'));
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -1221,6 +1248,110 @@ const schemaSize = el<HTMLSelectElement>('schemaSize');
 if (state.schemaSize) schemaSize.value = String(state.schemaSize);
 schemaSize.addEventListener('change', () => run());
 const schemaView = new SchemaView({ filter: (path, condition) => addCondition(path, condition) });
+
+// ---------------------------------------------------------------------------
+// Chart
+
+let chartRequest = 0;
+let chartPending: { spec: ChartSpec; source: QuerySource } | null = null;
+const chartSourceSelect = el<HTMLSelectElement>('chartSource');
+
+function setChartSource(source: 'find' | 'aggregate'): void {
+  state.chartSource = chartSourceSelect.value = source;
+  document.body.classList.toggle('chart-pipeline', source === 'aggregate');
+  updateChartPipelineInfo();
+}
+
+function updateChartPipelineInfo(): void {
+  const enabled = pipeline.stages.slice(0, pipeline.upto + 1).filter((s) => s.enabled).length;
+  el('chartPipelineInfo').textContent =
+    state.chartSource !== 'aggregate'
+      ? ''
+      : !enabled
+        ? 'Aggregate tab: no stages'
+        : `Aggregate tab: ${enabled} stage${enabled === 1 ? '' : 's'}${pipeline.previewUpto !== null ? ` (up to ${pipeline.upto + 1})` : ''}`;
+}
+
+/** The documents to chart: the filter (sort and projection don't matter) or the pipeline. */
+function chartSourceOf(): QuerySource | undefined {
+  if (state.chartSource === 'aggregate') {
+    if (!pipeline.prepare()) return undefined;
+    return { kind: 'aggregate', stages: pipeline.stages, upto: pipeline.upto };
+  }
+  const ok = isValidObject(filterInput.value);
+  filterInput.classList.toggle('invalid', !ok);
+  if (!ok) {
+    showError('Invalid query syntax — check the highlighted field.');
+    return undefined;
+  }
+  state.filter = filterInput.value;
+  return { kind: 'find', filter: filterInput.value, sort: '', projection: '' };
+}
+
+function runChart(): void {
+  showError(null);
+  updateChartPipelineInfo();
+  if (chartView.needsFields()) return;
+  const source = chartSourceOf();
+  const spec = source && chartView.validSpec();
+  if (!source || !spec) return;
+  vscode.setState(state);
+  chartRequest++;
+  chartPending = { spec, source };
+  setLoading(true);
+  chartView.loading();
+  vscode.postMessage({ type: 'chart', requestId: chartRequest, source, spec });
+}
+
+const chartView = new ChartView(
+  {
+    draw: () => run(),
+    filter: (conditions) => {
+      try {
+        let text = filterInput.value;
+        for (const c of conditions) text = mergeCondition(text, c.field, c.value);
+        filterInput.value = text;
+      } catch (err) {
+        showError(`Fix the filter first: ${(err as Error).message}`);
+        return;
+      }
+      autosize();
+      setMode('find');
+      flash(el('filterWrap'));
+    },
+    code: () => {
+      const spec = chartView.validSpec();
+      const source = spec && chartSourceOf();
+      if (!spec || !source) return;
+      let prefix: unknown[] = [];
+      let error: string | undefined;
+      try {
+        const query = toCodeQuery(source.kind === 'aggregate' ? { ...source, stages: source.stages.slice(0, source.upto + 1) } : source);
+        if (query.kind === 'aggregate') prefix = query.pipeline;
+        else if (isPlainObject(query.filter) && Object.keys(query.filter).length) prefix = [{ $match: query.filter }];
+      } catch (err) {
+        error = `Invalid query: ${(err as Error).message}`;
+      }
+      codeDialog.show(error ? undefined : { kind: 'aggregate', pipeline: [...prefix, ...chartStages(spec)] }, error, `${spec.type} chart`, databaseName, collectionName);
+    },
+    savePng: (dataUrl) => vscode.postMessage({ type: 'savePng', dataUrl, name: `${collectionName}-${state.chart?.type ?? 'chart'}` }),
+    fields: () => {
+      const hints = state.chartSource === 'aggregate' ? fieldsBefore(pipeline.upto + 1) : fieldsOfCollection();
+      return hints.filter((h) => !h.types.every((t) => t === 'object')).map((h) => h.path);
+    },
+    changed: (spec) => {
+      state.chart = spec;
+      vscode.setState(state);
+    },
+    error: showError,
+  },
+  state.chart,
+);
+chartSourceSelect.addEventListener('change', () => {
+  setChartSource(chartSourceSelect.value as 'find' | 'aggregate');
+  vscode.setState(state);
+  run();
+});
 
 // ---------------------------------------------------------------------------
 // Indexes & explain
@@ -1326,6 +1457,7 @@ sortInput.value = state.sort;
 projectionInput.value = state.projection;
 limitSelect.value = String(state.limit);
 pipeline.setStages(state.stages, state.previewUpto);
+setChartSource(state.chartSource ?? 'find');
 setMode(state.mode, false);
 new ResizeObserver(autosize).observe(filterInput.parentElement!);
 vscode.postMessage({ type: 'ready' });

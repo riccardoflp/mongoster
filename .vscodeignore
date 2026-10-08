@@ -5,6 +5,7 @@
 !dist/monitor.js
 !dist/watch.js
 !dist/connectionEditor.js
+!dist/chartjs.js
 !media/**
 !package.json
 !README.md

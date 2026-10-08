@@ -1013,6 +1013,11 @@ body.mode-aggregate .doc-write {
 
 /* ---------- indexes ---------- */
 
+body:not(.mode-chart) .chart-only,
+body.mode-chart .not-chart,
+body.mode-chart .statusbar,
+body.mode-chart .grid-wrap,
+body.mode-chart.chart-pipeline .find-only,
 body:not(.mode-schema) .schema-only,
 body.mode-schema .not-schema,
 body.mode-schema .statusbar,
@@ -1314,6 +1319,66 @@ body.mode-indexes .not-indexes {
 button.danger-primary:not(:disabled) {
   background: var(--vscode-inputValidation-errorBorder, #be1100);
   color: #fff;
+}
+
+/* ---------- chart ---------- */
+
+.chart-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-head,
+.chart-fields {
+  padding: 6px 12px;
+  flex-wrap: wrap;
+}
+
+.chart-head {
+  border-bottom: 1px solid var(--border);
+}
+
+.chart-view .row {
+  align-items: center;
+}
+
+.chart-view .row label {
+  width: auto;
+  padding-top: 0;
+}
+
+.chart-fields label:not(:first-child) {
+  margin-left: 6px;
+}
+
+.chart-fields input:not([type='number']) {
+  width: 150px;
+}
+
+.chart-fields input[type='number'] {
+  width: 70px;
+}
+
+.chart-muted {
+  color: var(--muted);
+}
+
+.chart-info {
+  padding: 0 12px;
+  min-height: 1.4em;
+}
+
+.chart-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 160px;
+  margin: 4px 12px 12px;
+}
+
+.chart-wrap canvas.stale {
+  opacity: 0.5;
 }
 
 /* ---------- schema ---------- */

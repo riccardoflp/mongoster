@@ -87,6 +87,14 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - i valori più frequenti, oppure un istogramma per numeri e date con minimo e massimo; per gli array la lunghezza e i valori degli elementi.
   - I sotto-documenti e i campi degli oggetti negli array (`items[].sku`) si espandono con `▸`; `⊞` / `⊟` espandono o chiudono tutto.
   - Clic su un valore, su una barra dell'istogramma o su un tipo per aggiungerlo al filtro (`{ status: "active" }`, `{ age: { $gte: 25, $lt: 30 } }`, `{ name: { $type: "string" } }`): l'analisi riparte sui documenti filtrati.
+- **Grafici**: la scheda `Chart` disegna i documenti che corrispondono al filtro, oppure l'output della pipeline della scheda `Aggregate` (fino allo stage mostrato): il selettore `Data` sceglie `Filter` o `Pipeline` e all'apertura segue la scheda da cui si arriva. I calcoli avvengono sul server con una pipeline di aggregazione, quindi funzionano anche su collezioni grandi.
+  - **Bar** e **Pie**: per ogni valore del campo `Category` il numero di documenti, oppure somma / media / minimo / massimo di un campo numerico; le categorie più grandi (`Top`, 20 per le barre e 10 per la torta). Gli array contano ogni elemento (`tags`); con le date raggruppate le barre sono in ordine di tempo.
+  - **Line**: come le barre ma in ordine lungo la categoria, di solito una data; le date si possono raggruppare per ora, giorno, settimana, mese o anno.
+  - **Scatter**: due campi numerici o data di un campione casuale di documenti (`Sample`, 1.000).
+  - **Histogram**: la distribuzione di un campo numerico o data in `Bins` intervalli uguali (anche `long` e `decimal`).
+  - `Series` divide barre, linee e punti per i valori di un altro campo (fino a 12 serie, le più grandi).
+  - Clic su una barra, una fetta o un punto della linea apre `Find` con il filtro corrispondente (`{ status: "active", "address.city": "Milano" }`, un intervallo di date o di valori) per vedere quei documenti.
+  - `Code` mostra la pipeline del grafico come codice (mongosh, Node.js, Python, Java, C#, Go); `Export PNG` salva l'immagine. I colori seguono il tema di VS Code.
 - **View**: clic destro su una view → `Edit View Definition…` apre `viewOn` e `pipeline` come JSON in una tab; `Ctrl+S` applica le modifiche (`collMod`) e aggiorna la tab della view.
 - **Regole di validazione**: clic destro su una collezione → `Edit Validation Rules…` (o `Validation rules…` nella scheda `Schema`) apre `validator`, `validationLevel` e `validationAction` come JSON; `Ctrl+S` le applica.
   - Se la collezione non ha regole viene proposto un `$jsonSchema` generato da un campione di 1.000 documenti: i tipi BSON di ogni campo (anche annidati e negli array) e come `required` i campi sempre presenti. Va rivisto prima di salvare; `validationAction: "warn"` registra i documenti non validi senza rifiutarli.
@@ -165,4 +173,5 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/shared/schema.ts` – analisi dello schema di un campione di documenti e `$jsonSchema` generato
 - `src/shared/complete.ts` – autocompletamento: contesto del cursore nel testo mongosh, campi, operatori e valori suggeriti
 - `src/shared/codegen.ts`, `src/webview/codeDialog.ts` – query e pipeline come codice per mongosh e i driver (Node.js, Python, Java, C#, Go)
+- `src/shared/chart.ts`, `src/webview/chartView.ts`, `src/webview/chartjs.ts` – pipeline dei grafici e loro risultati in serie; disegno con Chart.js, caricato solo quando si apre la scheda `Chart`
 - `src/webview/main.ts`, `src/webview/history.ts`, `src/webview/pipeline.ts`, `src/webview/indexes.ts`, `src/webview/explainView.ts`, `src/webview/bulk.ts`, `src/webview/schemaView.ts`, `src/webview/columnsUi.ts`, `src/webview/autocomplete.ts`, `media/webview.css` – UI della tabella, cronologia, editor della pipeline, indici, explain, update/delete many, schema, colonne e suggerimenti

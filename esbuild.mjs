@@ -74,6 +74,14 @@ const contexts = await Promise.all([
     format: 'iife',
     target: 'es2020',
   }),
+  esbuild.context({
+    ...common,
+    entryPoints: ['src/webview/chartjs.ts'],
+    outfile: 'dist/chartjs.js',
+    platform: 'browser',
+    format: 'iife',
+    target: 'es2020',
+  }),
 ]);
 
 if (watch) {

@@ -1,3 +1,4 @@
+import * as os from 'os';
 import * as vscode from 'vscode';
 import { BSON, Collection, Document } from 'mongodb';
 import { ConnectionColor, ConnectionInfo, ConnectionManager } from './connections';
@@ -11,6 +12,7 @@ import { exportDocuments } from './transfer';
 import type { AggregateRequest, BulkRequest, HostMessage, IndexInfo, QueryRequest, QuerySource, UpdateFieldRequest, WebviewMessage } from './shared/messages';
 import { suggestIndex, summarizeExplain } from './shared/explain';
 import { analyzeSchema } from './shared/schema';
+import { ChartSpec, chartStages, normalizeSpec, specError } from './shared/chart';
 import { fieldHints } from './shared/complete';
 import { collectionNameError } from './manage';
 import type { ColumnLayout } from './shared/columns';
@@ -241,6 +243,12 @@ export class CollectionPanel {
       case 'analyzeSchema':
         await this.analyzeSchema(m.requestId, m.filter, m.size);
         break;
+      case 'chart':
+        await this.chart(m.requestId, m.source, m.spec);
+        break;
+      case 'savePng':
+        await this.savePng(m.dataUrl, m.name);
+        break;
       case 'loadFields':
         await this.loadFields();
         break;
@@ -419,6 +427,49 @@ export class CollectionPanel {
       this.post({ type: 'schema', requestId, schema, total: Math.max(total, schema.sampled), durationMs: Date.now() - started });
     } catch (err) {
       this.post({ type: 'schema', requestId, error: errorMessage(err) });
+    }
+  }
+
+  /** The chart stages run after the filter (sort and projection don't matter) or the pipeline up to the previewed stage. */
+  private async chart(requestId: number, source: QuerySource, requested: ChartSpec): Promise<void> {
+    const started = Date.now();
+    try {
+      const spec = normalizeSpec(requested);
+      const invalid = specError(spec);
+      if (invalid) throw new Error(invalid);
+      let prefix: Document[];
+      if (source.kind === 'find') {
+        const filter = toBson(source.filter, 'Filter') ?? {};
+        prefix = Object.keys(filter).length ? [{ $match: filter }] : [];
+      } else {
+        const built = buildPipeline(source.stages, source.upto);
+        if (built.write) throw new Error(`A pipeline ending with ${built.write.op} can't be charted: select an earlier stage.`);
+        prefix = built.pipeline;
+      }
+      const coll = await this.coll();
+      const rows = await coll.aggregate([...prefix, ...chartStages(spec)], { allowDiskUse: true, maxTimeMS: 120_000 }).toArray();
+      this.post({ type: 'chartData', requestId, rows: relaxEjson(EJSON.serialize(rows, { relaxed: false })) as unknown[], durationMs: Date.now() - started });
+    } catch (err) {
+      this.post({ type: 'chartData', requestId, error: errorMessage(err) });
+    }
+  }
+
+  private async savePng(dataUrl: string, name: string): Promise<void> {
+    const match = /^data:image\/png;base64,(.+)$/.exec(dataUrl);
+    if (!match) return;
+    const folder = vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(os.homedir());
+    const file = name.replace(/[\\/:*?"<>|]+/g, '_') + '.png';
+    const uri = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.joinPath(folder, file),
+      filters: { 'PNG image': ['png'] },
+      title: 'Export Chart',
+    });
+    if (!uri) return;
+    try {
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(match[1], 'base64'));
+      void vscode.window.showInformationMessage(`Saved the chart to ${uri.fsPath}.`);
+    } catch (err) {
+      void vscode.window.showErrorMessage(`Could not save the chart: ${errorMessage(err)}`);
     }
   }
 
@@ -676,7 +727,7 @@ export class CollectionPanel {
   <link rel="stylesheet" href="${asset('media', 'webview.css')}">
   <title>${escapeHtml(this.target.collection)}</title>
 </head>
-<body>
+<body data-chart-src="${asset('dist', 'chartjs.js')}">
   <div id="progress" class="progress"></div>
   <header class="toolbar">
     <div class="row top">
@@ -686,10 +737,11 @@ export class CollectionPanel {
         <button id="modeFind" role="tab" aria-selected="true" title="Filter, sort and project documents">Find</button>
         <button id="modeAggregate" role="tab" aria-selected="false" title="Build an aggregation pipeline">Aggregate</button>
         <button id="modeSchema" role="tab" aria-selected="false" title="Fields, types and values of a sample of documents">Schema</button>
+        <button id="modeChart" role="tab" aria-selected="false" title="Bar, line, pie, scatter and histogram charts of the documents">Chart</button>
         <button id="modeIndexes" role="tab" aria-selected="false" title="Indexes of the collection">Indexes</button>
       </div>
       <button id="historyBtn" class="secondary" title="Recent and saved queries" aria-haspopup="true" aria-expanded="false">History ▾</button>
-      <button id="export" class="secondary not-indexes not-schema" title="Export the results to JSON, JSON Lines or CSV">Export</button>
+      <button id="export" class="secondary not-indexes not-schema not-chart" title="Export the results to JSON, JSON Lines or CSV">Export</button>
       <button id="watch" class="secondary not-view" title="Show the changes of the collection as they happen (change stream)">Watch</button>
       <button id="insert" class="secondary editable" title="Insert a new document">Insert</button>
     </div>
@@ -702,12 +754,12 @@ export class CollectionPanel {
         </div>
         <button id="run" class="primary" title="Run query (Ctrl+Enter)">Find</button>
         <button id="reset" class="secondary" title="Clear filter, sort and projection">Reset</button>
-        <button id="explainFind" class="secondary not-schema" title="Show how MongoDB runs this query: index used, documents examined">Explain</button>
-        <button id="codeFind" class="secondary not-schema" title="The query as code for mongosh, Node.js, Python, Java, C# or Go">Code</button>
-        <button id="updateMany" class="secondary editable not-schema" title="Update every document matching the filter">Update many…</button>
-        <button id="deleteMany" class="secondary editable danger not-schema" title="Delete every document matching the filter">Delete many…</button>
+        <button id="explainFind" class="secondary not-schema not-chart" title="Show how MongoDB runs this query: index used, documents examined">Explain</button>
+        <button id="codeFind" class="secondary not-schema not-chart" title="The query as code for mongosh, Node.js, Python, Java, C# or Go">Code</button>
+        <button id="updateMany" class="secondary editable not-schema not-chart" title="Update every document matching the filter">Update many…</button>
+        <button id="deleteMany" class="secondary editable danger not-schema not-chart" title="Delete every document matching the filter">Delete many…</button>
       </div>
-      <div class="row options not-schema">
+      <div class="row options not-schema not-chart">
         <label for="sort">Sort</label>
         <input id="sort" spellcheck="false" placeholder="{ field: -1 }">
         <label for="projection">Project</label>
@@ -756,6 +808,43 @@ export class CollectionPanel {
       <button id="schemaCollapse" class="icon" title="Collapse all">⊟</button>
     </div>
     <div id="schemaBody" class="schema-body"></div>
+  </section>
+  <section class="chart-only chart-view" id="chartView">
+    <div class="row chart-head">
+      <div id="chartTypes" class="mode" role="tablist" aria-label="Chart type"></div>
+      <label for="chartSource">Data</label>
+      <select id="chartSource" title="Documents charted: those matching the filter, or the output of the pipeline of the Aggregate tab (up to the previewed stage)">
+        <option value="find">Filter</option><option value="aggregate">Pipeline</option>
+      </select>
+      <span id="chartPipelineInfo" class="chart-muted"></span>
+      <span class="spacer"></span>
+      <button id="chartCode" class="secondary" title="The chart's aggregation as code for mongosh, Node.js, Python, Java, C# or Go">Code</button>
+      <button id="chartPng" class="secondary" title="Save the chart as a PNG image">Export PNG</button>
+    </div>
+    <div class="row chart-fields">
+      <label for="chartX" id="chartXLabel">Category</label>
+      <input id="chartX" list="chartFieldList" spellcheck="false" placeholder="field">
+      <select id="chartUnit" title="Group the dates of the category by" aria-label="Group dates by">
+        <option value="">exact values</option><option value="hour">by hour</option><option value="day">by day</option><option value="week">by week</option><option value="month">by month</option><option value="year">by year</option>
+      </select>
+      <label for="chartAgg" id="chartAggLabel">Value</label>
+      <select id="chartAgg">
+        <option value="count">count</option><option value="sum">sum of</option><option value="avg">average of</option><option value="min">minimum of</option><option value="max">maximum of</option>
+      </select>
+      <label for="chartY" id="chartYLabel" class="hidden">Y</label>
+      <input id="chartY" list="chartFieldList" spellcheck="false" placeholder="field">
+      <label for="chartSeries" id="chartSeriesLabel">Series</label>
+      <input id="chartSeries" list="chartFieldList" spellcheck="false" placeholder="none" title="A field splitting the data into series (up to 12)">
+      <label for="chartLimit" id="chartLimitLabel">Top</label>
+      <input id="chartLimit" type="number" min="1">
+      <button id="chartDraw" class="primary" title="Draw the chart (Enter)">Draw</button>
+      <datalist id="chartFieldList"></datalist>
+    </div>
+    <div id="chartInfo" class="chart-info chart-muted"></div>
+    <div class="chart-wrap" id="chartWrap">
+      <canvas id="chartCanvas" role="img" aria-label="Chart"></canvas>
+      <div id="chartEmpty" class="empty hidden"></div>
+    </div>
   </section>
   <section class="indexes-only indexes-view" id="indexesView">
     <div class="row index-create editable">

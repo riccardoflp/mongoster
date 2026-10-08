@@ -1,6 +1,7 @@
 // Message protocol between the collection webview and the extension host.
 // Documents and _id values travel as relaxed EJSON plain values.
 import type { SchemaSummary } from './schema';
+import type { ChartSpec } from './chart';
 import type { FieldHint } from './complete';
 import type { ColumnLayout } from './columns';
 import type { PipelineStage } from './pipeline';
@@ -118,6 +119,10 @@ export type WebviewMessage =
   | { type: 'watch' }
   /** Opens generated code in an untitled editor. */
   | { type: 'openCode'; language: string; text: string }
+  /** Runs the chart stages after the filter or the pipeline. */
+  | { type: 'chart'; requestId: number; source: QuerySource; spec: ChartSpec }
+  /** Saves the chart image (a PNG data URL). */
+  | { type: 'savePng'; dataUrl: string; name: string }
   | BulkRequest
   | { type: 'export'; source: QuerySource; expanded: string[]; layout: ColumnLayout; page: { skip: number; limit: number }; count: number | null };
 
@@ -155,6 +160,8 @@ export type HostMessage =
   | { type: 'bulkCount'; requestId: number; count?: number; error?: string }
   | { type: 'fields'; fields: FieldHint[] }
   | { type: 'schema'; requestId: number; schema?: SchemaSummary; total?: number; durationMs?: number; error?: string }
+  /** Output of the chart stages, relaxed EJSON. */
+  | { type: 'chartData'; requestId: number; rows?: unknown[]; durationMs?: number; error?: string }
   /** `ok: false` without a message: the confirmation was cancelled. */
   | { type: 'bulkResult'; requestId: number; ok: boolean; message?: string };
 
