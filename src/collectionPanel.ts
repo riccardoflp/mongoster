@@ -196,6 +196,13 @@ export class CollectionPanel {
       case 'aggregate':
         await this.runAggregate(m);
         break;
+      case 'watch':
+        await vscode.commands.executeCommand('mongoster.watchChanges', {
+          connectionId: this.target.connectionId,
+          database: this.target.database,
+          collection: this.target.collection,
+        });
+        break;
       case 'editDocument':
         await this.documents.open(this.target, fromRelaxed(m.id));
         break;
@@ -678,6 +685,7 @@ export class CollectionPanel {
       </div>
       <button id="historyBtn" class="secondary" title="Recent and saved queries" aria-haspopup="true" aria-expanded="false">History ▾</button>
       <button id="export" class="secondary not-indexes not-schema" title="Export the results to JSON, JSON Lines or CSV">Export</button>
+      <button id="watch" class="secondary not-view" title="Show the changes of the collection as they happen (change stream)">Watch</button>
       <button id="insert" class="secondary editable" title="Insert a new document">Insert</button>
     </div>
     <div class="find-only">

@@ -9,6 +9,7 @@ import { DEF_SCHEME, DefinitionFileSystem } from './definitionFs';
 import { Playgrounds } from './playground/playground';
 import { MonitorPanel } from './monitor';
 import { Copier } from './copy';
+import { WatchPanel, WatchScope } from './watch';
 
 export function activate(context: vscode.ExtensionContext): void {
   const connections = new ConnectionManager(context);
@@ -37,6 +38,7 @@ export function activate(context: vscode.ExtensionContext): void {
     if (info) {
       CollectionPanel.connectionChanged(info);
       MonitorPanel.connectionChanged(info);
+      WatchPanel.connectionChanged(info);
     }
   };
 
@@ -154,8 +156,23 @@ export function activate(context: vscode.ExtensionContext): void {
       );
       if (answer === 'Remove') {
         MonitorPanel.close(node.info.id);
+        WatchPanel.close(node.info.id);
         await connections.remove(node.info.id);
       }
+    }),
+
+    vscode.commands.registerCommand('mongoster.watchChanges', (arg?: ConnectionNode | DatabaseNode | CollectionNode | WatchScope) => {
+      if (!arg) return;
+      const scope: WatchScope =
+        arg instanceof ConnectionNode
+          ? { connectionId: arg.info.id }
+          : arg instanceof DatabaseNode
+            ? { connectionId: arg.connection.id, database: arg.database }
+            : arg instanceof CollectionNode
+              ? { connectionId: arg.connection.id, database: arg.database, collection: arg.collection }
+              : arg;
+      const info = connections.get(scope.connectionId);
+      if (info) WatchPanel.show(context, connections, documents, info, scope);
     }),
 
     vscode.commands.registerCommand('mongoster.openMonitor', (node?: ConnectionNode) =>

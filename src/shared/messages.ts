@@ -114,6 +114,8 @@ export type WebviewMessage =
   | { type: 'loadFields' }
   | { type: 'saveView'; stages: PipelineStage[]; upto: number }
   | { type: 'editValidation' }
+  /** Opens the change stream tab of the collection. */
+  | { type: 'watch' }
   | BulkRequest
   | { type: 'export'; source: QuerySource; expanded: string[]; layout: ColumnLayout; page: { skip: number; limit: number }; count: number | null };
 
@@ -279,4 +281,61 @@ export type MonitorViewMessage =
   | { type: 'loadServer'; requestId: number }
   | { type: 'loadDatabases'; requestId: number }
   | { type: 'loadCollections'; requestId: number; database: string }
+  | { type: 'copy'; text: string };
+
+// ---- change streams
+
+/** One change event, ready to display. */
+export interface WatchEvent {
+  seq: number;
+  /** ISO time of the change (wallTime, or the cluster time). */
+  time: string;
+  /** insert, update, replace, delete, drop, rename, dropDatabase, invalidate, … */
+  op: string;
+  /** "db.collection", or "db" for database events. */
+  ns: string;
+  /** The document's _id: relaxed EJSON, and on one line. */
+  id?: unknown;
+  key?: string;
+  summary: string;
+  /** updateDescription of an update. */
+  updated?: Record<string, unknown>;
+  removed?: string[];
+  truncated?: { field: string; newSize: number }[];
+  /** Pre-image (when the collection records them). */
+  before?: unknown;
+  /** The inserted or replacing document, or the current one after an update. */
+  after?: unknown;
+  raw: unknown;
+}
+
+export interface WatchOptions {
+  /** $match on the change events, mongosh syntax. */
+  match: string;
+  /** Look up the current document on updates. */
+  fullDocument: boolean;
+}
+
+export type WatchState = 'starting' | 'watching' | 'stopped' | 'error';
+
+export type WatchHostMessage =
+  | {
+      type: 'init';
+      connectionName: string;
+      color?: string;
+      readOnly: boolean;
+      database?: string;
+      collection?: string;
+      /** Whether the collection records pre-images (collection scope only). */
+      preImages?: boolean;
+    }
+  | { type: 'status'; state: WatchState; message?: string }
+  | { type: 'events'; events: WatchEvent[] };
+
+export type WatchViewMessage =
+  | { type: 'ready' }
+  | { type: 'start'; options: WatchOptions }
+  | { type: 'stop' }
+  | { type: 'enablePreImages' }
+  | { type: 'openDocument'; database: string; collection: string; id: unknown }
   | { type: 'copy'; text: string };

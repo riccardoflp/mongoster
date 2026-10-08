@@ -1,0 +1,175 @@
+/* Change stream tab: monitor.css provides the base (bar, toolbar, tables, detail rows). */
+
+.view .table-wrap {
+  flex: 1;
+}
+
+.status {
+  font-size: 0.9em;
+  padding: 1px 8px;
+  border-radius: 10px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.status[data-state='watching'] {
+  color: var(--vscode-charts-green, #89d185);
+  border-color: currentColor;
+}
+
+.status[data-state='paused'] {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  border-color: currentColor;
+}
+
+.status[data-state='error'] {
+  color: var(--vscode-errorForeground, #f48771);
+  border-color: currentColor;
+}
+
+.error.notice {
+  color: var(--vscode-foreground);
+  background: var(--vscode-inputValidation-infoBackground, rgba(30, 60, 90, 0.5));
+  border-bottom-color: var(--vscode-inputValidation-infoBorder, #007acc);
+}
+
+.ops {
+  display: flex;
+  gap: 4px;
+}
+
+button.op-toggle {
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+}
+
+button.op-toggle[aria-pressed='true'] {
+  color: var(--vscode-foreground);
+  border-color: var(--op-color, var(--border));
+  background: var(--vscode-list-inactiveSelectionBackground, rgba(128, 128, 128, 0.2));
+}
+
+.op-insert { --op-color: var(--vscode-charts-green, #89d185); }
+.op-update { --op-color: var(--vscode-charts-blue, #3794ff); }
+.op-replace { --op-color: var(--vscode-charts-purple, #b180d7); }
+.op-delete { --op-color: var(--vscode-charts-red, #f14c4c); }
+.op-other { --op-color: var(--vscode-charts-orange, #d18616); }
+
+td.op {
+  color: var(--op-color);
+  font-weight: 600;
+}
+
+td.time,
+td.ns {
+  color: var(--muted);
+}
+
+td.key {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#search {
+  min-width: 220px;
+}
+
+input.match {
+  flex: 1;
+  min-width: 260px;
+  font-family: var(--mono);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, transparent);
+  padding: 3px 6px;
+}
+
+.pre-images {
+  color: var(--muted);
+}
+
+@keyframes fresh {
+  from {
+    background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+  }
+  to {
+    background: transparent;
+  }
+}
+
+tr.fresh {
+  animation: fresh 1.5s ease-out;
+}
+
+tr.detail .actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.section-label {
+  margin: 8px 0 2px;
+  color: var(--muted);
+  font-family: var(--vscode-font-family);
+}
+
+.note {
+  color: var(--muted);
+  font-family: var(--vscode-font-family);
+}
+
+table.diff {
+  min-width: 0;
+  margin-top: 2px;
+}
+
+tr.detail table.diff td,
+table.diff th {
+  padding: 3px 8px;
+  background: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 480px;
+  vertical-align: top;
+}
+
+table.diff th {
+  position: static;
+}
+
+table.diff td.field {
+  white-space: nowrap;
+}
+
+table.diff tr.added td.after,
+table.diff tr.changed td.after {
+  color: var(--vscode-charts-green, #89d185);
+}
+
+table.diff tr.removed td.before,
+table.diff tr.changed td.before {
+  color: var(--vscode-charts-red, #f14c4c);
+}
+
+table.diff tr.removed td.field {
+  text-decoration: line-through;
+}
+
+table.diff td.missing {
+  color: var(--muted);
+}
+
+tr.detail details {
+  margin-top: 8px;
+}
+
+tr.detail summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-family: var(--vscode-font-family);
+}

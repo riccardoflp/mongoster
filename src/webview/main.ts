@@ -1202,6 +1202,7 @@ const pipeline = new PipelineEditor({
   },
 });
 el('modeFind').addEventListener('click', () => state.mode !== 'find' && setMode('find'));
+el('watch').addEventListener('click', () => vscode.postMessage({ type: 'watch' }));
 el('modeIndexes').addEventListener('click', () => state.mode !== 'indexes' && setMode('indexes'));
 el('modeSchema').addEventListener('click', () => state.mode !== 'schema' && setMode('schema'));
 

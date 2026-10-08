@@ -210,6 +210,12 @@
         "title": "Copy Collection To…",
         "category": "Mongoster",
         "icon": "$(copy)"
+      },
+      {
+        "command": "mongoster.watchChanges",
+        "title": "Watch Changes",
+        "category": "Mongoster",
+        "icon": "$(eye)"
       }
     ],
     "menus": {
@@ -375,6 +381,11 @@
           "command": "mongoster.copyCollection",
           "when": "view == mongoster.connections && viewItem =~ /^(collection|view)/",
           "group": "2_transfer@3"
+        },
+        {
+          "command": "mongoster.watchChanges",
+          "when": "view == mongoster.connections && viewItem =~ /^(connection|database|collection)/",
+          "group": "2_monitor@2"
         }
       ],
       "commandPalette": [
@@ -476,6 +487,10 @@
         },
         {
           "command": "mongoster.copyCollection",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.watchChanges",
           "when": "false"
         }
       ],

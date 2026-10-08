@@ -3,6 +3,7 @@
 !dist/webview.js
 !dist/playground.js
 !dist/monitor.js
+!dist/watch.js
 !media/**
 !package.json
 !README.md

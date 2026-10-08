@@ -104,6 +104,12 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - `Slow queries`: le operazioni registrate dal profiler del database scelto (le ultime 200) con durata, documenti e chiavi esaminati rispetto ai restituiti, piano e comando; clic per il dettaglio con `execStats`. Il livello del profiler (spento, operazioni lente oltre N ms, tutte) si cambia da lì.
   - `Stats`: versione, uptime, connessioni, operazioni al secondo per tipo, rete e memoria del server; tabella dei database (collezioni, view, documenti, dati, storage, indici) e, cliccandone uno, delle sue collezioni, ordinabili per colonna.
   - Con una connessione in sola lettura le operazioni non si possono interrompere e il profiler non si può cambiare.
+- **Watch (change stream)**: clic destro su una collezione, un database o una connessione → `Watch Changes` (o `Watch` nella toolbar della collezione) apre una tab che mostra in tempo reale inserimenti, modifiche, sostituzioni ed eliminazioni (e `drop`, `rename`, …), i più recenti in alto:
+  - clic su un evento per il dettaglio: per le modifiche la tabella dei campi cambiati (prima → dopo), per gli inserimenti il documento, poi il documento attuale, l'evento completo con `Copy event` e `Open document` per aprirlo nell'editor;
+  - i valori **prima** della modifica (e il documento eliminato) si vedono se la collezione registra le pre-image: `Enable…` le attiva (`changeStreamPreAndPostImages`, dopo conferma; non con le connessioni in sola lettura);
+  - filtri per tipo di operazione e per testo; `$match` applica un filtro lato server sugli eventi (es. `{ "fullDocument.status": "active" }`); `Current document on update` legge anche la versione attuale del documento modificato;
+  - `Pause` trattiene i nuovi eventi senza chiudere lo stream, `Stop` / `Start` lo chiudono e lo riaprono, `Clear` svuota la lista (sono tenuti gli ultimi 1000 eventi).
+  - I change stream richiedono un replica set o un cluster sharded (basta un replica set con un solo nodo); su un server standalone la tab lo spiega. Se la collezione viene eliminata o rinominata lo stream si chiude.
 - Le **view** sono in sola lettura, come le collezioni delle connessioni in sola lettura (badge `view` / `read-only` accanto al nome).
 - `Ctrl+C` su una cella selezionata copia il valore.
 
@@ -133,6 +139,7 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/documentFs.ts` – file system virtuale `mongoster://` per aprire, modificare e salvare i documenti
 - `src/definitionFs.ts` – file system virtuale `mongoster-def://` per le definizioni delle view e le regole di validazione
 - `src/monitor.ts`, `src/webview/monitor.ts`, `media/monitor.css` – monitor del server: operazioni in corso, profiler, statistiche
+- `src/watch.ts`, `src/webview/watch.ts`, `media/watch.css` – change stream di una collezione, un database o una connessione
 - `src/playground/` – playground: riscrittura dello script (`rewrite.ts`, con `acorn`), runtime stile mongosh (`shell.ts`), contesto del cursore per l'autocompletamento (`context.ts`), comandi, CodeLens e completion (`playground.ts`), tab del risultato (`resultPanel.ts`, `src/webview/playground.ts`, `media/playground.css`)
 - `src/queries.ts` – testo di filtri e pipeline → argomenti del driver
 - `src/transfer.ts` – export (JSON, JSON Lines, CSV) e import
