@@ -116,6 +116,8 @@ export type WebviewMessage =
   | { type: 'editValidation' }
   /** Opens the change stream tab of the collection. */
   | { type: 'watch' }
+  /** Opens generated code in an untitled editor. */
+  | { type: 'openCode'; language: string; text: string }
   | BulkRequest
   | { type: 'export'; source: QuerySource; expanded: string[]; layout: ColumnLayout; page: { skip: number; limit: number }; count: number | null };
 

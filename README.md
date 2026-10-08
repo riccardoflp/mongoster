@@ -92,6 +92,10 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
 - **Explain**: il pulsante `Explain` (in `Find` e nell'editor della pipeline) mostra come MongoDB esegue la query: indice usato o `COLLSCAN`, ordinamento in memoria, documenti e chiavi esaminati rispetto a quelli restituiti, tempo, piano di esecuzione a albero; `Raw` mostra l'output completo.
   - Se la query legge tutta la collezione o ordina in memoria propone un indice (prima i campi in uguaglianza, poi l'ordinamento, poi i range); `Create…` apre la scheda `Indexes` con l'indice già compilato.
   - Per le pipeline spiega fino allo stage mostrato; quelle con `$out`/`$merge` non si spiegano.
+- **Codice**: il pulsante `Code` (in `Find` e nell'editor della pipeline) mostra la query (filtro, proiezione, ordinamento) o la pipeline come codice per **mongosh**, **Node.js**, **Python** (PyMongo), **Java**, **C#** e **Go** (driver v2):
+  - i tipi BSON diventano quelli del driver (`ObjectId`, date, `Long`/`Int64`, `Decimal128`, regex, UUID, binari, timestamp, `MinKey`/`MaxKey`…), così la query trova esattamente gli stessi documenti;
+  - `Full program` aggiunge import, connessione (dalla variabile d'ambiente `MONGODB_URI`) e stampa dei risultati: un programma che si esegue così com'è;
+  - `Copy` copia il codice, `Open in Editor` lo apre in una nuova tab con il linguaggio giusto. Il linguaggio scelto è ricordato per la collezione.
 - **Playground**: file `.mongodb.js` con la sintassi di mongosh. `New Playground` (icona nella barra della vista, o clic destro su una connessione, un database o una collezione) ne apre uno già impostato su quella connessione e quel database.
   - `Ctrl+Enter` (o `▶ Run` in cima al file, o il pulsante ▶ della tab) esegue tutto il file, oppure solo le righe selezionate; il risultato si apre accanto: i documenti come tabella o come testo mongosh (`Table` / `JSON`), `Copy` e `Open in Editor`.
   - Come in mongosh non serve `await`: `const u = db.users.findOne({ … }); u.name` funziona. Viene mostrato il valore dell'ultima espressione (di un cursore i primi 200 documenti); `print()`, `printjson()` e `console.log()` scrivono nell'output del risultato e nel canale `Mongoster Playground`.
@@ -152,4 +156,5 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/shared/explain.ts` – riassunto dell'output di explain e suggerimento dell'indice
 - `src/shared/schema.ts` – analisi dello schema di un campione di documenti e `$jsonSchema` generato
 - `src/shared/complete.ts` – autocompletamento: contesto del cursore nel testo mongosh, campi, operatori e valori suggeriti
+- `src/shared/codegen.ts`, `src/webview/codeDialog.ts` – query e pipeline come codice per mongosh e i driver (Node.js, Python, Java, C#, Go)
 - `src/webview/main.ts`, `src/webview/history.ts`, `src/webview/pipeline.ts`, `src/webview/indexes.ts`, `src/webview/explainView.ts`, `src/webview/bulk.ts`, `src/webview/schemaView.ts`, `src/webview/columnsUi.ts`, `src/webview/autocomplete.ts`, `media/webview.css` – UI della tabella, cronologia, editor della pipeline, indici, explain, update/delete many, schema, colonne e suggerimenti

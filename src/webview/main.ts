@@ -6,6 +6,8 @@ import { PipelineEditor } from './pipeline';
 import { IndexesView } from './indexes';
 import { ExplainView } from './explainView';
 import { BulkDialog, BulkOp } from './bulk';
+import { CodeDialog } from './codeDialog';
+import type { CodeLanguage } from '../shared/codegen';
 import { SchemaView } from './schemaView';
 import {
   ColumnLayout,
@@ -51,6 +53,8 @@ interface QueryState {
   expanded: string[];
   /** Documents sampled by the schema analysis. */
   schemaSize?: number;
+  codeLanguage?: CodeLanguage;
+  codeProgram?: boolean;
 }
 
 /** `within`: the array a dragged element field belongs to; its conditions go into an $elemMatch. */
@@ -88,6 +92,7 @@ const columnsByKey = new Map<string, ColumnNode>();
 let reselect: { row: number; path: string; elem?: string } | null = null;
 let readOnly = false;
 let collectionName = '';
+let databaseName = '';
 /** Stage whose output the grid shows (aggregate mode), or -1 for documents of the collection. */
 let docsUpto = -1;
 let requestedUpto = -1;
@@ -232,6 +237,7 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
   switch (m.type) {
     case 'init':
       collectionName = m.collection;
+      databaseName = m.database;
       el('ns').innerHTML = '';
       el('ns').append(
         span('ns-conn', m.connectionName),
@@ -1081,9 +1087,10 @@ filterInput.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (explainView.isOpen || bulk.isOpen) {
+  if (explainView.isOpen || bulk.isOpen || codeDialog.isOpen) {
     if (e.key === 'Escape') {
       if (explainView.isOpen) explainView.close();
+      else if (codeDialog.isOpen) codeDialog.close();
       else bulk.close();
       e.preventDefault();
     }
@@ -1261,6 +1268,30 @@ function explain(): void {
   vscode.postMessage({ type: 'explain', requestId: explainRequest, source });
 }
 el('explainFind').addEventListener('click', explain);
+
+// ---------------------------------------------------------------------------
+// Code
+
+const codeDialog = new CodeDialog({
+  post: (message) => vscode.postMessage(message),
+  prefs: () => ({ language: state.codeLanguage ?? 'javascript', program: state.codeProgram ?? false }),
+  savePrefs: (prefs) => {
+    state.codeLanguage = prefs.language;
+    state.codeProgram = prefs.program;
+    vscode.setState(state);
+  },
+});
+
+function showCode(): void {
+  if (state.mode === 'aggregate') {
+    if (!pipeline.prepare()) return;
+    codeDialog.open({ kind: 'aggregate', stages: pipeline.stages, upto: pipeline.upto }, databaseName, collectionName);
+    return;
+  }
+  codeDialog.open({ kind: 'find', filter: filterInput.value, sort: sortInput.value, projection: projectionInput.value }, databaseName, collectionName);
+}
+el('codeFind').addEventListener('click', showCode);
+el('codePipeline').addEventListener('click', showCode);
 
 // ---------------------------------------------------------------------------
 // Update many / Delete many

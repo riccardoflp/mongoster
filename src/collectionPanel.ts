@@ -196,6 +196,11 @@ export class CollectionPanel {
       case 'aggregate':
         await this.runAggregate(m);
         break;
+      case 'openCode': {
+        const doc = await vscode.workspace.openTextDocument({ language: m.language, content: m.text });
+        await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside, preview: false });
+        break;
+      }
       case 'watch':
         await vscode.commands.executeCommand('mongoster.watchChanges', {
           connectionId: this.target.connectionId,
@@ -698,6 +703,7 @@ export class CollectionPanel {
         <button id="run" class="primary" title="Run query (Ctrl+Enter)">Find</button>
         <button id="reset" class="secondary" title="Clear filter, sort and projection">Reset</button>
         <button id="explainFind" class="secondary not-schema" title="Show how MongoDB runs this query: index used, documents examined">Explain</button>
+        <button id="codeFind" class="secondary not-schema" title="The query as code for mongosh, Node.js, Python, Java, C# or Go">Code</button>
         <button id="updateMany" class="secondary editable not-schema" title="Update every document matching the filter">Update many…</button>
         <button id="deleteMany" class="secondary editable danger not-schema" title="Delete every document matching the filter">Delete many…</button>
       </div>
@@ -723,6 +729,7 @@ export class CollectionPanel {
         <button id="addStage" class="secondary" title="Add a stage at the end">+ Stage</button>
         <button id="pipelineTextToggle" class="secondary" title="Edit or paste the whole pipeline as text">Edit as text</button>
         <button id="copyPipeline" class="secondary" title="Copy the pipeline (mongosh syntax)">Copy</button>
+        <button id="codePipeline" class="secondary" title="The pipeline as code for mongosh, Node.js, Python, Java, C# or Go">Code</button>
         <span class="spacer"></span>
         <span id="previewInfo" class="preview-info"></span>
       </div>
@@ -802,6 +809,25 @@ export class CollectionPanel {
         <button id="docClose" class="icon" title="Close (Esc)">✕</button>
       </div>
       <div class="modal-body" id="docBody"></div>
+    </div>
+  </div>
+  <div id="codeModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-box code-box">
+      <div class="modal-head">
+        <span id="codeTitle" class="doc-title">Code</span>
+        <span class="spacer"></span>
+        <button id="codeClose" class="icon" title="Close (Esc)">✕</button>
+      </div>
+      <div class="code-options">
+        <div id="codeLangs" class="mode" role="tablist" aria-label="Language"></div>
+        <label title="Imports, connection (MONGODB_URI) and printing the results"><input id="codeProgram" type="checkbox"> Full program</label>
+      </div>
+      <div id="codeError" class="error hidden"></div>
+      <pre id="codeText" class="code-text"></pre>
+      <div class="bulk-actions">
+        <button id="codeOpen" class="secondary" title="Open the code in a new editor tab">Open in Editor</button>
+        <button id="codeCopy" class="primary">Copy</button>
+      </div>
     </div>
   </div>
   <div id="bulkModal" class="modal hidden" role="dialog" aria-modal="true">
