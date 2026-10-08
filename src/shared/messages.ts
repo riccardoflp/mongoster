@@ -11,6 +11,20 @@ export interface QueryRequest {
   limit: number;
 }
 
+export interface QueryText {
+  filter: string;
+  sort: string;
+  projection: string;
+}
+
+export interface SavedQuery extends QueryText {
+  id: string;
+  /** Set for saved (favorite) queries. */
+  name?: string;
+  /** Last run / save time, epoch ms. */
+  at: number;
+}
+
 export type WebviewMessage =
   | { type: 'ready' }
   | QueryRequest
@@ -19,10 +33,14 @@ export type WebviewMessage =
   | { type: 'deleteDocument'; id: unknown }
   | { type: 'insertDocument' }
   | { type: 'saveExpanded'; expanded: string[] }
+  | { type: 'saveQuery'; query: QueryText }
+  | { type: 'removeQuery'; id: string }
+  | { type: 'clearHistory' }
   | { type: 'copy'; text: string };
 
 export type HostMessage =
   | { type: 'init'; connectionName: string; database: string; collection: string; readOnly: boolean; expanded: string[] }
   | { type: 'result'; requestId: number; docs: unknown[]; count: number | null; durationMs: number }
   | { type: 'error'; requestId: number; message: string }
-  | { type: 'refresh' };
+  | { type: 'refresh' }
+  | { type: 'history'; recent: SavedQuery[]; saved: SavedQuery[] };

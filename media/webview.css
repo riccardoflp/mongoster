@@ -597,3 +597,135 @@ body.dragging .dropzones {
 .jnode.collapsed > .jtail {
   display: none;
 }
+
+/* ---------- query history ---------- */
+
+.history {
+  position: fixed;
+  right: 12px;
+  z-index: 8;
+  width: min(620px, calc(100vw - 24px));
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-editorWidget-border, var(--border));
+  border-radius: 4px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+.history-head {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-head input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--vscode-font-family);
+}
+
+.history-body {
+  overflow-y: auto;
+  padding: 4px 0 6px;
+}
+
+.history-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px 2px;
+  color: var(--muted);
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--vscode-textLink-foreground);
+  font-size: 1em;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+button.link:hover {
+  text-decoration: underline;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px 3px 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.history-item:hover,
+.history-item:focus {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.history-item:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.history-item button.icon {
+  visibility: hidden;
+  font-size: 0.95em;
+}
+
+.history-item:hover button.icon,
+.history-item:focus-within button.icon {
+  visibility: visible;
+}
+
+.hi-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.hi-name {
+  font-weight: 600;
+}
+
+.hi-query {
+  font-family: var(--mono);
+  font-size: var(--vscode-editor-font-size, 13px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hi-name + .hi-query {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.hi-label {
+  margin: 0 2px 0 8px;
+  color: var(--muted);
+  font-family: var(--vscode-font-family);
+  font-size: 0.85em;
+}
+
+.hi-time {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.history-empty {
+  padding: 16px 12px;
+  color: var(--muted);
+  text-align: center;
+}

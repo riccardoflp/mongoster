@@ -1,5 +1,6 @@
 import { formatFilter, isEjsonWrapper, isOperatorObject, isPlainObject, parseQuery, toShell } from '../shared/query';
 import type { HostMessage, WebviewMessage } from '../shared/messages';
+import { HistoryPopover } from './history';
 import { ColumnNode, MISSING, buildColumns, expandableBelow, getAt, isSubdocument, leafCount, leaves } from './columns';
 
 declare function acquireVsCodeApi(): {
@@ -122,6 +123,9 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       break;
     case 'refresh':
       run();
+      break;
+    case 'history':
+      history.update(m.recent, m.saved);
       break;
     case 'result':
       if (m.requestId !== currentRequest) return;
@@ -622,6 +626,24 @@ function span(className: string, text: string): HTMLSpanElement {
   s.textContent = text;
   return s;
 }
+
+// ---------------------------------------------------------------------------
+// History
+
+const history = new HistoryPopover({
+  apply(q) {
+    filterInput.value = q.filter;
+    sortInput.value = q.sort;
+    projectionInput.value = q.projection;
+    autosize();
+    run(true);
+  },
+  save: (q) => vscode.postMessage({ type: 'saveQuery', query: { filter: q.filter, sort: q.sort, projection: q.projection } }),
+  remove: (id) => vscode.postMessage({ type: 'removeQuery', id }),
+  clear: () => vscode.postMessage({ type: 'clearHistory' }),
+  current: () => ({ filter: filterInput.value, sort: sortInput.value, projection: projectionInput.value }),
+  notify: showError,
+});
 
 // ---------------------------------------------------------------------------
 // Boot

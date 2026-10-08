@@ -3,6 +3,7 @@ import { BSON, Collection, Document } from 'mongodb';
 import { ConnectionManager } from './connections';
 import { byId, CollectionRef, DocumentFileSystem } from './documentFs';
 import { errorMessage } from './tree';
+import { QueryHistory, sameQuery } from './queryHistory';
 import { isPlainObject, parseQuery, relaxEjson, toShell } from './shared/query';
 import type { HostMessage, QueryRequest, WebviewMessage } from './shared/messages';
 
@@ -44,6 +45,7 @@ export class CollectionPanel {
   }
 
   private readonly panel: vscode.WebviewPanel;
+  private readonly history: QueryHistory;
 
   private constructor(
     private readonly context: vscode.ExtensionContext,
@@ -52,6 +54,7 @@ export class CollectionPanel {
     private readonly target: CollectionTarget,
     onDispose: () => void,
   ) {
+    this.history = new QueryHistory(context.globalState, panelKey(target));
     const roots = [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')];
     this.panel = vscode.window.createWebviewPanel(
       'mongoster.collection',
@@ -80,6 +83,36 @@ export class CollectionPanel {
           readOnly: this.target.readOnly,
           expanded: this.context.globalState.get<string[]>(expandedStateKey(this.target), []),
         });
+        this.postHistory();
+        break;
+      case 'saveQuery': {
+        const name = await vscode.window.showInputBox({
+          title: 'Save Query',
+          prompt: `Name for this ${this.target.collection} query`,
+          value: this.history.saved.find((s) => sameQuery(s, m.query))?.name,
+          validateInput: (v) => (v.trim() ? undefined : 'Enter a name'),
+        });
+        if (!name) return;
+        await this.history.save(name.trim(), m.query);
+        this.postHistory();
+        break;
+      }
+      case 'removeQuery':
+        await this.history.remove(m.id);
+        this.postHistory();
+        break;
+      case 'clearHistory':
+        if (
+          (await vscode.window.showWarningMessage(
+            `Clear the recent queries of ${this.target.collection}?`,
+            { modal: true, detail: 'Saved queries are kept.' },
+            'Clear',
+          )) !== 'Clear'
+        ) {
+          return;
+        }
+        await this.history.clearRecent();
+        this.postHistory();
         break;
       case 'saveExpanded':
         await this.context.globalState.update(expandedStateKey(this.target), m.expanded.length ? m.expanded : undefined);
@@ -106,6 +139,10 @@ export class CollectionPanel {
         vscode.window.setStatusBarMessage('Mongoster: copied to clipboard', 2000);
         break;
     }
+  }
+
+  private postHistory(): void {
+    this.post({ type: 'history', recent: this.history.recent, saved: this.history.saved });
   }
 
   private async deleteDocument(id: unknown): Promise<void> {
@@ -149,6 +186,7 @@ export class CollectionPanel {
         count,
         durationMs: Date.now() - started,
       });
+      if (await this.history.record(m)) this.postHistory();
     } catch (err) {
       this.post({ type: 'error', requestId: m.requestId, message: errorMessage(err) });
     }
@@ -179,6 +217,7 @@ export class CollectionPanel {
       </div>
       <button id="run" class="primary" title="Run query (Ctrl+Enter)">Find</button>
       <button id="reset" class="secondary" title="Clear filter, sort and projection">Reset</button>
+      <button id="historyBtn" class="secondary" title="Recent and saved queries" aria-haspopup="true" aria-expanded="false">History ▾</button>
       <button id="insert" class="secondary editable" title="Insert a new document">Insert</button>
     </div>
     <div class="row options">
@@ -188,6 +227,13 @@ export class CollectionPanel {
       <input id="projection" spellcheck="false" placeholder="{ field: 1 }">
     </div>
   </header>
+  <div id="historyPanel" class="history hidden" role="dialog" aria-label="Query history">
+    <div class="history-head">
+      <input id="historySearch" spellcheck="false" placeholder="Search queries">
+      <button id="saveCurrent" class="secondary" title="Save the current filter, sort and projection with a name">☆ Save current</button>
+    </div>
+    <div class="history-body" id="historyBody"></div>
+  </div>
   <div class="error hidden" id="error"></div>
   <div class="statusbar">
     <span id="status"></span>

@@ -10,6 +10,7 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
 - **Drag & drop verso il filtro**:
   - trascina una **cella** → `= equals`, `≠ not equal`, e per numeri/date/stringhe `≥ from` / `≤ to` (si combinano in un range sullo stesso campo); per gli array `∈ in`;
   - trascina l'**intestazione di una colonna** → `exists`, `missing`, `is null`.
+- **Cronologia query**: `History` nella toolbar mostra le query salvate con un nome e le ultime 50 eseguite con successo su quella collezione (senza duplicati, ricordate anche chiudendo VS Code). Clic o `Invio` per rieseguirne una; ricerca, `☆` per salvarla con un nome, `✕` per toglierla, `Clear` per svuotare le recenti.
 - **Ordinamento**: clic sull'intestazione (▲ → ▼ → nessuno).
 - **Colonne annidate**: le colonne con sotto-documenti hanno un pulsante `▸` che le espande in colonne con il punto (`address` → `address.city`, `address.zip`, …), un livello alla volta; `Alt+clic` espande tutti i livelli. Clic sul prefisso (`address.`) per richiudere il gruppo. Filtri, range e ordinamento funzionano anche sui campi annidati (`{ "address.city": "Milano" }`). Se in un documento il campo non è un oggetto, il valore occupa tutto il gruppo. Le espansioni sono ricordate per ogni collezione.
 - **Documento JSON**: doppio clic su una riga (o clic sul numero di riga) apre una dialog con l'albero JSON espandibile; `↑/↓` per scorrere i documenti, `Copy`.
@@ -44,6 +45,7 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/connections.ts` – connessioni salvate e cache dei `MongoClient`
 - `src/tree.ts` – albero connessioni/database/collezioni
 - `src/collectionPanel.ts` – webview per collezione, esecuzione delle query
+- `src/queryHistory.ts` – cronologia e query salvate per collezione
 - `src/documentFs.ts` – file system virtuale `mongoster://` per aprire, modificare e salvare i documenti
 - `src/shared/query.ts` – parsing/formattazione della sintassi mongosh ⇄ EJSON
-- `src/webview/main.ts`, `src/webview/columns.ts`, `media/webview.css` – UI della tabella e modello delle colonne
+- `src/webview/main.ts`, `src/webview/columns.ts`, `src/webview/history.ts`, `media/webview.css` – UI della tabella e modello delle colonne
