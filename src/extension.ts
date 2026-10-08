@@ -12,6 +12,7 @@ import { ComparePanel } from './compare';
 import { UsersPanel } from './users';
 import { GridFSPanel, dropBucket, uploadFiles } from './gridfs';
 import { Copier } from './copy';
+import { HistoryPanel, UndoHistory } from './history';
 import { WatchPanel, WatchScope } from './watch';
 import { ConnectionEditor, SaveConnection } from './connectionEditor';
 import type { QueryText } from './shared/messages';
@@ -26,6 +27,7 @@ interface OpenQueryArgs {
 
 export function activate(context: vscode.ExtensionContext): void {
   const connections = new ConnectionManager(context);
+  const history = UndoHistory.init(context, connections);
   const tree = new MongoTreeProvider(connections);
   const documents = new DocumentFileSystem(connections);
   const manager = new Manager(connections);
@@ -65,6 +67,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     connections,
+    history,
     new Playgrounds(context, connections),
     vscode.window.createTreeView('mongoster.connections', { treeDataProvider: tree, showCollapseAll: true }),
     vscode.workspace.registerFileSystemProvider(DOC_SCHEME, documents, { isCaseSensitive: true }),
@@ -132,6 +135,36 @@ export function activate(context: vscode.ExtensionContext): void {
       if (answer === 'Allow Changes') await updateConnection(node.info.id, { readOnly: false });
     }),
 
+    vscode.commands.registerCommand('mongoster.disableHistory', (node?: ConnectionNode) =>
+      node ? updateConnection(node.info.id, { noHistory: true }) : undefined,
+    ),
+
+    vscode.commands.registerCommand('mongoster.enableHistory', (node?: ConnectionNode) =>
+      node ? updateConnection(node.info.id, { noHistory: false }) : undefined,
+    ),
+
+    vscode.commands.registerCommand('mongoster.showHistory', () => HistoryPanel.show(context, history)),
+
+    vscode.commands.registerCommand('mongoster.undoLast', async () => {
+      const entry = await history.last();
+      if (!entry) void vscode.window.showInformationMessage('Nothing to undo: the undo history is empty.');
+      else await history.undoAndReport(entry.id);
+    }),
+
+    vscode.commands.registerCommand('mongoster.clearHistory', async () => {
+      const entries = await history.list();
+      if (!entries.length) {
+        void vscode.window.showInformationMessage('The undo history is already empty.');
+        return;
+      }
+      const answer = await vscode.window.showWarningMessage(
+        'Clear the undo history?',
+        { modal: true, detail: `${entries.length.toLocaleString('en-US')} operation${entries.length === 1 ? '' : 's'} can then no longer be undone.` },
+        'Clear History',
+      );
+      if (answer === 'Clear History') await history.clear();
+    }),
+
     vscode.commands.registerCommand('mongoster.moveToFolder', async (node?: ConnectionNode) => {
       if (!node) return;
       const current = node.info.folder;
@@ -191,6 +224,8 @@ export function activate(context: vscode.ExtensionContext): void {
         GridFSPanel.close(node.info.id);
         ConnectionEditor.close(node.info.id);
         await connections.remove(node.info.id);
+        // Its operations can no longer be undone.
+        await history.clear((e) => e.connectionId === node.info.id);
       }
     }),
 

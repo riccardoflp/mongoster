@@ -649,3 +649,60 @@ export type GridFSViewMessage =
   | { type: 'delete'; key: string }
   | { type: 'editMetadata'; key: string }
   | { type: 'copy'; text: string };
+
+// ---------------------------------------------------------------- undo history
+
+/** One recorded write: what it changed, kept to put the documents back as they were. */
+export interface HistoryEntry {
+  id: string;
+  /** Epoch ms. */
+  time: number;
+  connectionId: string;
+  connectionName: string;
+  database: string;
+  collection: string;
+  /** What was done, e.g. "Delete many { status: 'old' }". */
+  label: string;
+  inserted: number;
+  updated: number;
+  deleted: number;
+  /** Bytes of the compressed file on disk (0 once undone). */
+  size: number;
+  /** Epoch ms of the undo. */
+  undone?: number;
+  /** The entry this one undid. */
+  undoOf?: string;
+}
+
+export interface HistoryUsage {
+  bytes: number;
+  maxBytes: number;
+  maxDays: number;
+  maxEntries: number;
+  maxDocuments: number;
+}
+
+/** What undoing an entry does to one document: its value now vs after the undo. */
+export interface HistoryDocument {
+  /** _id on one line. */
+  id: string;
+  /** What the recorded write did to the document. */
+  kind: 'inserted' | 'updated' | 'deleted';
+  /** The document changed after the write: undoing it overwrites those changes. */
+  changed: boolean;
+  /** Field differences, left: now, right: after the undo. Empty when the undo changes nothing. */
+  fields: FieldDiff[];
+}
+
+export type HistoryHostMessage =
+  | { type: 'init'; entries: HistoryEntry[]; usage: HistoryUsage; enabled: boolean }
+  | { type: 'details'; id: string; documents?: HistoryDocument[]; total?: number; error?: string }
+  | { type: 'message'; text: string; failed?: boolean };
+
+export type HistoryViewMessage =
+  | { type: 'ready' }
+  | { type: 'details'; id: string }
+  | { type: 'undo'; id: string }
+  | { type: 'remove'; id: string }
+  | { type: 'clear' }
+  | { type: 'settings' };

@@ -1,0 +1,178 @@
+/* Undo History tab: monitor.css provides the base (bar, tables, detail rows). */
+
+#search {
+  flex: 1;
+  max-width: 420px;
+}
+
+.title {
+  font-weight: 600;
+}
+
+.message {
+  flex: none;
+}
+
+.notice {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.list {
+  flex: 1;
+}
+
+tr.entry {
+  cursor: pointer;
+}
+
+tr.entry.open td {
+  border-bottom-color: transparent;
+}
+
+tr.entry.undone {
+  cursor: default;
+}
+
+tr.entry.undone td:not(.actions) {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: rgba(128, 128, 128, 0.5);
+}
+
+td.time,
+td.docs,
+td.size,
+td.ns .conn {
+  color: var(--muted);
+}
+
+td.size {
+  text-align: right;
+}
+
+td.docs {
+  white-space: normal;
+  min-width: 120px;
+  max-width: 170px;
+}
+
+td.ns {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The operation takes the room left by the other columns, cut with an ellipsis. */
+td.label {
+  width: 100%;
+  max-width: 0;
+  min-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+td.actions {
+  width: 1%;
+}
+
+@media (max-width: 640px) {
+  td.size,
+  th:nth-child(5) {
+    display: none;
+  }
+}
+
+.row-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.failed {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.warning {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.document {
+  margin: 6px 0 10px;
+}
+
+.document-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--mono);
+}
+
+.document-head .doc-id {
+  font-weight: 600;
+}
+
+.document-head .kind {
+  color: var(--muted);
+  font-family: var(--vscode-font-family);
+}
+
+.document-head .changed {
+  font-family: var(--vscode-font-family);
+  font-size: 0.85em;
+  padding: 0 6px;
+  border-radius: 8px;
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  border: 1px solid currentColor;
+}
+
+table.diff {
+  min-width: 0;
+  margin-top: 2px;
+}
+
+tr.detail table.diff td,
+table.diff th {
+  padding: 3px 8px;
+  background: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 480px;
+  vertical-align: top;
+}
+
+table.diff th {
+  position: static;
+}
+
+tr.detail table.diff td.field {
+  white-space: nowrap;
+}
+
+tr.detail table.diff td.value {
+  min-width: 160px;
+}
+
+table.diff tr.changed td.left,
+table.diff tr.removed td.left {
+  color: var(--vscode-charts-orange, #d18616);
+}
+
+table.diff tr.changed td.right,
+table.diff tr.added td.right {
+  color: var(--vscode-charts-purple, #b180d7);
+}
+
+table.diff .type {
+  color: var(--muted);
+  font-style: italic;
+}
+
+table.diff td.missing {
+  color: var(--muted);
+}

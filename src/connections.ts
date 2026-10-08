@@ -14,6 +14,8 @@ export interface ConnectionInfo {
   color?: ConnectionColor;
   /** Mongoster refuses every write through this connection. */
   readOnly?: boolean;
+  /** Writes through this connection aren't kept in the undo history. */
+  noHistory?: boolean;
   /** "user@host:port" of the SSH server the connection goes through (the options are secret). */
   ssh?: string;
   /** TLS certificates or options are set. */
@@ -68,7 +70,7 @@ export class ConnectionManager implements vscode.Disposable {
     const current = this.get(id);
     if (!current) return undefined;
     const info: ConnectionInfo = { ...current, ...changes };
-    for (const key of ['folder', 'color', 'readOnly', 'ssh', 'tls'] as const) if (!info[key]) delete info[key];
+    for (const key of ['folder', 'color', 'readOnly', 'noHistory', 'ssh', 'tls'] as const) if (!info[key]) delete info[key];
     if (uri !== undefined && uri !== (await this.uri(id))) {
       await this.context.secrets.store(secretKey(id), uri);
       await this.disconnect(id);

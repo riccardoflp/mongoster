@@ -12,6 +12,7 @@ import { CompareCounts, CompareOptions, DiffKind, comparable, fieldDiff } from '
 import type { CompareEntry, CompareHostMessage, CompareSide, CompareViewMessage } from './shared/messages';
 import { relaxEjson, toShell } from './shared/query';
 import { errorMessage } from './tree';
+import { UndoHistory } from './history';
 
 const { EJSON } = BSON;
 
@@ -357,7 +358,7 @@ export class ComparePanel {
       const total = inserts.length + replaces.length + deletes.length;
       const answer = await vscode.window.showWarningMessage(
         `Make ${to} like ${from}: ${plan(true)} ${docs(total)} in ${where}?`,
-        { modal: true, detail: 'Documents are written as they are now on the other side. This can\'t be undone.' },
+        { modal: true, detail: `Documents are written as they are now on the other side. ${UndoHistory.note(this.target(to).connectionId, total)}` },
         'Apply',
       );
       if (answer !== 'Apply') return reply(false);
@@ -372,7 +373,7 @@ export class ComparePanel {
           detail: [
             copies ? `${plan(false)} ${docs(copies)} from the ${from} side.` : '',
             deletes.length ? `${deletes.length.toLocaleString('en-US')} ${docs(deletes.length)} only on the ${to} side can also be deleted.` : '',
-            "This can't be undone.",
+            UndoHistory.note(this.target(to).connectionId, copies + deletes.length),
           ]
             .filter(Boolean)
             .join('\n'),
@@ -390,6 +391,12 @@ export class ComparePanel {
     try {
       const source = await this.coll(from);
       const target = await this.coll(to);
+      const other = this.sideInfo(from);
+      const rec = UndoHistory.start(
+        this.target(to),
+        `Make like ${other.connectionName} › ${other.database}.${other.collection}`,
+        inserts.length + replaces.length + (withDeletes ? deletes.length : 0),
+      );
       let written = 0;
       const copies = [...inserts, ...replaces];
       for (let i = 0; i < copies.length; i += BATCH) {
@@ -398,6 +405,7 @@ export class ComparePanel {
           replaceOne: { filter: { _id: doc._id }, replacement: doc, upsert: true },
         }));
         if (ops.length) {
+          await rec?.snapshotIds(target, ops.map((op) => ('replaceOne' in op ? op.replaceOne.filter._id : undefined)));
           const res = await target.bulkWrite(ops, { ordered: false });
           written += res.upsertedCount + res.modifiedCount + (res.matchedCount - res.modifiedCount);
         }
@@ -405,9 +413,12 @@ export class ComparePanel {
       let deleted = 0;
       if (withDeletes) {
         for (let i = 0; i < deletes.length; i += BATCH) {
-          deleted += (await target.deleteMany({ _id: { $in: deletes.slice(i, i + BATCH).map(idOf) } })).deletedCount;
+          const ids = deletes.slice(i, i + BATCH).map(idOf);
+          await rec?.snapshotIds(target, ids);
+          deleted += (await target.deleteMany({ _id: { $in: ids } })).deletedCount;
         }
       }
+      await rec?.commit(target);
       const message = [written ? `Wrote ${written.toLocaleString('en-US')} ${docs(written)}` : '', deleted ? `deleted ${deleted.toLocaleString('en-US')}` : ''].filter(Boolean).join(', ') || 'Nothing changed';
       reply(true, `${message} in ${where}.`);
       void vscode.commands.executeCommand('mongoster.refresh');

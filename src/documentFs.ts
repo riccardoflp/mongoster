@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { BSON, Document, Filter } from 'mongodb';
 import { ConnectionManager } from './connections';
 import { errorMessage } from './tree';
+import { UndoHistory } from './history';
 import { isPlainObject, parseQuery, relaxEjson, toShell } from './shared/query';
 
 const { EJSON } = BSON;
@@ -91,10 +92,14 @@ export class DocumentFileSystem implements vscode.FileSystemProvider {
     const coll = await this.collection(entry.ref);
 
     if (entry.id === undefined) {
+      const rec = UndoHistory.start(entry.ref, 'Insert document');
       const { insertedId } = await coll.insertOne(doc);
       entry.id = insertedId;
+      rec?.addNew(insertedId);
+      await rec?.commit(coll);
       void vscode.window.showInformationMessage(`Inserted document ${toShell(relaxed(insertedId))}`);
     } else {
+      const rec = UndoHistory.start(entry.ref, `Edit document ${toShell(relaxed(entry.id))}`);
       if ('_id' in doc && !sameBson(doc._id, entry.id)) {
         throw new Error('_id cannot be changed. Use Duplicate to create a copy with a new _id.');
       }
@@ -107,6 +112,7 @@ export class DocumentFileSystem implements vscode.FileSystemProvider {
         );
         if (choice !== 'Insert Again') throw new Error('Save cancelled: the document no longer exists.');
         await coll.insertOne({ ...doc, _id: entry.id } as Document);
+        rec?.addNew(entry.id);
       } else {
         if (entry.original && !sameBson(current, entry.original)) {
           const choice = await vscode.window.showWarningMessage(
@@ -116,8 +122,10 @@ export class DocumentFileSystem implements vscode.FileSystemProvider {
           );
           if (choice !== 'Overwrite') throw new Error('Save cancelled: the document changed in the database.');
         }
+        await rec?.snapshotIds(coll, [entry.id]);
         await coll.replaceOne(byId(entry.id), doc);
       }
+      await rec?.commit(coll);
     }
 
     entry.original = (await coll.findOne(byId(entry.id), { promoteValues: false })) ?? undefined;

@@ -258,6 +258,34 @@
         "title": "Connection Settings (TLS / SSH)…",
         "category": "Mongoster",
         "icon": "$(settings-gear)"
+      },
+      {
+        "command": "mongoster.showHistory",
+        "title": "Show Undo History",
+        "category": "Mongoster",
+        "icon": "$(history)"
+      },
+      {
+        "command": "mongoster.undoLast",
+        "title": "Undo Last Change",
+        "category": "Mongoster",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "mongoster.clearHistory",
+        "title": "Clear Undo History",
+        "category": "Mongoster",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "mongoster.disableHistory",
+        "title": "Stop Keeping Undo History",
+        "category": "Mongoster"
+      },
+      {
+        "command": "mongoster.enableHistory",
+        "title": "Keep Undo History",
+        "category": "Mongoster"
       }
     ],
     "menus": {
@@ -281,6 +309,16 @@
           "command": "mongoster.addConnectionWithOptions",
           "when": "view == mongoster.connections",
           "group": "1_add@1"
+        },
+        {
+          "command": "mongoster.showHistory",
+          "when": "view == mongoster.connections",
+          "group": "navigation@1.7"
+        },
+        {
+          "command": "mongoster.undoLast",
+          "when": "view == mongoster.connections",
+          "group": "2_history@1"
         }
       ],
       "view/item/context": [
@@ -326,7 +364,7 @@
         },
         {
           "command": "mongoster.createDatabase",
-          "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?$/",
+          "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?(\\.nohistory)?$/",
           "group": "0_create@1"
         },
         {
@@ -376,13 +414,23 @@
         },
         {
           "command": "mongoster.setReadOnly",
-          "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?$/",
+          "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?(\\.nohistory)?$/",
           "group": "4_organize@3"
         },
         {
           "command": "mongoster.clearReadOnly",
           "when": "view == mongoster.connections && viewItem =~ /^connection.*\\.readonly$/",
           "group": "4_organize@3"
+        },
+        {
+          "command": "mongoster.disableHistory",
+          "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?$/",
+          "group": "4_organize@4"
+        },
+        {
+          "command": "mongoster.enableHistory",
+          "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?\\.nohistory$/",
+          "group": "4_organize@4"
         },
         {
           "command": "mongoster.addConnection",
@@ -603,6 +651,14 @@
         {
           "command": "mongoster.connectionOptions",
           "when": "false"
+        },
+        {
+          "command": "mongoster.disableHistory",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.enableHistory",
+          "when": "false"
         }
       ],
       "editor/title": [
@@ -620,7 +676,53 @@
         "mac": "cmd+enter",
         "when": "editorTextFocus && resourceFilename =~ /\\.mongodb\\.js$/"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Mongoster",
+      "properties": {
+        "mongoster.history.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Keep an undo history of the changes made from Mongoster to documents (edits, deletes, bulk updates, imports, copies). The documents as they were before are saved compressed in the extension's storage folder, within the limits below. Single connections can be excluded from their context menu.",
+          "order": 0
+        },
+        "mongoster.history.maxSizeMB": {
+          "type": "number",
+          "default": 100,
+          "minimum": 1,
+          "markdownDescription": "Disk space of the undo history, in MB: beyond it the oldest operations are deleted.",
+          "order": 1
+        },
+        "mongoster.history.maxDays": {
+          "type": "number",
+          "default": 7,
+          "minimum": 0,
+          "markdownDescription": "Days an operation is kept in the undo history.",
+          "order": 2
+        },
+        "mongoster.history.maxOperations": {
+          "type": "number",
+          "default": 200,
+          "minimum": 1,
+          "markdownDescription": "Operations kept in the undo history: beyond them the oldest are deleted.",
+          "order": 3
+        },
+        "mongoster.history.maxDocumentsPerOperation": {
+          "type": "number",
+          "default": 10000,
+          "minimum": 1,
+          "markdownDescription": "Operations that change more documents than this aren't recorded (their confirmation says they can't be undone).",
+          "order": 4
+        },
+        "mongoster.history.maxOperationSizeMB": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "markdownDescription": "Operations whose documents take more than this many MB (uncompressed) aren't recorded.",
+          "order": 5
+        }
+      }
+    }
   },
   "scripts": {
     "build": "node esbuild.mjs",

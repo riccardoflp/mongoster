@@ -9,6 +9,7 @@ import { parseQuery, relaxEjson, toShell } from './shared/query';
 import { PipelineStage, parseStageBody } from './shared/pipeline';
 import { StageError, buildPipeline, fromRelaxed, toBson, toUpdate } from './queries';
 import { exportDocuments } from './transfer';
+import { UndoHistory } from './history';
 import type { AggregateRequest, BulkRequest, HostMessage, IndexInfo, QueryRequest, QuerySource, QueryText, UpdateFieldRequest, WebviewMessage } from './shared/messages';
 import { suggestIndex, summarizeExplain } from './shared/explain';
 import { analyzeSchema } from './shared/schema';
@@ -307,12 +308,16 @@ export class CollectionPanel {
     );
     if (answer !== 'Delete') return;
     try {
-      const client = await this.connections.getClient(this.target.connectionId);
-      const res = await client
-        .db(this.target.database)
-        .collection(this.target.collection)
-        .deleteOne(byId(fromRelaxed(id)));
+      const coll = await this.coll();
+      const filter = byId(fromRelaxed(id));
+      const rec = UndoHistory.start(this.target, `Delete document ${toShell(id)}`);
+      await rec?.snapshot(coll, filter);
+      const res = await coll.deleteOne(filter);
       if (!res.deletedCount) void vscode.window.showWarningMessage('Document not found: it may have been deleted already.');
+      else {
+        const entry = await rec?.commit(coll);
+        if (entry) UndoHistory.notify(`Deleted document ${toShell(id)} from ${this.target.collection}.`, entry);
+      }
     } catch (err) {
       void vscode.window.showErrorMessage(`Delete failed: ${errorMessage(err)}`);
     }
@@ -357,8 +362,11 @@ export class CollectionPanel {
       }
       const value = restoreTypes(next, current === MISSING ? undefined : current);
       const filter = { ...byId(id), [key]: current === MISSING ? { $exists: false } : current };
+      const rec = UndoHistory.start(this.target, `Edit ${key} of ${toShell(m.id)}`);
+      await rec?.snapshot(coll, byId(id));
       const res = await coll.updateOne(filter, { $set: { [key]: value } });
       if (!res.matchedCount) return reply(false, `${key} changed again in the database: refresh and retry.`);
+      await rec?.commit(coll);
       reply(true);
       this.post({ type: 'refresh' });
     } catch (err) {
@@ -499,6 +507,18 @@ export class CollectionPanel {
         );
         if (answer !== `${verb} All`) return reply(false);
       }
+      const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
+      const label = `${update ? 'Update' : 'Delete'} many ${oneLine(m.filter) || '{}'}${update ? ` with ${oneLine(m.update ?? '')}` : ''}`;
+      const rec = UndoHistory.start(this.target, label.length > 300 ? `${label.slice(0, 299)}…` : label);
+      if (rec && !(await rec.snapshot(coll, filter))) {
+        const verb = m.op === 'update' ? 'Update' : 'Delete';
+        const answer = await vscode.window.showWarningMessage(
+          `${verb} without the possibility to undo?`,
+          { modal: true, detail: `The documents matching the filter are ${rec.overflow}: too many for the undo history (settings mongoster.history).` },
+          `${verb} Without Undo`,
+        );
+        if (answer !== `${verb} Without Undo`) return reply(false);
+      }
       let message: string;
       if (update) {
         const res = await coll.updateMany(filter, update);
@@ -507,8 +527,9 @@ export class CollectionPanel {
         const res = await coll.deleteMany(filter);
         message = `Deleted ${res.deletedCount.toLocaleString('en-US')} document${res.deletedCount === 1 ? '' : 's'} from ${this.target.collection}.`;
       }
+      const entry = await rec?.commit(coll);
       reply(true, message);
-      void vscode.window.showInformationMessage(message);
+      UndoHistory.notify(message, entry);
       this.post({ type: 'refresh' });
       void vscode.commands.executeCommand('mongoster.refresh');
     } catch (err) {

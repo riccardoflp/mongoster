@@ -2,12 +2,13 @@
 // database or connection, e.g. production → local. Documents are streamed in batches with their
 // exact BSON types; the copy shows its progress and can be cancelled between batches.
 import * as vscode from 'vscode';
-import { Document, MongoBulkWriteError, MongoClient } from 'mongodb';
+import { Document, MongoBulkWriteError, MongoClient, ObjectId } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
 import type { CollectionRef } from './documentFs';
 import { collectionNameError, databaseNameError } from './manage';
 import { toBson } from './queries';
 import { errorMessage } from './tree';
+import { Recorder, UndoHistory } from './history';
 
 export const COPY_BATCH = 1000;
 
@@ -38,6 +39,8 @@ export interface CopyResult {
 export interface CopyHooks {
   progress(copied: number): void;
   cancelled(): boolean;
+  /** Records the documents written, for the undo history. */
+  recorder?: Recorder;
 }
 
 /** Collection options that make sense on a copy. */
@@ -78,6 +81,13 @@ export async function copyCollection(plan: CopyPlan, src: MongoClient, dst: Mong
   const target = targetDb.collection(plan.target.collection);
 
   const flush = async (batch: Document[]) => {
+    const rec = hooks.recorder?.overflow ? undefined : hooks.recorder;
+    if (rec) {
+      // The _id of each document is known before writing it, to delete it (or restore the replaced one) on undo.
+      for (const doc of batch) doc._id ??= new ObjectId();
+      if (plan.mode === 'upsert') await rec.snapshotIds(target, batch.map((doc) => doc._id));
+    }
+    let failedAt = new Set<number>();
     try {
       if (plan.mode === 'upsert') {
         const res = await target.bulkWrite(
@@ -98,6 +108,7 @@ export async function copyCollection(plan: CopyPlan, src: MongoClient, dst: Mong
       const res = err.result;
       result.copied += res.insertedCount + res.upsertedCount + res.matchedCount;
       const errors = Array.isArray(err.writeErrors) ? err.writeErrors : [err.writeErrors];
+      failedAt = new Set(errors.map((e) => e.index));
       for (const e of errors) {
         if (e.code === DUPLICATE_KEY && plan.mode === 'append') result.skipped++;
         else {
@@ -106,6 +117,7 @@ export async function copyCollection(plan: CopyPlan, src: MongoClient, dst: Mong
         }
       }
     }
+    if (rec && plan.mode !== 'upsert') batch.forEach((doc, i) => failedAt.has(i) || rec.addNew(doc._id));
     hooks.progress(result.copied + result.skipped + result.failed);
   };
 
@@ -302,6 +314,7 @@ export class Copier {
     }
     const where = `${dstInfo.name} › ${database}.${collection}`;
     const verb = { new: 'into the new collection', append: 'appending to', upsert: 'replacing matching documents in', drop: 'dropping and recreating' }[mode];
+    const destination = { connectionId: dstInfo.id, database, collection };
     const answer = await vscode.window.showWarningMessage(
       `Copy ${total.toLocaleString('en-US')} document${total === 1 ? '' : 's'} of ${srcInfo.name} › ${name} to ${where}?`,
       {
@@ -311,6 +324,7 @@ export class Copier {
           Object.keys(filter).length ? `Filter: ${filterText.trim()}` : 'All documents.',
           indexes ? 'Indexes are created after the documents.' : '',
           options ? 'The collection is created with the options of the source.' : '',
+          mode === 'drop' ? "Dropping the destination can't be undone." : UndoHistory.note(dstInfo.id, total),
         ]
           .filter(Boolean)
           .join('\n'),
@@ -321,6 +335,7 @@ export class Copier {
 
     const plan: CopyPlan = { source: { database: from.database, collection: from.collection, isView: from.isView }, target: { database, collection }, filter, mode, indexes, options };
     const started = Date.now();
+    const recorder = mode === 'drop' ? undefined : UndoHistory.start(destination, `Copy ${Object.keys(filter).length ? 'filtered ' : ''}${srcInfo.name} › ${name}`, total);
     let result: CopyResult;
     try {
       result = await vscode.window.withProgress(
@@ -336,6 +351,7 @@ export class Copier {
               reported = done;
             },
             cancelled: () => token.isCancellationRequested,
+            recorder,
           });
         },
       );
@@ -344,6 +360,7 @@ export class Copier {
       void vscode.commands.executeCommand('mongoster.refresh');
       return;
     }
+    const entry = await recorder?.commit(dst.db(database).collection(collection));
     void vscode.commands.executeCommand('mongoster.refresh');
     const ref: CollectionRef = { connectionId: dstInfo.id, database, collection };
     const seconds = ((Date.now() - started) / 1000).toFixed(1);
@@ -353,11 +370,14 @@ export class Copier {
       result.skipped ? `${result.skipped.toLocaleString('en-US')} skipped (their _id already existed)` : '',
       result.failed ? `${result.failed.toLocaleString('en-US')} failed: ${result.firstError}` : '',
       ...result.indexErrors.map((e) => `Index not created — ${e}`),
+      recorder?.overflow ? `It can't be undone: ${recorder.overflow}, too many for the undo history` : '',
     ].filter(Boolean);
     const message = result.cancelled
       ? `Copy cancelled after ${result.copied.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} documents; those stay in ${where}.`
       : `Copied ${parts.join(' and ')} to ${where} in ${seconds} s.${details.length ? ` ${details.join('. ')}.` : ''}`;
     const show = result.cancelled || details.length ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
-    if ((await show(message, 'Open')) === 'Open') this.opened(ref);
+    const next = await show(message, 'Open', ...(entry ? ['Undo'] : []));
+    if (next === 'Open') this.opened(ref);
+    if (next === 'Undo' && entry) void UndoHistory.get()?.undoAndReport(entry.id);
   }
 }

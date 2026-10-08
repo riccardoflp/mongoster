@@ -4,11 +4,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { once } from 'events';
-import { BSON, Document, MongoBulkWriteError } from 'mongodb';
+import { BSON, Document, MongoBulkWriteError, ObjectId } from 'mongodb';
 import { ConnectionManager } from './connections';
 import { CollectionRef } from './documentFs';
 import { QuerySource, buildPipeline, toBson } from './queries';
 import { errorMessage } from './tree';
+import { UndoHistory } from './history';
+import type { HistoryEntry } from './shared/messages';
 import { ColumnLayout, applyLayout, buildColumns } from './shared/columns';
 import { csvTable, csvToDocs, parseCsv, toCsv } from './shared/csv';
 import { isPlainObject, parseQuery, relaxEjson } from './shared/query';
@@ -243,6 +245,8 @@ export interface ImportResult {
   inserted: number;
   failed: number;
   firstError?: string;
+  /** The undo history entry of the import. */
+  entry?: HistoryEntry;
 }
 
 /** Inserts in batches, unordered: one bad document (e.g. a duplicate _id) doesn't stop the others. */
@@ -252,12 +256,17 @@ export async function insertDocuments(
   docs: Document[],
   report: (inserted: number) => void = () => undefined,
   cancelled: () => boolean = () => false,
+  label = `Insert ${docs.length.toLocaleString('en-US')} documents`,
 ): Promise<ImportResult> {
   const client = await connections.getClient(ref.connectionId);
   const coll = client.db(ref.database).collection(ref.collection);
   const result: ImportResult = { inserted: 0, failed: 0 };
+  const rec = UndoHistory.start(ref, label, docs.length);
   for (let i = 0; i < docs.length && !cancelled(); i += 1000) {
     const batch = docs.slice(i, i + 1000);
+    // The _id of each document is known before inserting it, to delete it on undo.
+    if (rec) for (const doc of batch) doc._id ??= new ObjectId();
+    let failedAt = new Set<number>();
     try {
       result.inserted += (await coll.insertMany(batch, { ordered: false })).insertedCount;
     } catch (err) {
@@ -266,9 +275,12 @@ export async function insertDocuments(
       const errors = Array.isArray(err.writeErrors) ? err.writeErrors : [err.writeErrors];
       result.failed += errors.length;
       result.firstError ??= errors[0]?.errmsg ?? err.message;
+      failedAt = new Set(errors.map((e) => e.index));
     }
+    batch.forEach((doc, j) => failedAt.has(j) || rec?.addNew(doc._id));
     report(result.inserted);
   }
+  result.entry = await rec?.commit(coll);
   return result;
 }
 
@@ -304,9 +316,10 @@ export async function importDocuments(connections: ConnectionManager, ref: Colle
     `Import ${docs.length.toLocaleString()} documents from ${name} into ${ref.database}.${ref.collection}?`,
     {
       modal: true,
-      detail: withId
-        ? `${withId.toLocaleString()} of them have an _id: documents whose _id already exists are skipped.`
-        : 'New _id values will be generated.',
+      detail: [
+        withId ? `${withId.toLocaleString()} of them have an _id: documents whose _id already exists are skipped.` : 'New _id values will be generated.',
+        UndoHistory.note(ref.connectionId, docs.length),
+      ].join('\n'),
     },
     'Import',
   );
@@ -322,11 +335,12 @@ export async function importDocuments(connections: ConnectionManager, ref: Colle
           docs,
           (n) => progress.report({ message: `${n.toLocaleString()} of ${docs.length.toLocaleString()}`, increment: (1000 / docs.length) * 100 }),
           () => token.isCancellationRequested,
+          `Import ${name}`,
         ),
     );
     const summary = `Imported ${result.inserted.toLocaleString()} of ${docs.length.toLocaleString()} documents into ${ref.collection}.`;
     if (result.failed) void vscode.window.showWarningMessage(`${summary} ${result.failed.toLocaleString()} failed: ${result.firstError}`);
-    else void vscode.window.showInformationMessage(summary);
+    else UndoHistory.notify(summary, result.entry);
     return result;
   } catch (err) {
     void vscode.window.showErrorMessage(`Import failed: ${errorMessage(err)}`);
