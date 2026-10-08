@@ -9,7 +9,7 @@ import { ConnectionManager } from './connections';
 import { CollectionRef } from './documentFs';
 import { QuerySource, buildPipeline, toBson } from './queries';
 import { errorMessage } from './tree';
-import { buildColumns } from './shared/columns';
+import { ColumnLayout, applyLayout, buildColumns } from './shared/columns';
 import { csvTable, csvToDocs, parseCsv, toCsv } from './shared/csv';
 import { isPlainObject, parseQuery, relaxEjson } from './shared/query';
 
@@ -24,8 +24,9 @@ const FORMATS: (vscode.QuickPickItem & { format: Format; ext: string })[] = [
 ];
 
 export interface ExportOptions {
-  /** Expanded column paths, for the CSV columns. */
+  /** Expanded column paths and the user's column layout, for the CSV columns. */
   expanded: string[];
+  layout?: ColumnLayout;
   /** The page shown in the table, offered as an alternative to all results. */
   page?: { skip: number; limit: number };
   /** Total results, when known (for the scope picker). */
@@ -108,7 +109,7 @@ export async function exportDocuments(
           }
           if (format.format === 'json') await out.write(written ? '\n]\n' : ']\n');
           if (format.format === 'csv') {
-            const columns = buildColumns(csvDocs, new Set(options.expanded));
+            const columns = applyLayout(buildColumns(csvDocs, new Set(options.expanded)), options.layout ?? {});
             await out.write('﻿' + toCsv(csvTable(csvDocs, columns)));
           }
           await out.close();

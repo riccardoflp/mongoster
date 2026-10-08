@@ -1,6 +1,7 @@
 // Message protocol between the collection webview and the extension host.
 // Documents and _id values travel as relaxed EJSON plain values.
 import type { SchemaSummary } from './schema';
+import type { ColumnLayout } from './columns';
 import type { PipelineStage } from './pipeline';
 import type { ExplainSummary } from './explain';
 
@@ -95,6 +96,7 @@ export type WebviewMessage =
   | { type: 'deleteDocument'; id: unknown }
   | { type: 'insertDocument' }
   | { type: 'saveExpanded'; expanded: string[] }
+  | { type: 'saveLayout'; layout: ColumnLayout }
   | { type: 'saveQuery'; query: QueryText }
   | { type: 'removeQuery'; id: string }
   | { type: 'clearHistory' }
@@ -108,10 +110,18 @@ export type WebviewMessage =
   | { type: 'bulkCount'; requestId: number; filter: string }
   | { type: 'analyzeSchema'; requestId: number; filter: string; size: number }
   | BulkRequest
-  | { type: 'export'; source: QuerySource; expanded: string[]; page: { skip: number; limit: number }; count: number | null };
+  | { type: 'export'; source: QuerySource; expanded: string[]; layout: ColumnLayout; page: { skip: number; limit: number }; count: number | null };
 
 export type HostMessage =
-  | { type: 'init'; connectionName: string; database: string; collection: string; readOnly: boolean; expanded: string[] }
+  | {
+      type: 'init';
+      connectionName: string;
+      database: string;
+      collection: string;
+      readOnly: boolean;
+      expanded: string[];
+      layout: ColumnLayout;
+    }
   | { type: 'result'; requestId: number; docs: unknown[]; count: number | null; durationMs: number; note?: string }
   | { type: 'error'; requestId: number; message: string; stage?: number }
   | { type: 'refresh' }

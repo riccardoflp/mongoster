@@ -1579,3 +1579,184 @@ button.danger-primary:not(:disabled) {
   padding: 8px 12px;
   color: var(--muted);
 }
+
+/* ---------- column layout ---------- */
+
+.grid th {
+  position: sticky;
+}
+
+.col-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 1;
+}
+
+.col-resize:hover,
+body.resizing .col-resize:active {
+  background: var(--accent);
+  opacity: 0.6;
+}
+
+body.resizing,
+body.resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+.grid th.drop-before {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.grid th.drop-after {
+  box-shadow: inset -3px 0 0 var(--accent);
+}
+
+.grid td.pinned {
+  position: sticky;
+  z-index: 1;
+  background: var(--vscode-editor-background);
+}
+
+.grid th.pinned {
+  z-index: 3;
+}
+
+.grid .pinned-last {
+  box-shadow: 3px 0 4px -2px rgba(0, 0, 0, 0.45);
+}
+
+.grid tbody:hover td.pinned,
+.grid tbody:hover td.rownum {
+  background: linear-gradient(var(--vscode-list-hoverBackground), var(--vscode-list-hoverBackground)), var(--vscode-editor-background);
+}
+
+.grid td.pinned.selected {
+  background: linear-gradient(var(--vscode-list-inactiveSelectionBackground), var(--vscode-list-inactiveSelectionBackground)), var(--vscode-editor-background);
+}
+
+.columns-btn {
+  margin-right: 8px;
+}
+
+.columns-panel {
+  position: fixed;
+  z-index: 8;
+  width: 300px;
+  max-height: min(480px, 70vh);
+  display: flex;
+  flex-direction: column;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-editorWidget-border, var(--border));
+  border-radius: 4px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+.columns-head {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.columns-head input {
+  flex: 1;
+  min-width: 0;
+}
+
+.columns-list {
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.columns-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  font-family: var(--mono);
+}
+
+.columns-row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.columns-row.dim {
+  opacity: 0.5;
+}
+
+.columns-row label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.columns-row.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.columns-row.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.columns-grip {
+  color: var(--muted);
+  cursor: grab;
+  letter-spacing: -2px;
+}
+
+.columns-pin {
+  font-size: 0.85em;
+  opacity: 0.25;
+  filter: grayscale(1);
+}
+
+.columns-row:hover .columns-pin {
+  opacity: 0.6;
+}
+
+.columns-pin.on,
+.columns-row:hover .columns-pin.on {
+  opacity: 1;
+  filter: none;
+}
+
+.columns-empty {
+  padding: 8px;
+  color: var(--muted);
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 20;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-menu-border, var(--border));
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.context-menu button {
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  padding: 3px 14px;
+  border-radius: 0;
+}
+
+.context-menu button:hover,
+.context-menu button:focus {
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground));
+  color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground));
+  outline: none;
+}

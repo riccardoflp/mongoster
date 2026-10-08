@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from './connections';
 import { CollectionNode, ConnectionNode, DatabaseNode, MongoTreeProvider, TreeNode, errorMessage } from './tree';
-import { CollectionPanel, expandedStateKey, moveCollectionState } from './collectionPanel';
+import { CollectionPanel, expandedStateKey, layoutStateKey, moveCollectionState } from './collectionPanel';
 import { Manager } from './manage';
 import { exportDocuments, importDocuments } from './transfer';
 import { CollectionRef, DOC_SCHEME, DocumentFileSystem } from './documentFs';
@@ -56,6 +56,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const target = collectionTarget(node);
       return exportDocuments(connections, target, { kind: 'find', filter: '', sort: '', projection: '' }, {
         expanded: context.globalState.get<string[]>(expandedStateKey(target), []),
+        layout: context.globalState.get(layoutStateKey(target), {}),
       });
     }),
 

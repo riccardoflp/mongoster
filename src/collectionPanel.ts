@@ -11,6 +11,7 @@ import { exportDocuments } from './transfer';
 import type { AggregateRequest, BulkRequest, HostMessage, IndexInfo, QueryRequest, QuerySource, UpdateFieldRequest, WebviewMessage } from './shared/messages';
 import { suggestIndex, summarizeExplain } from './shared/explain';
 import { analyzeSchema } from './shared/schema';
+import type { ColumnLayout } from './shared/columns';
 
 const { EJSON } = BSON;
 
@@ -22,10 +23,11 @@ export interface CollectionTarget extends CollectionRef {
 
 const panelKey = (ref: CollectionRef) => `${ref.connectionId}/${ref.database}/${ref.collection}`;
 export const expandedStateKey = (ref: CollectionRef) => `mongoster.expanded.${panelKey(ref)}`;
+export const layoutStateKey = (ref: CollectionRef) => `mongoster.layout.${panelKey(ref)}`;
 
 /** Carries the recent and saved queries and the expanded columns of a renamed collection over to its new name. */
 export async function moveCollectionState(state: vscode.Memento, from: CollectionRef, to: CollectionRef): Promise<void> {
-  const keys = (ref: CollectionRef) => [...QueryHistory.stateKeys(panelKey(ref)), expandedStateKey(ref)];
+  const keys = (ref: CollectionRef) => [...QueryHistory.stateKeys(panelKey(ref)), expandedStateKey(ref), layoutStateKey(ref)];
   const [fromKeys, toKeys] = [keys(from), keys(to)];
   for (let i = 0; i < fromKeys.length; i++) {
     const value = state.get(fromKeys[i]);
@@ -106,6 +108,7 @@ export class CollectionPanel {
           collection: this.target.collection,
           readOnly: this.target.readOnly,
           expanded: this.context.globalState.get<string[]>(expandedStateKey(this.target), []),
+          layout: this.context.globalState.get<ColumnLayout>(layoutStateKey(this.target), {}),
         });
         this.postHistory();
         break;
@@ -138,6 +141,12 @@ export class CollectionPanel {
         await this.history.clearRecent();
         this.postHistory();
         break;
+      case 'saveLayout': {
+        const l = m.layout;
+        const empty = !l.hidden?.length && !l.order?.length && !l.pinned?.length && !Object.keys(l.widths ?? {}).length;
+        await this.context.globalState.update(layoutStateKey(this.target), empty ? undefined : l);
+        break;
+      }
       case 'saveExpanded':
         await this.context.globalState.update(expandedStateKey(this.target), m.expanded.length ? m.expanded : undefined);
         break;
@@ -194,7 +203,7 @@ export class CollectionPanel {
         await this.deleteDocument(m.id);
         break;
       case 'export':
-        await exportDocuments(this.connections, this.target, m.source, { expanded: m.expanded, page: m.page, count: m.count });
+        await exportDocuments(this.connections, this.target, m.source, { expanded: m.expanded, layout: m.layout, page: m.page, count: m.count });
         break;
       case 'copy':
         await vscode.env.clipboard.writeText(m.text);
@@ -634,6 +643,7 @@ export class CollectionPanel {
   <div class="statusbar">
     <span id="status"></span>
     <span class="spacer"></span>
+    <button id="columnsBtn" class="secondary columns-btn" title="Show, hide, pin and reorder the columns" aria-haspopup="true" aria-expanded="false">Columns</button>
     <label for="limit">Page size</label>
     <select id="limit">
       <option>10</option><option>20</option><option selected>50</option><option>100</option><option>200</option><option>500</option>
@@ -642,6 +652,15 @@ export class CollectionPanel {
     <span id="range"></span>
     <button id="next" class="icon" title="Next page">›</button>
   </div>
+  <div id="columnsPanel" class="columns-panel hidden" role="dialog" aria-label="Columns">
+    <div class="columns-head">
+      <input id="columnsSearch" spellcheck="false" placeholder="Search columns">
+      <button id="columnsShowAll" class="secondary" title="Show the hidden columns">Show all</button>
+      <button id="columnsReset" class="secondary" title="Natural order, no hidden or pinned columns, automatic widths">Reset</button>
+    </div>
+    <div id="columnsList" class="columns-list"></div>
+  </div>
+  <div id="columnMenu" class="context-menu hidden" role="menu"></div>
   <main class="grid-wrap" id="gridWrap">
     <table id="grid" class="grid"></table>
     <div id="empty" class="empty hidden">No documents match this query.</div>

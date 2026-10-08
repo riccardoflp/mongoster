@@ -147,3 +147,79 @@ export function expandableBelow(rows: Record<string, unknown>[], node: ColumnNod
   walk(node.path, node.array ? node.path.length : node.arrayDepth);
   return out;
 }
+
+/** The user's arrangement of the grid columns, by dotted key; remembered per collection. */
+export interface ColumnLayout {
+  hidden?: string[];
+  /** Keys in the order the user put them; siblings are sorted by it, columns not in it follow in their natural order. */
+  order?: string[];
+  /** Top-level columns kept at the left while scrolling sideways. */
+  pinned?: string[];
+  /** Leaf column widths in pixels. */
+  widths?: Record<string, number>;
+}
+
+/** The columns without the hidden ones, siblings in the user's order, pinned top-level columns first. */
+export function applyLayout(nodes: ColumnNode[], layout: ColumnLayout, top = true): ColumnNode[] {
+  const hidden = new Set(layout.hidden ?? []);
+  const rank = new Map((layout.order ?? []).map((key, i) => [key, i]));
+  const out: ColumnNode[] = [];
+  for (const node of nodes) {
+    if (hidden.has(node.key)) continue;
+    if (!node.children) {
+      out.push(node);
+      continue;
+    }
+    const children = applyLayout(node.children, layout, false);
+    if (children.length) out.push({ ...node, children });
+  }
+  const position = (n: ColumnNode, i: number) => rank.get(n.key) ?? rank.size + i;
+  const sorted = out
+    .map((node, i) => ({ node, at: position(node, i) }))
+    .sort((a, b) => a.at - b.at)
+    .map((x) => x.node);
+  if (!top || !layout.pinned?.length) return sorted;
+  const pinned = new Set(layout.pinned);
+  return [...sorted.filter((n) => pinned.has(n.key)), ...sorted.filter((n) => !pinned.has(n.key))];
+}
+
+/** Number of leaves under the pinned top-level columns, which come first after applyLayout. */
+export function pinnedLeafCount(nodes: ColumnNode[], layout: ColumnLayout): number {
+  const pinned = new Set(layout.pinned ?? []);
+  let n = 0;
+  for (const node of nodes) {
+    if (!pinned.has(node.key)) break;
+    n += leafCount(node);
+  }
+  return n;
+}
+
+/**
+ * Layout with `source` moved before or after `target` among its siblings; `target` may also be a column
+ * inside a sibling. Moving next to a pinned top-level column pins it, next to an unpinned one unpins it.
+ * Undefined when `target` isn't at the level of `source`.
+ */
+export function moveColumn(columns: ColumnNode[], layout: ColumnLayout, source: string, target: string, after: boolean): ColumnLayout | undefined {
+  const siblings = siblingsOf(columns, source);
+  const dest = siblings?.find((n) => target === n.key || target.startsWith(`${n.key}.`));
+  if (!siblings || !dest || dest.key === source) return undefined;
+  const keys = siblings.map((n) => n.key).filter((k) => k !== source);
+  keys.splice(keys.indexOf(dest.key) + (after ? 1 : 0), 0, source);
+  const result: ColumnLayout = { ...layout, order: [...(layout.order ?? []).filter((k) => !keys.includes(k)), ...keys] };
+  if (siblings === columns) {
+    const pinned = new Set(layout.pinned ?? []);
+    if (pinned.has(dest.key)) pinned.add(source);
+    else pinned.delete(source);
+    result.pinned = keys.filter((k) => pinned.has(k));
+  }
+  return result;
+}
+
+function siblingsOf(nodes: ColumnNode[], key: string): ColumnNode[] | undefined {
+  if (nodes.some((n) => n.key === key)) return nodes;
+  for (const n of nodes) {
+    const found = n.children && siblingsOf(n.children, key);
+    if (found) return found;
+  }
+  return undefined;
+}

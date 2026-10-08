@@ -17,6 +17,12 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - trascina l'**intestazione di una colonna** → `exists`, `missing`, `is null`.
 - **Cronologia query**: `History` nella toolbar mostra le query salvate con un nome e le ultime 50 eseguite con successo su quella collezione (senza duplicati, ricordate anche chiudendo VS Code). Clic o `Invio` per rieseguirne una; ricerca, `☆` per salvarla con un nome, `✕` per toglierla, `Clear` per svuotare le recenti.
 - **Ordinamento**: clic sull'intestazione (▲ → ▼ → nessuno).
+- **Colonne personalizzabili**, ricordate per ogni collezione (anche dopo una rinomina):
+  - **nascondere**: clic destro sull'intestazione → `Hide`, oppure le checkbox del pannello `Columns` nella barra sopra la tabella (con ricerca, `Show all` e `Reset`);
+  - **riordinare**: trascina un'intestazione su un'altra (la colonna va prima o dopo, tra quelle dello stesso livello), oppure trascina le righe nel pannello `Columns`;
+  - **ridimensionare**: trascina il bordo destro dell'intestazione; doppio clic sul bordo per tornare alla larghezza automatica;
+  - **fissare a sinistra**: clic destro → `Pin`, oppure `📌` nel pannello: la colonna resta visibile scorrendo in orizzontale.
+  - L'export CSV usa le colonne visibili nell'ordine scelto.
 - **Aggregate**: il selettore `Find / Aggregate` in alto passa all'editor di pipeline.
   - Ogni stage è una scheda: operatore (con suggerimenti e un modello per gli stage comuni), corpo in sintassi mongosh, checkbox per disattivarlo, `‹ ›` per spostarlo, `✕` per toglierlo. `Ctrl+Enter` in uno stage esegue.
   - Clic sul **numero di uno stage** mostra l'output fino a quello stage (con paginazione e conteggio); gli stage successivi vengono attenuati. `Run` esegue la pipeline intera.
@@ -96,9 +102,9 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/transfer.ts` – export (JSON, JSON Lines, CSV) e import
 - `src/manage.ts` – creazione, rinomina ed eliminazione di database e collezioni
 - `src/shared/query.ts` – parsing/formattazione della sintassi mongosh ⇄ EJSON
-- `src/shared/columns.ts` – modello delle colonne (annidate e array), usato dalla tabella e dal CSV
+- `src/shared/columns.ts` – modello delle colonne (annidate e array) e del layout scelto dall'utente, usato dalla tabella e dal CSV
 - `src/shared/csv.ts` – generazione e parsing CSV
 - `src/shared/pipeline.ts` – modello degli stage di aggregazione, modelli e conversione testo ⇄ stage
 - `src/shared/explain.ts` – riassunto dell'output di explain e suggerimento dell'indice
 - `src/shared/schema.ts` – analisi dello schema di un campione di documenti
-- `src/webview/main.ts`, `src/webview/history.ts`, `src/webview/pipeline.ts`, `src/webview/indexes.ts`, `src/webview/explainView.ts`, `src/webview/bulk.ts`, `src/webview/schemaView.ts`, `media/webview.css` – UI della tabella, cronologia, editor della pipeline, indici, explain, update/delete many e schema
+- `src/webview/main.ts`, `src/webview/history.ts`, `src/webview/pipeline.ts`, `src/webview/indexes.ts`, `src/webview/explainView.ts`, `src/webview/bulk.ts`, `src/webview/schemaView.ts`, `src/webview/columnsUi.ts`, `media/webview.css` – UI della tabella, cronologia, editor della pipeline, indici, explain, update/delete many, schema e colonne

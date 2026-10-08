@@ -8,8 +8,11 @@ import { ExplainView } from './explainView';
 import { BulkDialog, BulkOp } from './bulk';
 import { SchemaView } from './schemaView';
 import {
+  ColumnLayout,
   ColumnNode,
   MAX_ELEMENTS,
+  applyLayout,
+  pinnedLeafCount,
   MISSING,
   buildColumns,
   expandableBelow,
@@ -21,6 +24,7 @@ import {
   valueAtPath,
 } from '../shared/columns';
 import { CellEditor } from './cellEditor';
+import { ColumnMenu, ColumnsPanel, LayoutActions } from './columnsUi';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: WebviewMessage): void;
@@ -230,6 +234,8 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       );
       readOnly = m.readOnly;
       if (m.expanded.length) expanded = new Set(m.expanded);
+      layout = m.layout ?? {};
+      columnsPanel.update();
       document.body.classList.toggle('readonly', readOnly);
       el('docEdit').textContent = readOnly ? 'Open in editor' : 'Edit';
       el<HTMLButtonElement>('modeIndexes').disabled = readOnly;
@@ -336,9 +342,16 @@ function currentSort(): Record<string, unknown> {
   }
 }
 
+/** The user's column arrangement (hidden, order, pinned, widths), remembered per collection. */
+let layout: ColumnLayout = {};
+/** All columns of the page before the layout is applied (for the Columns panel). */
+let allColumns: ColumnNode[] = [];
+
 function renderGrid(): void {
-  const columns = buildColumns(docs, expanded);
+  allColumns = buildColumns(docs, expanded);
+  const columns = applyLayout(allColumns, layout);
   const leafList = leaves(columns);
+  const widths = layout.widths ?? {};
   const sort = currentSort();
   selectedCell = null;
   cellEditor.close();
@@ -352,12 +365,14 @@ function renderGrid(): void {
   corner.className = 'rownum';
   corner.textContent = '#';
   headRow.append(corner);
-  for (const leaf of leafList) {
+  leafList.forEach((leaf, leafIndex) => {
     const { node } = leaf;
     const th = document.createElement('th');
     th.dataset.key = node.key;
+    th.dataset.leaf = String(leafIndex);
     th.draggable = true;
-    th.title = `${node.key}\nClick to sort · drag to the filter`;
+    th.title = `${node.key}\nClick to sort · drag to the filter or onto another column · right-click for options`;
+    if (widths[node.key]) setWidth(th, widths[node.key], true);
     groupClasses(th, leaf.starts.length > 0, leaf.ends.length > 0);
     // Parent segments of an expanded column: click one to collapse that group.
     node.path.slice(0, -1).forEach((segment, i) => {
@@ -377,8 +392,11 @@ function renderGrid(): void {
     }
     const dir = sort[node.key];
     if (dir === 1 || dir === -1) th.append(span('sort-indicator', dir === 1 ? ' ▲' : ' ▼'));
+    const resize = span('col-resize', '');
+    resize.title = 'Drag to resize · double-click for automatic width';
+    th.append(resize);
     headRow.append(th);
-  }
+  });
 
   // Index of the first leaf under each column, for the group borders.
   const firstLeaf = new Map<ColumnNode, number>();
@@ -417,6 +435,11 @@ function renderGrid(): void {
       const td = tr.insertCell();
       td.colSpan = width;
       td.rowSpan = rowSpan;
+      td.dataset.leaf = String(firstLeaf.get(node));
+      if (width === 1) {
+        td.dataset.col = node.key;
+        if (widths[node.key]) setWidth(td, widths[node.key], false);
+      }
       td.dataset.path = JSON.stringify(node.path);
       if (elem !== undefined) {
         td.dataset.elem = String(elem);
@@ -471,6 +494,8 @@ function renderGrid(): void {
 
     renderNodes(columns, doc, 0, rows[0], height);
   });
+  pinColumns(pinnedLeafCount(columns, layout));
+  columnsPanel.update();
 
   if (reselect) {
     const { row, path, elem } = reselect;
@@ -481,6 +506,130 @@ function renderGrid(): void {
     if (td) selectCell(td);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Column layout: widths, pinned columns, reordering, hiding
+
+function setWidth(cell: HTMLElement, px: number, header: boolean): void {
+  cell.style.maxWidth = `${px}px`;
+  if (header) cell.style.width = cell.style.minWidth = `${px}px`;
+}
+
+/** Keeps the first `count` leaf columns (and the row numbers) in place while scrolling sideways. */
+function pinColumns(count: number): void {
+  grid.classList.toggle('has-pinned', count > 0);
+  if (!count) return;
+  const head = grid.tHead!.rows[0];
+  const lefts: number[] = [];
+  let left = head.cells[0].offsetWidth;
+  for (let i = 0; i < count; i++) {
+    lefts.push(left);
+    left += head.cells[i + 1].offsetWidth;
+  }
+  grid.querySelectorAll<HTMLTableCellElement>('th[data-leaf], td[data-leaf]').forEach((cell) => {
+    const i = Number(cell.dataset.leaf);
+    const pinned = i < count;
+    cell.classList.toggle('pinned', pinned);
+    cell.classList.toggle('pinned-last', pinned && i + cell.colSpan === count);
+    cell.style.left = pinned ? `${lefts[i]}px` : '';
+  });
+}
+
+function saveLayout(next: ColumnLayout): void {
+  layout = next;
+  vscode.postMessage({ type: 'saveLayout', layout });
+  renderGrid();
+}
+
+const layoutActions = new LayoutActions({ columns: () => allColumns, layout: () => layout, change: saveLayout });
+const columnsPanel = new ColumnsPanel({ columns: () => allColumns, layout: () => layout, change: saveLayout }, layoutActions);
+const columnMenu = new ColumnMenu({ columns: () => allColumns, layout: () => layout, change: saveLayout }, layoutActions, () => columnsPanel.open());
+
+grid.addEventListener('contextmenu', (e) => {
+  const th = (e.target as HTMLElement).closest<HTMLElement>('th[data-key]');
+  if (!th) return;
+  e.preventDefault();
+  columnMenu.open(e.clientX, e.clientY, th.dataset.key!);
+});
+
+// Dragging a header onto another one moves the column there (among its siblings).
+function headerDropSide(e: DragEvent): { th: HTMLElement; after: boolean } | null {
+  if (drag?.kind !== 'column') return null;
+  const th = (e.target as HTMLElement).closest<HTMLElement>('th[data-key]');
+  if (!th || th.dataset.key === drag.key) return null;
+  const rect = th.getBoundingClientRect();
+  return { th, after: e.clientX > rect.left + rect.width / 2 };
+}
+function clearDropMarks(): void {
+  grid.querySelectorAll('.drop-before, .drop-after').forEach((x) => x.classList.remove('drop-before', 'drop-after'));
+}
+grid.addEventListener('dragover', (e) => {
+  const side = headerDropSide(e);
+  clearDropMarks();
+  if (!side) return;
+  e.preventDefault();
+  e.dataTransfer!.dropEffect = 'move';
+  side.th.classList.add(side.after ? 'drop-after' : 'drop-before');
+});
+grid.addEventListener('dragleave', clearDropMarks);
+grid.addEventListener('drop', (e) => {
+  const side = headerDropSide(e);
+  clearDropMarks();
+  if (!side || drag?.kind !== 'column') return;
+  e.preventDefault();
+  const source = drag.key;
+  endDrag();
+  if (!layoutActions.move(source, side.th.dataset.key!, side.after)) {
+    showError(`${source} can only be moved among the columns at its level.`);
+  }
+});
+
+// Resizing: drag the right edge of a header.
+let resizing = false;
+grid.addEventListener('pointerdown', (e) => {
+  const handle = (e.target as HTMLElement).closest('.col-resize');
+  if (!handle) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const th = handle.closest('th')!;
+  const key = th.dataset.key!;
+  const startX = e.clientX;
+  const startWidth = th.getBoundingClientRect().width;
+  const cells = [...grid.querySelectorAll<HTMLElement>(`td[data-col="${CSS.escape(key)}"]`)];
+  let width = startWidth;
+  th.draggable = false;
+  resizing = true;
+  document.body.classList.add('resizing');
+  const move = (ev: PointerEvent) => {
+    width = Math.max(40, Math.round(startWidth + ev.clientX - startX));
+    setWidth(th, width, true);
+    cells.forEach((c) => setWidth(c, width, false));
+  };
+  const up = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    document.body.classList.remove('resizing');
+    th.draggable = true;
+    // The click that ends the drag must not sort.
+    setTimeout(() => (resizing = false));
+    if (width !== startWidth) saveLayout({ ...layout, widths: { ...layout.widths, [key]: width } });
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+});
+grid.addEventListener(
+  'click',
+  (e) => {
+    if (resizing || (e.target as HTMLElement).closest('.col-resize')) e.stopImmediatePropagation();
+  },
+  true,
+);
+grid.addEventListener('dblclick', (e) => {
+  const handle = (e.target as HTMLElement).closest('.col-resize');
+  if (!handle) return;
+  e.stopImmediatePropagation();
+  layoutActions.resetWidth(handle.closest('th')!.dataset.key!);
+}, true);
 
 function groupClasses(cell: HTMLElement, start: boolean, end: boolean): void {
   if (start) cell.classList.add('group-start');
@@ -715,7 +864,8 @@ grid.addEventListener('dragstart', (e) => {
   }
   const label = drag.kind === 'cell' ? `${displayKey(drag)}: ${toShell(drag.value)}` : drag.key;
   e.dataTransfer!.setData('text/plain', label);
-  e.dataTransfer!.effectAllowed = 'copy';
+  // Columns can also be moved onto another header.
+  e.dataTransfer!.effectAllowed = drag.kind === 'column' ? 'copyMove' : 'copy';
   showDropzones(drag);
 });
 
@@ -867,6 +1017,7 @@ el('export').addEventListener('click', () => {
         ? { kind: 'aggregate', stages: pipeline.stages, upto: pipeline.upto }
         : { kind: 'find', filter: state.filter, sort: state.sort, projection: state.projection },
     expanded: [...expanded],
+    layout,
     page: { skip: state.skip, limit: state.limit },
     count,
   });
