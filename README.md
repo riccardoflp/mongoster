@@ -32,6 +32,13 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - Se il documento è stato modificato o cancellato nel database dopo l'apertura, viene chiesto se sovrascrivere / reinserire.
   - `_id` non si può cambiare: usa `Duplicate`.
 - **Insert / Duplicate / Delete**: `Insert` nella toolbar (o `+` sulla collezione nell'albero) apre un nuovo documento da salvare con `Ctrl+S`; `Duplicate` ne apre una copia senza `_id`; `Delete` (o il tasto `Canc` su una cella) elimina dopo conferma.
+- **Export**: il pulsante `Export` esporta ciò che mostra la tabella (la query, oppure la pipeline fino allo stage mostrato): tutti i risultati o solo la pagina corrente. Anche dall'albero: clic destro su una collezione o view → `Export Collection…`.
+  - **JSON**: array leggibile (Extended JSON rilassato).
+  - **JSON Lines**: un documento per riga in Extended JSON canonico, conserva tutti i tipi; è il formato giusto per reimportare.
+  - **CSV**: le colonne visibili (anche quelle espanse); gli array espansi danno una riga per elemento con gli altri valori ripetuti. Con BOM UTF-8, così Excel legge gli accenti.
+  - Le pipeline che finiscono con `$out`/`$merge` non si esportano: seleziona uno stage precedente.
+- **Import**: clic destro su una collezione → `Import Documents…` accetta JSON (array o singolo documento), JSON Lines, CSV e anche la sintassi mongosh (`ObjectId(...)`, `ISODate(...)`). Chiede conferma, inserisce a blocchi di 1000 e segnala i documenti scartati (es. `_id` già esistente) senza fermarsi.
+  - Nel CSV le intestazioni con il punto creano sotto-documenti (`address.city`), le celle vuote vengono omesse e numeri, booleani, `null`, date ISO (`…Z`), JSON e `_id` esadecimali vengono riconosciuti.
 - Le **view** sono in sola lettura.
 - `Ctrl+C` su una cella selezionata copia il valore.
 
@@ -59,6 +66,10 @@ code --install-extension mongoster-0.0.1.vsix
 - `src/collectionPanel.ts` – webview per collezione, esecuzione delle query
 - `src/queryHistory.ts` – cronologia e query salvate per collezione
 - `src/documentFs.ts` – file system virtuale `mongoster://` per aprire, modificare e salvare i documenti
+- `src/queries.ts` – testo di filtri e pipeline → argomenti del driver
+- `src/transfer.ts` – export (JSON, JSON Lines, CSV) e import
 - `src/shared/query.ts` – parsing/formattazione della sintassi mongosh ⇄ EJSON
+- `src/shared/columns.ts` – modello delle colonne (annidate e array), usato dalla tabella e dal CSV
+- `src/shared/csv.ts` – generazione e parsing CSV
 - `src/shared/pipeline.ts` – modello degli stage di aggregazione, modelli e conversione testo ⇄ stage
-- `src/webview/main.ts`, `src/webview/columns.ts`, `src/webview/history.ts`, `src/webview/pipeline.ts`, `media/webview.css` – UI della tabella, modello delle colonne ed editor della pipeline
+- `src/webview/main.ts`, `src/webview/history.ts`, `src/webview/pipeline.ts`, `media/webview.css` – UI della tabella, cronologia ed editor della pipeline

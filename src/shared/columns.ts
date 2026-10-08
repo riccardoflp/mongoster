@@ -2,7 +2,7 @@
 // into dotted child columns (address -> address.city, address.zip, ...), and arrays of
 // sub-documents expanded into element columns (items -> items[].sku, items[].qty), one
 // sub-row per element.
-import { isEjsonWrapper, isPlainObject } from '../shared/query';
+import { isEjsonWrapper, isPlainObject } from './query';
 
 export interface ColumnNode {
   path: string[];
@@ -109,14 +109,14 @@ export function leafCount(node: ColumnNode): number {
 }
 
 /** Number of sub-rows a document needs: one per shown element of its expanded arrays (+1 for "more"). */
-export function rowHeight(doc: Record<string, unknown>, nodes: ColumnNode[]): number {
+export function rowHeight(doc: Record<string, unknown>, nodes: ColumnNode[], cap = MAX_ELEMENTS): number {
   let height = 1;
   for (const node of nodes) {
     if (!node.children) continue;
     const value = getAt(doc, node.path);
-    if (isSubdocument(value)) height = Math.max(height, rowHeight(doc, node.children));
+    if (isSubdocument(value)) height = Math.max(height, rowHeight(doc, node.children, cap));
     else if (node.array && Array.isArray(value) && value.length) {
-      height = Math.max(height, Math.min(value.length, MAX_ELEMENTS) + (value.length > MAX_ELEMENTS ? 1 : 0));
+      height = Math.max(height, Math.min(value.length, cap) + (value.length > cap ? 1 : 0));
     }
   }
   return height;

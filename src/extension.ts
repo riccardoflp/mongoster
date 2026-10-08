@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from './connections';
 import { CollectionNode, ConnectionNode, MongoTreeProvider, TreeNode, errorMessage } from './tree';
-import { CollectionPanel } from './collectionPanel';
+import { CollectionPanel, expandedStateKey } from './collectionPanel';
+import { exportDocuments, importDocuments } from './transfer';
 import { DOC_SCHEME, DocumentFileSystem } from './documentFs';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -47,6 +48,24 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mongoster.insertDocument', (node?: CollectionNode) =>
       node ? documents.openNew(collectionTarget(node)) : undefined,
     ),
+
+    vscode.commands.registerCommand('mongoster.exportCollection', (node?: CollectionNode) => {
+      if (!node) return undefined;
+      const target = collectionTarget(node);
+      return exportDocuments(connections, target, { kind: 'find', filter: '', sort: '', projection: '' }, {
+        expanded: context.globalState.get<string[]>(expandedStateKey(target), []),
+      });
+    }),
+
+    vscode.commands.registerCommand('mongoster.importDocuments', async (node?: CollectionNode) => {
+      if (!node) return;
+      const target = collectionTarget(node);
+      const result = await importDocuments(connections, target);
+      if (result?.inserted) {
+        CollectionPanel.refresh(target);
+        tree.refresh();
+      }
+    }),
   );
 }
 

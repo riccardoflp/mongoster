@@ -14,7 +14,7 @@ import {
   leafCount,
   leaves,
   rowHeight,
-} from './columns';
+} from '../shared/columns';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: WebviewMessage): void;
@@ -716,6 +716,20 @@ function autosize(): void {
 
 el('run').addEventListener('click', () => run(true));
 el('insert').addEventListener('click', () => vscode.postMessage({ type: 'insertDocument' }));
+el('export').addEventListener('click', () => {
+  // Exports what the table shows: the last query run, or the pipeline up to the previewed stage.
+  if (state.mode === 'aggregate' && !pipeline.prepare()) return;
+  vscode.postMessage({
+    type: 'export',
+    source:
+      state.mode === 'aggregate'
+        ? { kind: 'aggregate', stages: pipeline.stages, upto: pipeline.upto }
+        : { kind: 'find', filter: state.filter, sort: state.sort, projection: state.projection },
+    expanded: [...expanded],
+    page: { skip: state.skip, limit: state.limit },
+    count,
+  });
+});
 el('reset').addEventListener('click', () => {
   filterInput.value = sortInput.value = projectionInput.value = '';
   autosize();

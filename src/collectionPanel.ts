@@ -4,8 +4,10 @@ import { ConnectionManager } from './connections';
 import { byId, CollectionRef, DocumentFileSystem } from './documentFs';
 import { errorMessage } from './tree';
 import { QueryHistory, sameQuery } from './queryHistory';
-import { isPlainObject, parseQuery, relaxEjson, toShell } from './shared/query';
-import { isWriteStage, parseStageBody } from './shared/pipeline';
+import { relaxEjson, toShell } from './shared/query';
+import { PipelineStage, parseStageBody } from './shared/pipeline';
+import { StageError, buildPipeline, fromRelaxed, toBson } from './queries';
+import { exportDocuments } from './transfer';
 import type { AggregateRequest, HostMessage, QueryRequest, WebviewMessage } from './shared/messages';
 
 const { EJSON } = BSON;
@@ -17,7 +19,7 @@ export interface CollectionTarget extends CollectionRef {
 }
 
 const panelKey = (ref: CollectionRef) => `${ref.connectionId}/${ref.database}/${ref.collection}`;
-const expandedStateKey = (ref: CollectionRef) => `mongoster.expanded.${panelKey(ref)}`;
+export const expandedStateKey = (ref: CollectionRef) => `mongoster.expanded.${panelKey(ref)}`;
 
 /** One webview tab per collection, showing a queryable grid of documents. */
 export class CollectionPanel {
@@ -138,6 +140,9 @@ export class CollectionPanel {
       case 'deleteDocument':
         await this.deleteDocument(m.id);
         break;
+      case 'export':
+        await exportDocuments(this.connections, this.target, m.source, { expanded: m.expanded, page: m.page, count: m.count });
+        break;
       case 'copy':
         await vscode.env.clipboard.writeText(m.text);
         vscode.window.setStatusBarMessage('Mongoster: copied to clipboard', 2000);
@@ -198,24 +203,12 @@ export class CollectionPanel {
 
   private async runAggregate(m: AggregateRequest): Promise<void> {
     const started = Date.now();
-    const active = m.stages
-      .slice(0, m.upto + 1)
-      .map((stage, index) => ({ stage, index }))
-      .filter(({ stage }) => stage.enabled);
-
-    const pipeline: Document[] = [];
-    for (const { stage, index } of active) {
-      try {
-        pipeline.push({ [stage.op.trim()]: fromRelaxed(parseStageBody(stage)) });
-      } catch (err) {
-        this.post({ type: 'error', requestId: m.requestId, stage: index, message: `Stage ${index + 1} (${stage.op}): ${errorMessage(err)}` });
-        return;
-      }
-    }
-    const writes = active.filter(({ stage }) => isWriteStage(stage));
-    const misplaced = writes.find((w) => w !== active[active.length - 1]);
-    if (misplaced) {
-      this.post({ type: 'error', requestId: m.requestId, stage: misplaced.index, message: `${misplaced.stage.op} must be the last stage of the pipeline` });
+    let pipeline: Document[];
+    let write: PipelineStage | undefined;
+    try {
+      ({ pipeline, write } = buildPipeline(m.stages, m.upto));
+    } catch (err) {
+      this.post({ type: 'error', requestId: m.requestId, stage: (err as StageError).stage, message: errorMessage(err) });
       return;
     }
 
@@ -223,8 +216,8 @@ export class CollectionPanel {
       const client = await this.connections.getClient(this.target.connectionId);
       const coll = client.db(this.target.database).collection(this.target.collection);
 
-      if (writes.length) {
-        const { stage } = writes[0];
+      if (write) {
+        const stage = write;
         const target = toShell(parseStageBody(stage));
         const answer = await vscode.window.showWarningMessage(
           `Run this pipeline? Its ${stage.op} stage writes to ${target}.`,
@@ -294,6 +287,7 @@ export class CollectionPanel {
         <button id="modeAggregate" role="tab" aria-selected="false" title="Build an aggregation pipeline">Aggregate</button>
       </div>
       <button id="historyBtn" class="secondary" title="Recent and saved queries" aria-haspopup="true" aria-expanded="false">History ▾</button>
+      <button id="export" class="secondary" title="Export the results to JSON, JSON Lines or CSV">Export</button>
       <button id="insert" class="secondary editable" title="Insert a new document">Insert</button>
     </div>
     <div class="find-only">
@@ -376,24 +370,6 @@ export class CollectionPanel {
 </body>
 </html>`;
   }
-}
-
-/** Relaxed EJSON plain value from the webview -> BSON value. */
-function fromRelaxed(value: unknown): unknown {
-  return EJSON.deserialize({ v: value } as Document, { relaxed: false }).v;
-}
-
-function toBson(text: string, label: string): Document | undefined {
-  if (!text.trim()) return undefined;
-  let value: unknown;
-  try {
-    value = parseQuery(text);
-  } catch (err) {
-    throw new Error(`${label}: ${errorMessage(err)}`);
-  }
-  if (!isPlainObject(value)) throw new Error(`${label} must be an object`);
-  // Non-relaxed keeps NumberLong/NumberDecimal exact instead of collapsing them to JS numbers.
-  return EJSON.deserialize(value, { relaxed: false }) as Document;
 }
 
 async function countPipeline(coll: Collection, pipeline: Document[]): Promise<number | null> {

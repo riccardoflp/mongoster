@@ -82,6 +82,18 @@
         "title": "Insert Document",
         "category": "Mongoster",
         "icon": "$(add)"
+      },
+      {
+        "command": "mongoster.exportCollection",
+        "title": "Export Collection…",
+        "category": "Mongoster",
+        "icon": "$(export)"
+      },
+      {
+        "command": "mongoster.importDocuments",
+        "title": "Import Documents…",
+        "category": "Mongoster",
+        "icon": "$(cloud-upload)"
       }
     ],
     "menus": {
@@ -127,6 +139,16 @@
           "command": "mongoster.insertDocument",
           "when": "view == mongoster.connections && viewItem == collection",
           "group": "1_document@1"
+        },
+        {
+          "command": "mongoster.importDocuments",
+          "when": "view == mongoster.connections && viewItem == collection",
+          "group": "2_transfer@1"
+        },
+        {
+          "command": "mongoster.exportCollection",
+          "when": "view == mongoster.connections && viewItem =~ /^(collection|view)$/",
+          "group": "2_transfer@2"
         }
       ],
       "commandPalette": [
@@ -144,6 +166,14 @@
         },
         {
           "command": "mongoster.insertDocument",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.exportCollection",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.importDocuments",
           "when": "false"
         }
       ]

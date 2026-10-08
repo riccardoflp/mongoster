@@ -22,6 +22,11 @@ export interface AggregateRequest {
   limit: number;
 }
 
+/** A find query or a pipeline (run up to stage `upto`), as the webview describes it. */
+export type QuerySource =
+  | { kind: 'find'; filter: string; sort: string; projection: string }
+  | { kind: 'aggregate'; stages: PipelineStage[]; upto: number };
+
 /** A find query, or an aggregation when `pipeline` is set (filter/sort/projection are then empty). */
 export interface QueryText {
   filter: string;
@@ -50,7 +55,8 @@ export type WebviewMessage =
   | { type: 'saveQuery'; query: QueryText }
   | { type: 'removeQuery'; id: string }
   | { type: 'clearHistory' }
-  | { type: 'copy'; text: string };
+  | { type: 'copy'; text: string }
+  | { type: 'export'; source: QuerySource; expanded: string[]; page: { skip: number; limit: number }; count: number | null };
 
 export type HostMessage =
   | { type: 'init'; connectionName: string; database: string; collection: string; readOnly: boolean; expanded: string[] }
