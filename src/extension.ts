@@ -10,6 +10,7 @@ import { Playgrounds } from './playground/playground';
 import { MonitorPanel } from './monitor';
 import { Copier } from './copy';
 import { WatchPanel, WatchScope } from './watch';
+import { ConnectionEditor, SaveConnection } from './connectionEditor';
 
 export function activate(context: vscode.ExtensionContext): void {
   const connections = new ConnectionManager(context);
@@ -32,6 +33,11 @@ export function activate(context: vscode.ExtensionContext): void {
     locked: !!node.connection.readOnly,
     color: node.connection.color,
   });
+  /** Saves the connection form: options first (they reconnect), then name and connection string. */
+  const saveConnection: SaveConnection = async (id, name, uri, options) => {
+    await connections.setOptions(id, options);
+    await updateConnection(id, { name }, uri);
+  };
   /** Saves connection changes and applies them to the open collection tabs. */
   const updateConnection = async (id: string, changes: Partial<Omit<ConnectionInfo, 'id'>>, uri?: string) => {
     const info = await connections.update(id, changes, uri);
@@ -61,6 +67,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('mongoster.addConnection', (node?: FolderNode) =>
       addConnection(connections, node instanceof FolderNode ? node.folder : undefined),
+    ),
+
+    vscode.commands.registerCommand('mongoster.addConnectionWithOptions', (node?: FolderNode) =>
+      ConnectionEditor.show(context, connections, undefined, saveConnection, node instanceof FolderNode ? node.folder : undefined),
+    ),
+
+    vscode.commands.registerCommand('mongoster.connectionOptions', (node?: ConnectionNode) =>
+      node ? ConnectionEditor.show(context, connections, connections.get(node.info.id) ?? node.info, saveConnection) : undefined,
     ),
 
     vscode.commands.registerCommand('mongoster.editConnection', async (node?: ConnectionNode) => {
@@ -157,6 +171,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (answer === 'Remove') {
         MonitorPanel.close(node.info.id);
         WatchPanel.close(node.info.id);
+        ConnectionEditor.close(node.info.id);
         await connections.remove(node.info.id);
       }
     }),
@@ -327,7 +342,7 @@ async function askConnection(connections: ConnectionManager, existing?: Connecti
   try {
     await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: `Connecting to ${fallbackName}…` },
-      () => ConnectionManager.test(uri),
+      async () => ConnectionManager.test(uri, existing && (await connections.options(existing.id)), connections.checkHostKey),
     );
   } catch (err) {
     const choice = await vscode.window.showWarningMessage(

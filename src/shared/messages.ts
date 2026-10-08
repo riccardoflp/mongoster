@@ -341,3 +341,52 @@ export type WatchViewMessage =
   | { type: 'enablePreImages' }
   | { type: 'openDocument'; database: string; collection: string; id: unknown }
   | { type: 'copy'; text: string };
+
+// ---- connection options form (TLS, SSH)
+
+export interface ConnectionForm {
+  name: string;
+  uri: string;
+  tls: {
+    enabled: boolean;
+    caFile: string;
+    certificateKeyFile: string;
+    /** Empty: keep the saved one (if any). */
+    certificateKeyFilePassword: string;
+    allowInvalidCertificates: boolean;
+    allowInvalidHostnames: boolean;
+  };
+  ssh: {
+    enabled: boolean;
+    host: string;
+    port: string;
+    username: string;
+    auth: 'password' | 'privateKey' | 'agent';
+    /** Empty: keep the saved one (if any). */
+    password: string;
+    privateKeyFile: string;
+    passphrase: string;
+  };
+}
+
+export type ConnectionFileField = 'caFile' | 'certificateKeyFile' | 'privateKeyFile';
+
+/** Which secrets are saved: they are never sent to the form. */
+export interface SavedSecrets {
+  certificateKeyFilePassword: boolean;
+  sshPassword: boolean;
+  passphrase: boolean;
+}
+
+export type ConnectionEditorHostMessage =
+  | { type: 'init'; isNew: boolean; form: ConnectionForm; saved: SavedSecrets }
+  | { type: 'file'; field: ConnectionFileField; path: string }
+  | { type: 'busy'; what: 'test' | 'save' }
+  | { type: 'result'; ok: boolean; message: string; field?: string };
+
+export type ConnectionEditorViewMessage =
+  | { type: 'ready' }
+  | { type: 'browse'; field: ConnectionFileField }
+  | { type: 'test'; form: ConnectionForm }
+  | { type: 'save'; form: ConnectionForm }
+  | { type: 'cancel' };

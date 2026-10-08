@@ -1,0 +1,191 @@
+:root {
+  --border: var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+  --muted: var(--vscode-descriptionForeground, #8b8b8b);
+  --mono: var(--vscode-editor-font-family, Consolas, monospace);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 16px 24px 32px;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size, 13px);
+}
+
+form {
+  max-width: 760px;
+}
+
+h1 {
+  font-size: 1.4em;
+  font-weight: 600;
+  margin: 0 0 16px;
+}
+
+h2 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+section {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+
+section:first-of-type {
+  border-top: none;
+}
+
+section > h2,
+section > .hint,
+section > .fields {
+  grid-column: 1 / -1;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.fields.off {
+  opacity: 0.5;
+}
+
+.hint {
+  margin: 0 0 6px;
+  color: var(--muted);
+}
+
+.fields > .hint {
+  margin: 0;
+}
+
+label,
+.label {
+  color: var(--vscode-foreground);
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.checks,
+.radios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+
+.warn {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+input[type='text'],
+input[type='password'],
+input[type='number'] {
+  width: 100%;
+  padding: 4px 6px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+input:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+input.mono {
+  font-family: var(--mono);
+}
+
+input.invalid {
+  border-color: var(--vscode-inputValidation-errorBorder, #be1100);
+}
+
+.file,
+.host {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.host input[type='number'] {
+  width: 90px;
+}
+
+button {
+  padding: 4px 14px;
+  border: none;
+  border-radius: 2px;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+button.secondary {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.result {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 2px;
+  white-space: pre-wrap;
+}
+
+.result.ok {
+  background: var(--vscode-inputValidation-infoBackground, rgba(30, 90, 50, 0.4));
+  border: 1px solid var(--vscode-testing-iconPassed, #73c991);
+}
+
+.result.fail {
+  background: var(--vscode-inputValidation-errorBackground, rgba(90, 29, 29, 0.6));
+  border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.spacer {
+  flex: 1;
+}
+
+code {
+  font-family: var(--mono);
+}

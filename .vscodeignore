@@ -4,6 +4,7 @@
 !dist/playground.js
 !dist/monitor.js
 !dist/watch.js
+!dist/connectionEditor.js
 !media/**
 !package.json
 !README.md

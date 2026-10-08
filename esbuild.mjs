@@ -29,6 +29,9 @@ const contexts = await Promise.all([
       'mongodb-client-encryption',
       '@mongodb-js/zstd',
       '@aws-sdk/credential-providers',
+      // Optional native speedups of ssh2, also loaded inside try/catch.
+      'cpu-features',
+      '*.node',
     ],
   }),
   esbuild.context({
@@ -59,6 +62,14 @@ const contexts = await Promise.all([
     ...common,
     entryPoints: ['src/webview/watch.ts'],
     outfile: 'dist/watch.js',
+    platform: 'browser',
+    format: 'iife',
+    target: 'es2020',
+  }),
+  esbuild.context({
+    ...common,
+    entryPoints: ['src/webview/connectionEditor.ts'],
+    outfile: 'dist/connectionEditor.js',
     platform: 'browser',
     format: 'iife',
     target: 'es2020',

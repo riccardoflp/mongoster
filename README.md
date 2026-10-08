@@ -10,6 +10,12 @@ Estensione VS Code per navigare MongoDB: apri le collezioni in tabella, ispezion
   - **Colore**: `Set Color…` (rosso, arancione, giallo, verde, blu, viola) colora l'icona nell'albero e aggiunge una striscia colorata in cima alle tab delle sue collezioni, per esempio rosso per la produzione.
   - **Sola lettura**: `Make Read-Only` impedisce a Mongoster qualsiasi scrittura tramite quella connessione (modifica, insert, delete, update/delete many, import, indici, `$out`/`$merge`, creazione/rinomina/eliminazione di database e collezioni); query, aggregate, schema, explain ed export restano disponibili. `Allow Changes` la riabilita dopo conferma. È una protezione dell'estensione: i permessi veri restano quelli dell'utente MongoDB.
   - Nome, colore e sola lettura si applicano subito alle tab già aperte.
+  - **TLS e tunnel SSH**: `Connection Settings (TLS / SSH)…` sulla connessione, o `Add Connection with TLS / SSH…` nel menu `…` della vista (e sulle cartelle), apre un modulo con nome, connection string e:
+    - **TLS / SSL**: certificato della CA (per un'autorità privata), certificato client con chiave (PEM, anche cifrata con password) e, se proprio serve, `Allow invalid certificates` / `Allow invalid host names`;
+    - **SSH tunnel**: server SSH (bastion), porta, utente e autenticazione con password, chiave privata (anche con passphrase) o SSH agent. Il tunnel porta al primo host della connection string con una connessione diretta a quel server (le connection string `mongodb+srv://` non si possono usare); con TLS il certificato viene verificato sul nome del server vero.
+    - `Test Connection` prova la connessione e mostra la versione del server; `Save` la salva. Password e passphrase stanno nel SecretStorage e non vengono rimandate al modulo: lasciando vuoto il campo resta quella salvata.
+    - La prima volta che ci si collega a un server SSH ne viene mostrata l'impronta della chiave (`SHA256:…`) da confermare; se in seguito cambia, Mongoster lo segnala e chiede di nuovo conferma.
+    - Nell'albero le connessioni via SSH hanno la scritta `SSH`; il tooltip indica tunnel e TLS.
 - **Gestione database e collezioni** dal menu contestuale dell'albero:
   - `Create Database…` sulla connessione chiede il nome del database e della prima collezione (MongoDB crea un database solo insieme a una collezione) e la apre.
   - `Create Collection…` (anche con `+` sul database) accetta opzioni facoltative, per esempio `{ capped: true, size: 1048576 }` o `{ timeseries: { timeField: "ts" } }`.
@@ -137,6 +143,8 @@ code --install-extension mongoster-0.0.1.vsix
 
 - `src/extension.ts` – attivazione e comandi
 - `src/connections.ts` – connessioni salvate e cache dei `MongoClient`
+- `src/transport.ts` – opzioni TLS e tunnel SSH (`ssh2`) con verifica della chiave dell'host
+- `src/connectionEditor.ts`, `src/webview/connectionEditor.ts`, `media/connectionEditor.css` – modulo della connessione (TLS, SSH, test)
 - `src/tree.ts` – albero connessioni/database/collezioni
 - `src/collectionPanel.ts` – webview per collezione, esecuzione delle query
 - `src/queryHistory.ts` – cronologia e query salvate per collezione

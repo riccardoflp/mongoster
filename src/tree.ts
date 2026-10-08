@@ -23,8 +23,15 @@ export class ConnectionNode extends vscode.TreeItem {
     // The connection's color wins over the green "connected" tint; the description then says it.
     const color = info.color ? `charts.${info.color}` : connected ? 'testing.iconPassed' : undefined;
     this.iconPath = new vscode.ThemeIcon(info.readOnly ? 'lock' : 'server', color ? new vscode.ThemeColor(color) : undefined);
-    this.description = [info.readOnly && 'read-only', connected && (info.color || info.readOnly) && 'connected'].filter(Boolean).join(' · ');
-    this.tooltip = `${info.name}${connected ? ' (connected)' : ''}${info.readOnly ? '\nRead-only: Mongoster refuses writes through this connection' : ''}`;
+    this.description = [info.readOnly && 'read-only', info.ssh && 'SSH', connected && (info.color || info.readOnly) && 'connected'].filter(Boolean).join(' · ');
+    this.tooltip = [
+      `${info.name}${connected ? ' (connected)' : ''}`,
+      info.readOnly && 'Read-only: Mongoster refuses writes through this connection',
+      info.ssh && `Through the SSH tunnel ${info.ssh}`,
+      info.tls && 'TLS certificates or options set',
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 }
 
