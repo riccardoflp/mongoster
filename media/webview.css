@@ -603,7 +603,7 @@ body.dragging .dropzones {
   content: '▸';
 }
 
-.jnode.empty > .jhead .jtoggle::before {
+.jnode.jempty > .jhead .jtoggle::before {
   content: '';
 }
 

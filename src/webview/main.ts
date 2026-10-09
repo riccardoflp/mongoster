@@ -1020,7 +1020,7 @@ function jsonNode(key: string | null, value: unknown, last: boolean, depth: numb
   head.append(span('jsummary', ` ${summary} `), span('jpunc jsummary', close + comma));
   if (!entries.length) {
     head.append(span('jpunc', close + comma));
-    node.classList.add('empty');
+    node.classList.add('jempty');
   }
   head.addEventListener('click', () => node.classList.toggle('collapsed'));
   node.append(head);

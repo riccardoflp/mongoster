@@ -5,6 +5,7 @@
 - Values in the table, the playground results, the server monitor, the global search and the index advisor take the syntax colors of the active color theme, and change with it.
 - In a narrow tab, the filter keeps a usable width: its buttons, the top bar, Sort / Project, the pipeline buttons and the status bar wrap instead of squeezing it.
 - Popups use the theme's shadow.
+- Empty arrays and objects in the JSON view of a document or of explain are no longer centered on their own line.
 
 ## 0.1.1
 
