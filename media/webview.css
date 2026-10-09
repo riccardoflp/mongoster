@@ -1160,14 +1160,18 @@ body.mode-indexes .not-indexes {
   opacity: 0.55;
 }
 
+/* A table cell, not a flex box: an empty one (the _id_ index) still takes the row's height. */
 .index-table .ix-actions {
-  display: flex;
-  gap: 4px;
+  white-space: nowrap;
   border-right: none;
 }
 
 .index-table .ix-actions button {
   padding: 1px 8px;
+}
+
+.index-table .ix-actions button + button {
+  margin-left: 4px;
 }
 
 .badge {
