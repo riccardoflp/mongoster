@@ -146,9 +146,25 @@ select:focus {
   border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important;
 }
 
+/* The filter keeps a usable width: when the buttons don't fit beside it, they wrap below it. */
+.filter-line {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px 8px;
+}
+
+.filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
 .filter-wrap {
   position: relative;
-  flex: 1;
+  flex: 1 1 360px;
   min-width: 0;
   display: flex;
   border-radius: 2px;
@@ -300,12 +316,23 @@ body.dragging .dropzones {
 .statusbar {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
   padding: 4px 12px;
   color: var(--muted);
   font-size: 0.92em;
   border-bottom: 1px solid var(--border);
+}
+
+.statusbar > * {
+  white-space: nowrap;
+}
+
+.status-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* ---------- grid ---------- */
@@ -748,6 +775,27 @@ button.link:hover {
 
 .row.top {
   align-items: center;
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.ns {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Tabs and buttons stay on the right; on a narrow tab they go below the namespace and wrap. */
+.top-actions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.mode {
+  flex: none;
 }
 
 .mode {
@@ -931,6 +979,8 @@ body.mode-aggregate .doc-write {
 
 .pipeline-actions {
   align-items: center;
+  flex-wrap: wrap;
+  row-gap: 6px;
 }
 
 .pipeline-actions button.active {
@@ -2033,6 +2083,21 @@ body[data-color] .ns-conn {
 
 @media (max-width: 560px) {
   .builder {
+    margin-left: 0;
+  }
+
+  /* Sort and Project one under the other. */
+  .options {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .options input {
+    flex-basis: calc(100% - 60px);
+  }
+
+  .options label:not(:first-child) {
+    width: 52px;
     margin-left: 0;
   }
 

@@ -762,7 +762,7 @@ export class CollectionPanel {
   <header class="toolbar">
     <div class="row top">
       <div class="ns" id="ns"></div>
-      <span class="spacer"></span>
+      <div class="top-actions">
       <div class="mode" role="tablist" aria-label="Query mode">
         <button id="modeFind" role="tab" aria-selected="true" title="Filter, sort and project documents">Find</button>
         <button id="modeAggregate" role="tab" aria-selected="false" title="Build an aggregation pipeline">Aggregate</button>
@@ -774,14 +774,17 @@ export class CollectionPanel {
       <button id="export" class="secondary not-indexes not-schema not-chart" title="Export the results to JSON, JSON Lines or CSV">Export</button>
       <button id="watch" class="secondary not-view" title="Show the changes of the collection as they happen (change stream)">Watch</button>
       <button id="insert" class="secondary editable" title="Insert a new document">Insert</button>
+      </div>
     </div>
     <div class="find-only">
       <div class="row">
         <label for="filter">Filter</label>
+        <div class="filter-line">
         <div class="filter-wrap" id="filterWrap">
           <textarea id="filter" rows="1" spellcheck="false" placeholder="{ field: &quot;value&quot; }  —  or drag a cell / column here"></textarea>
           <div class="dropzones" id="dropzones"></div>
         </div>
+        <div class="filter-actions">
         <button id="builderToggle" class="secondary" title="Build the filter from fields, operators and values" aria-expanded="false" aria-controls="builder">Builder</button>
         <button id="run" class="primary" title="Run query (Ctrl+Enter)">Find</button>
         <button id="reset" class="secondary" title="Clear filter, sort and projection">Reset</button>
@@ -789,6 +792,8 @@ export class CollectionPanel {
         <button id="codeFind" class="secondary not-schema not-chart" title="The query as code for mongosh, Node.js, Python, Java, C# or Go">Code</button>
         <button id="updateMany" class="secondary editable not-schema not-chart" title="Update every document matching the filter">Update many…</button>
         <button id="deleteMany" class="secondary editable danger not-schema not-chart" title="Delete every document matching the filter">Delete many…</button>
+        </div>
+        </div>
       </div>
       <div id="builder" class="builder hidden" role="group" aria-label="Filter builder"></div>
       <div class="row options not-schema not-chart">
@@ -893,13 +898,17 @@ export class CollectionPanel {
     <span id="status"></span>
     <span class="spacer"></span>
     <button id="columnsBtn" class="secondary columns-btn" title="Show, hide, pin and reorder the columns" aria-haspopup="true" aria-expanded="false">Columns</button>
+    <span class="status-group">
     <label for="limit">Page size</label>
     <select id="limit">
       <option>10</option><option>20</option><option selected>50</option><option>100</option><option>200</option><option>500</option>
     </select>
+    </span>
+    <span class="status-group">
     <button id="prev" class="icon" title="Previous page">‹</button>
     <span id="range"></span>
     <button id="next" class="icon" title="Next page">›</button>
+    </span>
   </div>
   <div id="columnsPanel" class="columns-panel hidden" role="dialog" aria-label="Columns">
     <div class="columns-head">
