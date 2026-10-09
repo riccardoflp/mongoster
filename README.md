@@ -210,7 +210,7 @@ To build an installable package:
 
 ```bash
 npm run package    # creates mongoster-<version>.vsix
-code --install-extension mongoster-0.1.1.vsix
+code --install-extension mongoster-0.2.0.vsix
 ```
 
 ## Structure

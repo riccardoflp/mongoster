@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - **MCP server for AI assistants**: GitHub Copilot, Claude Code, Cursor and other MCP clients can list the connections, databases and collections, describe a collection's fields and indexes, run read-only queries and aggregations, and open a query, an aggregation or a global search in Mongoster's tabs. `Mongoster: Set Up MCP Server for AI Assistants…` turns it on and copies the configuration. It listens on `127.0.0.1` with an access token, never writes, and `mongoster.mcp.readDocuments` can keep documents from the AI.
 

@@ -2,7 +2,7 @@
   "name": "mongoster",
   "displayName": "Mongoster",
   "description": "MongoDB client for VS Code: browse collections in a table, query and aggregate, edit documents, analyze schemas, indexes and relations, monitor the server.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "RiccardoFilippozzi",
   "repository": "https://github.com/riccardoflp/mongoster",
   "license": "MIT",
