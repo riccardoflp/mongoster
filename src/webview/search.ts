@@ -1,5 +1,6 @@
 // Global search tab: the documents with the text in any field, grouped by collection, as the
 // collections are read.
+import './tokenColors';
 import type { SearchCollection, SearchHit, SearchHostMessage, SearchOptions, SearchProgress, SearchResult, SearchViewMessage } from '../shared/messages';
 
 interface State {

@@ -21,7 +21,7 @@ A VS Code extension for working with MongoDB: open collections in a table, write
   - `Create Collection…` (also `+` on a database) accepts optional options, for example `{ capped: true, size: 1048576 }` or `{ timeseries: { timeField: "ts" } }`.
   - `Rename Collection…` renames within the same database; the open tab, the query history and the expanded columns follow the new name. Views can't be renamed.
   - `Drop…` on collections and views, `Drop Database…` on a database: for collections and databases you type the name to confirm, and the message says how many documents, indexes or collections will be deleted. The tabs of dropped collections are closed.
-- **Table** for each collection: one column per field, values colored by type, paging, total count.
+- **Table** for each collection: one column per field, values colored by type, paging, total count. Values take the syntax colors of the active color theme, as in a JSON file in the editor (strings, numbers, booleans, keys; ObjectId, dates and regexes take the colors of keywords, types and regexes), including `editor.tokenColorCustomizations`, and change with the theme. The same colors are used by the playground results, the server monitor, the global search and the index advisor.
 - **Filter / Sort / Project** in mongosh syntax: `{ _id: ObjectId("…"), name: /mario/i, createdAt: { $gte: ISODate("2024-01-01") } }`. `Ctrl+Enter` runs the query.
 - **Visual query builder**: `Builder` next to the filter opens a list of conditions below it, each with a field, an operator and a value, for those who don't want to write mongosh syntax:
   - operators `=`, `≠`, `>`, `≥`, `<`, `≤`, `in` / `not in` (comma-separated values or an array), `matches` (regular expression, `/^mario/i` or just the text), `exists`, `missing`, `type` (BSON type from a list) and `size` (arrays with that number of elements);
@@ -211,6 +211,7 @@ code --install-extension mongoster-0.1.1.vsix
 ## Structure
 
 - `src/extension.ts` – activation and commands
+- `src/themeColors.ts`, `src/shared/tokenColors.ts`, `src/webview/tokenColors.ts` – syntax colors of the active theme (its file, its includes and `editor.tokenColorCustomizations`) sent to the webviews
 - `src/connections.ts` – saved connections and the `MongoClient` cache
 - `src/transport.ts` – TLS options and SSH tunnel (`ssh2`) with host key verification
 - `src/connectionEditor.ts`, `src/webview/connectionEditor.ts`, `media/connectionEditor.css` – connection form (TLS, SSH, test)

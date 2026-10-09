@@ -2,12 +2,12 @@
   --border: var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
   --muted: var(--vscode-descriptionForeground, #8b8b8b);
   --mono: var(--vscode-editor-font-family, Consolas, monospace);
-  --c-string: var(--vscode-debugTokenExpression-string, #ce9178);
-  --c-number: var(--vscode-debugTokenExpression-number, #b5cea8);
-  --c-bool: var(--vscode-debugTokenExpression-boolean, #569cd6);
-  --c-oid: var(--vscode-terminal-ansiMagenta, #c586c0);
-  --c-date: var(--vscode-terminal-ansiCyan, #4ec9b0);
-  --c-regex: var(--vscode-terminal-ansiYellow, #d7ba7d);
+  --c-string: var(--t-string, var(--vscode-debugTokenExpression-string, #ce9178));
+  --c-number: var(--t-number, var(--vscode-debugTokenExpression-number, #b5cea8));
+  --c-bool: var(--t-bool, var(--vscode-debugTokenExpression-boolean, #569cd6));
+  --c-oid: var(--t-oid, var(--vscode-terminal-ansiMagenta, #c586c0));
+  --c-date: var(--t-date, var(--vscode-terminal-ansiCyan, #4ec9b0));
+  --c-regex: var(--t-regex, var(--vscode-terminal-ansiYellow, #d7ba7d));
 }
 
 * {

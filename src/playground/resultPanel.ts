@@ -1,6 +1,7 @@
 // The tab beside a playground showing what a run returned: documents as a table or as text,
 // the print() output, or the error with its line.
 import * as vscode from 'vscode';
+import { ThemeColors } from '../themeColors';
 import type { PlaygroundHostMessage, PlaygroundViewMessage } from '../shared/messages';
 
 export class PlaygroundResultPanel {
@@ -21,6 +22,7 @@ export class PlaygroundResultPanel {
     );
     this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'mongoster.svg');
     this.panel.webview.html = this.html();
+    ThemeColors.attach(this.panel);
     this.panel.onDidDispose(() => (PlaygroundResultPanel.current = undefined));
     this.panel.webview.onDidReceiveMessage((m: PlaygroundViewMessage) => void this.receive(m));
   }
@@ -85,7 +87,7 @@ export class PlaygroundResultPanel {
   <link rel="stylesheet" href="${asset('media', 'playground.css')}">
   <title>Playground Result</title>
 </head>
-<body>
+<body${ThemeColors.bodyAttribute()}>
   <header class="bar">
     <div id="meta" class="meta">Run a playground with Ctrl+Enter.</div>
     <div class="spacer"></div>

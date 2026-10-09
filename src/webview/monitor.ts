@@ -1,4 +1,5 @@
 // Server monitor tab: running operations, profiler entries, statistics and replication, refreshed on demand or periodically.
+import './tokenColors';
 import type {
   CollectionStats,
   DatabaseStats,

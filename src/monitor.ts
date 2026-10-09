@@ -2,6 +2,7 @@
 // queries recorded by the profiler or logged by the server, server, database and collection statistics,
 // and the replica set's members and oplog.
 import * as vscode from 'vscode';
+import { ThemeColors } from './themeColors';
 import { BSON, Db, Document, MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
 import type {
@@ -85,6 +86,7 @@ export class MonitorPanel {
     );
     this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'mongoster.svg');
     this.panel.webview.html = this.html();
+    ThemeColors.attach(this.panel);
     this.panel.onDidDispose(() => MonitorPanel.panels.delete(info.id));
     this.panel.webview.onDidReceiveMessage((m: MonitorViewMessage) => void this.receive(m));
   }
@@ -483,7 +485,7 @@ export class MonitorPanel {
   <link rel="stylesheet" href="${asset('media', 'monitor.css')}">
   <title>Monitor</title>
 </head>
-<body>
+<body${ThemeColors.bodyAttribute()}>
   <header class="bar">
     <span id="title" class="title"></span>
     <div class="tabs" role="tablist">

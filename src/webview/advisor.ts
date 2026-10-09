@@ -1,5 +1,6 @@
 // Index advisor tab: the indexes to create for the slow operations, and those redundant or unused,
 // each with its reason and actions.
+import './tokenColors';
 import type { Advice, AdvisorIndex, AdvisorQuery } from '../shared/advisor';
 import type { AdvisorHostMessage, AdvisorReport, AdvisorViewMessage } from '../shared/messages';
 import { toShell } from '../shared/query';

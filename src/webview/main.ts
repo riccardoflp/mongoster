@@ -1,3 +1,4 @@
+import './tokenColors';
 import { isEjsonWrapper, isPlainObject, mergeCondition, parseQuery, prettyShell, toShell } from '../shared/query';
 import type { HostMessage, QuerySource, QueryText, WebviewMessage } from '../shared/messages';
 import type { PipelineStage } from '../shared/pipeline';

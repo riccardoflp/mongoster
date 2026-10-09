@@ -2,6 +2,7 @@
 // and lists those with the text (or an id, number, date, regular expression) in any field, nested ones
 // included. MongoDB has no "any field" query, so the documents are read and matched here.
 import * as vscode from 'vscode';
+import { ThemeColors } from './themeColors';
 import { BSON, Document, FindCursor, MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
 import type { DocumentFileSystem } from './documentFs';
@@ -248,6 +249,7 @@ export class SearchPanel {
     );
     this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'mongoster.svg');
     this.panel.webview.html = this.html();
+    ThemeColors.attach(this.panel);
     this.panel.onDidDispose(() => {
       SearchPanel.panels.delete(scopeKey(scope));
       this.stop();
@@ -463,7 +465,7 @@ export class SearchPanel {
   <link rel="stylesheet" href="${asset('media', 'search.css')}">
   <title>Search</title>
 </head>
-<body>
+<body${ThemeColors.bodyAttribute()}>
   <header class="bar">
     <span id="title" class="title"></span>
     <span id="status" class="status hidden"></span>

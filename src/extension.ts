@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ThemeColors } from './themeColors';
 import { CONNECTION_COLORS, ConnectionColor, ConnectionInfo, ConnectionManager } from './connections';
 import { BucketNode, CollectionNode, ConnectionNode, DatabaseNode, FolderNode, MongoTreeProvider, TreeNode, errorMessage } from './tree';
 import { CollectionPanel, CollectionTarget, expandedStateKey, layoutStateKey, moveCollectionState, readOnlyMessage } from './collectionPanel';
@@ -30,6 +31,7 @@ interface OpenQueryArgs {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  ThemeColors.init(context);
   const connections = new ConnectionManager(context);
   const history = UndoHistory.init(context, connections);
   const backups = new Backups(context, connections);

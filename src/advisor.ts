@@ -2,6 +2,7 @@
 // their use from $indexStats) and the slow operations (the profiler, or else the server log), and lists
 // the indexes to create, the redundant ones and the unused ones, with the action for each.
 import * as vscode from 'vscode';
+import { ThemeColors } from './themeColors';
 import { BSON, Document, MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
 import { openOperation } from './monitor';
@@ -81,6 +82,7 @@ export class AdvisorPanel {
     );
     this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'mongoster.svg');
     this.panel.webview.html = this.html();
+    ThemeColors.attach(this.panel);
     this.panel.onDidDispose(() => AdvisorPanel.panels.delete(scopeKey(scope)));
     this.panel.webview.onDidReceiveMessage((m: AdvisorViewMessage) => void this.receive(m));
   }
@@ -380,7 +382,7 @@ export class AdvisorPanel {
   <link rel="stylesheet" href="${asset('media', 'advisor.css')}">
   <title>Index Advisor</title>
 </head>
-<body>
+<body${ThemeColors.bodyAttribute()}>
   <header class="bar">
     <span id="title" class="title"></span>
     <span id="locked" class="badge hidden" title="Indexes can't be changed on this connection">read-only</span>

@@ -1,4 +1,5 @@
 // Playground result tab: the returned documents as a table or as mongosh text, the print() output and errors.
+import './tokenColors';
 import type { PlaygroundHostMessage, PlaygroundViewMessage } from '../shared/messages';
 import { isEjsonWrapper, isPlainObject, prettyShell, toShell } from '../shared/query';
 
@@ -21,6 +22,7 @@ const MAX_CELL = 160;
 
 window.addEventListener('message', (e: MessageEvent<PlaygroundHostMessage>) => {
   const m = e.data;
+  if (m.type !== 'running' && m.type !== 'result') return; // e.g. the theme's colors
   if (m.type === 'running') {
     el('meta').textContent = `Running ${m.title} on ${m.target}…`;
     document.body.classList.add('running');

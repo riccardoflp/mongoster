@@ -1,5 +1,6 @@
 import * as os from 'os';
 import * as vscode from 'vscode';
+import { ThemeColors } from './themeColors';
 import { BSON, Collection, Document } from 'mongodb';
 import { ConnectionColor, ConnectionInfo, ConnectionManager } from './connections';
 import { byId, CollectionRef, DocumentFileSystem, relaxed, restoreTypes } from './documentFs';
@@ -126,6 +127,7 @@ export class CollectionPanel {
     this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'collection.svg');
     this.panel.webview.html = this.html();
     this.panel.webview.onDidReceiveMessage((m: WebviewMessage) => this.onMessage(m));
+    ThemeColors.attach(this.panel);
     this.panel.onDidDispose(onDispose);
   }
 
@@ -757,7 +759,7 @@ export class CollectionPanel {
   <link rel="stylesheet" href="${asset('media', 'webview.css')}">
   <title>${escapeHtml(this.target.collection)}</title>
 </head>
-<body data-chart-src="${asset('dist', 'chartjs.js')}">
+<body data-chart-src="${asset('dist', 'chartjs.js')}"${ThemeColors.bodyAttribute()}>
   <div id="progress" class="progress"></div>
   <header class="toolbar">
     <div class="row top">
