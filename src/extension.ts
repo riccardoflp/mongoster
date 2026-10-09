@@ -20,6 +20,7 @@ import { SearchPanel, SearchScope } from './search';
 import { AdvisorPanel, AdvisorScope } from './advisor';
 import { DiagramPanel, DiagramScope } from './relations';
 import { ConnectionEditor, SaveConnection } from './connectionEditor';
+import { McpServer } from './mcpServer';
 import type { QueryText } from './shared/messages';
 
 interface OpenQueryArgs {
@@ -75,9 +76,18 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
 
+  const mcp = new McpServer(context, {
+    connections,
+    openSearch: (info, scope, options) => SearchPanel.show(context, connections, documents, info, scope, options),
+    readDocuments: () => vscode.workspace.getConfiguration('mongoster.mcp').get<boolean>('readDocuments', true),
+  });
+  void mcp.restart();
+
   context.subscriptions.push(
     connections,
     history,
+    mcp,
+    vscode.commands.registerCommand('mongoster.mcp.setup', () => mcp.setup()),
     new Playgrounds(context, connections),
     vscode.window.createTreeView('mongoster.connections', { treeDataProvider: tree, showCollapseAll: true }),
     vscode.workspace.registerFileSystemProvider(DOC_SCHEME, documents, { isCaseSensitive: true }),

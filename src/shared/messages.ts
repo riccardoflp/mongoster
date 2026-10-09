@@ -771,7 +771,9 @@ export type SearchHostMessage =
   | { type: 'plan'; searchId: number; collections: SearchCollection[] }
   | { type: 'progress'; searchId: number; updates: SearchProgress[] }
   | { type: 'done'; searchId: number; ms: number; stopped: boolean }
-  | { type: 'failed'; searchId: number; message: string };
+  | { type: 'failed'; searchId: number; message: string }
+  /** Fill the form with these options and search (from the MCP server). */
+  | { type: 'run'; options: SearchOptions };
 
 export type SearchViewMessage =
   | { type: 'ready' }

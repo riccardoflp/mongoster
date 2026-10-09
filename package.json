@@ -25,7 +25,9 @@
     "mongosh"
   ],
   "main": "./dist/extension.js",
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -319,6 +321,12 @@
         "title": "Restore from Backup…",
         "category": "Mongoster",
         "icon": "$(history)"
+      },
+      {
+        "command": "mongoster.mcp.setup",
+        "title": "Set Up MCP Server for AI Assistants…",
+        "category": "Mongoster",
+        "icon": "$(sparkle)"
       }
     ],
     "menus": {
@@ -808,9 +816,35 @@
           "minimum": 1,
           "markdownDescription": "Operations whose documents take more than this many MB (uncompressed) aren't recorded.",
           "order": 5
+        },
+        "mongoster.mcp.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Run the MCP server that lets AI assistants (GitHub Copilot, Claude Code, Cursor…) list the connections, read the structure and the documents of the collections, and open queries, aggregations and searches in Mongoster. It listens on `127.0.0.1` only, needs an access token and never writes to a database. Run **Mongoster: Set Up MCP Server for AI Assistants…** to configure a client.",
+          "order": 6
+        },
+        "mongoster.mcp.port": {
+          "type": "number",
+          "default": 37017,
+          "minimum": 1024,
+          "maximum": 65535,
+          "markdownDescription": "Port of the MCP server on `127.0.0.1`.",
+          "order": 7
+        },
+        "mongoster.mcp.readDocuments": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Let the AI read documents (the `find_documents` and `aggregate` tools). Turned off, it only sees connections, databases, collections and their structure, and opens tabs for you to look at the documents.",
+          "order": 8
         }
       }
-    }
+    },
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "mongoster",
+        "label": "Mongoster"
+      }
+    ]
   },
   "scripts": {
     "build": "node esbuild.mjs",

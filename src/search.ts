@@ -211,14 +211,18 @@ export class SearchPanel {
   private searchId = 0;
   private running = false;
   private started = 0;
+  private ready = false;
+  /** A search to start once the webview is ready. */
+  private pendingRun?: SearchOptions;
 
-  static show(context: vscode.ExtensionContext, connections: ConnectionManager, documents: DocumentFileSystem, info: ConnectionInfo, scope: SearchScope): void {
-    const existing = SearchPanel.panels.get(scopeKey(scope));
-    if (existing) {
-      existing.panel.reveal();
-      return;
-    }
-    SearchPanel.panels.set(scopeKey(scope), new SearchPanel(context, connections, documents, info, scope));
+  /** Opens (or reveals) the tab; with `run`, fills the form with those options and searches. */
+  static show(context: vscode.ExtensionContext, connections: ConnectionManager, documents: DocumentFileSystem, info: ConnectionInfo, scope: SearchScope, run?: SearchOptions): void {
+    let panel = SearchPanel.panels.get(scopeKey(scope));
+    if (panel) panel.panel.reveal();
+    else SearchPanel.panels.set(scopeKey(scope), (panel = new SearchPanel(context, connections, documents, info, scope)));
+    if (!run) return;
+    if (panel.ready) panel.post({ type: 'run', options: run });
+    else panel.pendingRun = run;
   }
 
   static connectionChanged(info: ConnectionInfo): void {
@@ -272,7 +276,10 @@ export class SearchPanel {
   private async receive(m: SearchViewMessage): Promise<void> {
     switch (m.type) {
       case 'ready':
+        this.ready = true;
         this.postInit();
+        if (this.pendingRun) this.post({ type: 'run', options: this.pendingRun });
+        this.pendingRun = undefined;
         break;
       case 'search':
         await this.search(m.searchId, m.options);

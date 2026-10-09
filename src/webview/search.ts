@@ -242,6 +242,11 @@ window.addEventListener('message', (e: MessageEvent<SearchHostMessage>) => {
     else delete document.body.dataset.color;
     return;
   }
+  if (m.type === 'run') {
+    fill(m.options);
+    start();
+    return;
+  }
   if (m.searchId !== searchId) return;
   switch (m.type) {
     case 'plan':
@@ -282,16 +287,19 @@ window.addEventListener('message', (e: MessageEvent<SearchHostMessage>) => {
 
 const text = el<HTMLInputElement>('text');
 const mode = el<HTMLSelectElement>('mode');
-text.value = state.options.text;
-mode.value = state.options.mode;
-el<HTMLInputElement>('matchCase').checked = state.options.matchCase;
-el<HTMLInputElement>('fieldNames').checked = state.options.fieldNames;
-el<HTMLInputElement>('views').checked = state.options.views;
-el<HTMLSelectElement>('limit').value = String(state.options.limit);
-const syncPlaceholder = () => {
+function fill(options: SearchOptions): void {
+  text.value = options.text;
+  mode.value = options.mode;
+  el<HTMLInputElement>('matchCase').checked = options.matchCase;
+  el<HTMLInputElement>('fieldNames').checked = options.fieldNames;
+  el<HTMLInputElement>('views').checked = options.views;
+  el<HTMLSelectElement>('limit').value = String(options.limit);
+  syncPlaceholder();
+}
+function syncPlaceholder(): void {
   text.placeholder = mode.value === 'regex' ? '^mario|rossi$  or  /^ma/i  —  Enter searches' : 'Text, _id, number or date to find in any field  —  Enter searches';
-};
-syncPlaceholder();
+}
+fill(state.options);
 mode.addEventListener('change', syncPlaceholder);
 text.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing) {

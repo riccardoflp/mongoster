@@ -189,6 +189,11 @@ A VS Code extension for working with MongoDB: open collections in a table, write
   - filters by operation type and by text; `$match` applies a server-side filter to the events (e.g. `{ "fullDocument.status": "active" }`); `Current document on update` also reads the current version of the updated document;
   - `Pause` holds new events without closing the stream, `Stop` / `Start` close and reopen it, `Clear` empties the list (the last 1000 events are kept).
   - Change streams need a replica set or a sharded cluster (a single-node replica set is enough); on a standalone server, the tab explains this. If the collection is dropped or renamed, the stream closes.
+- **AI assistants (MCP)**: an MCP server lets an AI assistant (GitHub Copilot in VS Code, Claude Code, Cursor and other clients of the Model Context Protocol) work with the connections saved in Mongoster. Run `Mongoster: Set Up MCP Server for AI Assistants…` from the Command Palette: it turns the server on and copies the configuration for your client.
+  - The tools: `list_connections`, `list_databases`, `list_collections`, `describe_collection` (estimated count, indexes, and the fields of a sample of documents with their types and how often they are present), `find_documents` and `aggregate` (up to 100 documents in mongosh syntax, with how many match), and `open_query`, `open_aggregation` and `open_search`, which open the collection's tab with the filter or the pipeline's stages, or the global search, and run them so you see the results in Mongoster. Ask for example *"find the orders of the users in Rome and show them to me"*.
+  - **GitHub Copilot** in VS Code finds the server on its own once it is on. For **Claude Code**, the setup command copies `claude mcp add --transport http mongoster http://127.0.0.1:37017/mcp --header "Authorization: Bearer …"`; for clients configured with JSON (`.mcp.json`, Cursor, Windsurf…) it copies the `mcpServers` entry.
+  - The server never writes: there are no tools that change data, and pipelines with `$out` or `$merge` are refused. It listens on `127.0.0.1` only and needs an access token, kept in VS Code's SecretStorage (`Generate a new access token` replaces it); connection strings are never given to the AI. With `mongoster.mcp.readDocuments` off, the AI only sees the structure and opens tabs, without reading documents. Each call is written to the `Mongoster MCP` output channel.
+  - Settings: `mongoster.mcp.enabled` (off by default) and `mongoster.mcp.port` (`37017`). With more than one VS Code window, the first one gets the port and the tabs open there.
 - **Views** are read-only, like the collections of read-only connections (`view` / `read-only` badge next to the name).
 - `Ctrl+C` on a selected cell copies its value.
 
@@ -213,6 +218,7 @@ code --install-extension mongoster-0.1.1.vsix
 - `src/extension.ts` – activation and commands
 - `src/themeColors.ts`, `src/shared/tokenColors.ts`, `src/webview/tokenColors.ts` – syntax colors of the active theme (its file, its includes and `editor.tokenColorCustomizations`) sent to the webviews
 - `src/connections.ts` – saved connections and the `MongoClient` cache
+- `src/mcpServer.ts`, `src/mcpTools.ts`, `src/shared/mcp.ts` – MCP server for AI assistants: HTTP on `127.0.0.1` with a bearer token, JSON-RPC, the read-only tools, the VS Code provider for Copilot
 - `src/transport.ts` – TLS options and SSH tunnel (`ssh2`) with host key verification
 - `src/connectionEditor.ts`, `src/webview/connectionEditor.ts`, `media/connectionEditor.css` – connection form (TLS, SSH, test)
 - `src/tree.ts` – connections/databases/collections tree
