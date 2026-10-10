@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- MCP server with several VS Code windows open: the tabs the AI opens appear in the window you used last, instead of the first one opened. The port follows the focus, and is taken over within a few seconds when the window that had it is closed.
+- `Mongoster: Change MCP Server Port…`, also in the setup command. When another program is using the port, a warning says so and `Change Port` suggests a free one, instead of only a line in the log.
+- A new access token generated in one window now applies to the others right away.
+
 ## 0.2.0
 
 - **MCP server for AI assistants**: GitHub Copilot, Claude Code, Cursor and other MCP clients can list the connections, databases and collections, describe a collection's fields and indexes, run read-only queries and aggregations, and open a query, an aggregation or a global search in Mongoster's tabs. `Mongoster: Set Up MCP Server for AI Assistants…` turns it on and copies the configuration. It listens on `127.0.0.1` with an access token, never writes, and `mongoster.mcp.readDocuments` can keep documents from the AI.

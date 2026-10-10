@@ -327,6 +327,11 @@
         "title": "Set Up MCP Server for AI Assistants…",
         "category": "Mongoster",
         "icon": "$(sparkle)"
+      },
+      {
+        "command": "mongoster.mcp.changePort",
+        "title": "Change MCP Server Port…",
+        "category": "Mongoster"
       }
     ],
     "menus": {
@@ -828,7 +833,7 @@
           "default": 37017,
           "minimum": 1024,
           "maximum": 65535,
-          "markdownDescription": "Port of the MCP server on `127.0.0.1`.",
+          "markdownDescription": "Port of the MCP server on `127.0.0.1`. AI clients other than GitHub Copilot have it in their configuration: after changing it, copy the configuration again with **Mongoster: Set Up MCP Server for AI Assistants…**. With several VS Code windows open, the port goes to the window you used last, and the tabs the AI opens appear there.",
           "order": 7
         },
         "mongoster.mcp.readDocuments": {

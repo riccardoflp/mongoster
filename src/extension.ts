@@ -88,6 +88,7 @@ export function activate(context: vscode.ExtensionContext): void {
     history,
     mcp,
     vscode.commands.registerCommand('mongoster.mcp.setup', () => mcp.setup()),
+    vscode.commands.registerCommand('mongoster.mcp.changePort', () => mcp.changePort()),
     new Playgrounds(context, connections),
     vscode.window.createTreeView('mongoster.connections', { treeDataProvider: tree, showCollapseAll: true }),
     vscode.workspace.registerFileSystemProvider(DOC_SCHEME, documents, { isCaseSensitive: true }),
