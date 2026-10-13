@@ -243,7 +243,7 @@ npm run app            # builds and starts the app (npm run watch:app rebuilds o
 npm run package:app    # creates the installer for this system in release/
 ```
 
-An installer is built on the system it is for (a macOS disk image can only be made on macOS), so the `Desktop app` workflow (`.github/workflows/app.yml`) builds the three of them on GitHub Actions: on every pull request and on demand they are kept as artifacts of the run, and on a `v*` tag they are attached to the release of that tag. The macOS and Windows builds are not signed with a certificate yet: the systems warn about it the first time the app is opened.
+An installer is built on the system it is for (a macOS disk image can only be made on macOS), so the `Build` workflow (`.github/workflows/build.yml`) builds the three of them on GitHub Actions, together with the extension's `.vsix`: on every pull request and on demand they are kept as artifacts of the run, and on a `v*` tag they are attached to the release of that tag. The extension is published to the Marketplace by hand. The macOS and Windows builds are not signed with a certificate yet: the systems warn about it the first time the app is opened.
 
 `npm run typecheck` checks the code twice: against VS Code's API and against the app's implementation of it.
 

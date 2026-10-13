@@ -1,6 +1,6 @@
-# Builds the desktop app's installers on the three systems. Each one is built on its own:
-# a macOS disk image can only be made on macOS.
-name: Desktop app
+# Builds the extension's package and the desktop app's installers. Each installer is built on its own
+# system: a macOS disk image can only be made on macOS.
+name: Build
 
 on:
   push:
@@ -12,12 +12,35 @@ permissions:
   contents: read
 
 concurrency:
-  group: app-${{ github.ref }}
+  group: build-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # The app's packager downloads the Electron it packages: the one of npm is only for `npm run app`.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+
 jobs:
-  build:
-    name: ${{ matrix.name }}
+  extension:
+    name: Extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # Only packaged: publishing to the Marketplace is done by hand.
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mongoster-Extension
+          path: '*.vsix'
+          if-no-files-found: error
+
+  app:
+    name: App (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -29,9 +52,6 @@ jobs:
             os: macos-latest
           - name: Linux
             os: ubuntu-latest
-    env:
-      # The packager downloads the Electron it packages: the one of npm is only for `npm run app`.
-      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -39,7 +59,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run typecheck
       # Never published from here: the release job below attaches the files.
       - run: npm run package:app -- --publish never
       - uses: actions/upload-artifact@v4
@@ -51,11 +70,11 @@ jobs:
             release/*.AppImage
           if-no-files-found: error
 
-  # On a version tag, the installers are attached to its release (a draft is created if there is none).
+  # On a version tag, the files are attached to its release (a draft is created if there is none).
   release:
     name: Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [extension, app]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -66,7 +85,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: installers
+          path: files
           merge-multiple: true
       - run: gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --draft --verify-tag --title "$TAG"
-      - run: gh release upload "$TAG" installers/* --clobber
+      - run: gh release upload "$TAG" files/* --clobber
