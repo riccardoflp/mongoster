@@ -1,0 +1,40 @@
+# The desktop app: the same code as the extension, in its own window (see src/standalone).
+appId: dev.mongoster.app
+productName: Mongoster
+copyright: Copyright © Riccardo Filippozzi
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+directories:
+  output: release
+  buildResources: build
+
+# Everything is bundled by esbuild: no node_modules are shipped.
+files:
+  - dist/app/**
+  - dist/*.js
+  - media/**
+  - package.json
+  - "!dist/extension.js"
+  - "!**/*.map"
+  - "!node_modules"
+extraMetadata:
+  main: dist/app/main.js
+npmRebuild: false
+
+win:
+  target: nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  # No Apple certificate yet: an ad-hoc signature, without which the app doesn't start on Apple silicon.
+  # With a Developer ID certificate (CSC_LINK, CSC_KEY_PASSWORD), remove these two lines.
+  identity: "-"
+  hardenedRuntime: false
+linux:
+  category: Development
+  target: AppImage

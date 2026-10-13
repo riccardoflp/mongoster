@@ -4,6 +4,8 @@ A VS Code extension for working with MongoDB: open collections in a table, write
 
 It works with MongoDB 4.2 or later (standalone, replica set, sharded cluster, Atlas): older servers are refused by the MongoDB driver it uses.
 
+Mongoster also runs without VS Code, as a [desktop app](#desktop-app) with the same features.
+
 ## Features
 
 - **Connections** in the sidebar (leaf icon): connection → database → collections. Connection strings are stored in VS Code's SecretStorage.
@@ -205,6 +207,19 @@ It works with MongoDB 4.2 or later (standalone, replica set, sharded cluster, At
 - **Views** are read-only, like the collections of read-only connections (`view` / `read-only` badge next to the name).
 - `Ctrl+C` on a selected cell copies its value.
 
+## Desktop app
+
+The same code also runs as a desktop app (Electron) for Windows, macOS and Linux, for those who don't use VS Code. Everything described above works the same way; what VS Code provides is replaced by the app:
+
+- **Window**: the connections in the side bar (`Ctrl+B` hides it), tabs on two sides (a tab's menu has `Move to the Other Side`; documents, playground results and what the extension opens "beside" go to the second one), `Ctrl+PageUp` / `Ctrl+PageDown` to switch tab, `Ctrl+W` to close it.
+- **Commands**: the same context menus on the tree and buttons in its title, the menu bar, and the Command Palette (`Ctrl+Shift+P`).
+- **Editor**: documents as JSON, playgrounds, view definitions, validation rules and generated code open in the editor of VS Code (Monaco), with `Ctrl+S` to save, the playground's CodeLens, `Ctrl+Enter` and autocomplete. A new playground is saved as a `.mongodb.js` file wherever you like; `File › Open File…` (`Ctrl+O`) opens it again, with the connection it had.
+- **Settings** (`Ctrl+,`): the `mongoster.*` settings in a tab, plus the color theme (`View › Theme`: dark, light or the system's).
+- **Storage**: connections, history and settings are kept in the app's own folder (`%APPDATA%\Mongoster`, `~/Library/Application Support/Mongoster`, `~/.config/Mongoster`), and connection strings, passwords and the MCP token are encrypted with the system's keychain. The app and the extension don't share their connections.
+- **AI assistants (MCP)**: the MCP server works in the app too, with the same setup command (`Tools` menu). Only the automatic discovery by GitHub Copilot needs the extension. The app and VS Code have their own access tokens and the same default port: the first one started gets it, and `Change MCP Server Port…` gives the other one its own.
+
+To run it from the sources or build the installers, see [Development](#development).
+
 ## Development
 
 ```bash
@@ -221,9 +236,21 @@ npm run package    # creates mongoster-<version>.vsix
 code --install-extension mongoster-0.2.0.vsix
 ```
 
+The desktop app:
+
+```bash
+npm run app            # builds and starts the app (npm run watch:app rebuilds on changes)
+npm run package:app    # creates the installer for this system in release/
+```
+
+An installer is built on the system it is for (a macOS disk image can only be made on macOS), so the `Desktop app` workflow (`.github/workflows/app.yml`) builds the three of them on GitHub Actions: on every pull request and on demand they are kept as artifacts of the run, and on a `v*` tag they are attached to the release of that tag. The macOS and Windows builds are not signed with a certificate yet: the systems warn about it the first time the app is opened.
+
+`npm run typecheck` checks the code twice: against VS Code's API and against the app's implementation of it.
+
 ## Structure
 
 - `src/extension.ts` – activation and commands
+- `src/standalone/` – the desktop app. The extension's code runs unchanged in Electron's main process: `vscode/` implements the part of VS Code's API that Mongoster uses (the app's build resolves `import 'vscode'` to it) and reads menus, commands, keybindings and settings from the `contributes` of `package.json`; `main.ts` is the entry point (window, menu bar, the `mongoster-app://` protocol that serves the window and the webviews); `shell/` is the window (tree, tabs, Monaco editors, quick picks, notifications, settings); `protocol.ts` has the messages between the two; `theme.ts` the dark and light colors. `electron-builder.yml` and `build/` are for the installers
 - `src/themeColors.ts`, `src/shared/tokenColors.ts`, `src/webview/tokenColors.ts` – syntax colors of the active theme (its file, its includes and `editor.tokenColorCustomizations`) sent to the webviews
 - `src/connections.ts` – saved connections and the `MongoClient` cache
 - `src/mcpServer.ts`, `src/mcpTools.ts`, `src/shared/mcp.ts` – MCP server for AI assistants: HTTP on `127.0.0.1` with a bearer token, JSON-RPC, the read-only tools, the VS Code provider for Copilot

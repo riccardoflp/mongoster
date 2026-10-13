@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "paths": { "vscode": ["./src/standalone/vscode/index.ts"] }
+  }
+}

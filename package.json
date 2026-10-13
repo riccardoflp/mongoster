@@ -4,6 +4,7 @@
   "description": "MongoDB client for VS Code: browse collections in a table, query and aggregate, edit documents, analyze schemas, indexes and relations, monitor the server.",
   "version": "0.2.0",
   "publisher": "RiccardoFilippozzi",
+  "author": "Riccardo Filippozzi",
   "repository": "https://github.com/riccardoflp/mongoster",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -869,8 +870,12 @@
   "scripts": {
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
-    "typecheck": "tsc --noEmit",
-    "package": "node esbuild.mjs --production && vsce package --no-dependencies"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.standalone.json",
+    "package": "node esbuild.mjs --production && vsce package --no-dependencies",
+    "build:app": "node esbuild.mjs --app",
+    "watch:app": "node esbuild.mjs --app --watch",
+    "app": "node esbuild.mjs --app && electron dist/app/main.js",
+    "package:app": "node esbuild.mjs --app --production && electron-builder"
   },
   "dependencies": {
     "acorn": "^8.19.0",
@@ -883,8 +888,12 @@
     "@types/node": "^20.0.0",
     "@types/ssh2": "^1.15.6",
     "@types/vscode": "^1.90.0",
+    "@vscode/codicons": "^0.0.46-24",
     "@vscode/vsce": "^3.2.0",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.24.0",
+    "monaco-editor": "^0.57.0",
     "typescript": "^5.6.0"
   }
 }

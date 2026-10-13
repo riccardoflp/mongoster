@@ -8,6 +8,16 @@
       "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
       "outFiles": ["${workspaceFolder}/dist/**/*.js"],
       "preLaunchTask": "npm: build"
+    },
+    {
+      "name": "Run Mongoster (desktop app)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron",
+      "windows": { "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron.cmd" },
+      "args": ["dist/app/main.js"],
+      "outFiles": ["${workspaceFolder}/dist/app/**/*.js"],
+      "preLaunchTask": "npm: build:app"
     }
   ]
 }

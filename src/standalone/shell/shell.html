@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: mongoster-app:; frame-src mongoster-app:; worker-src 'self' blob:; connect-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mongoster</title>
+  <link rel="stylesheet" href="shell.css">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <header class="view-header">
+        <span id="view-title"></span>
+        <div id="view-actions" class="view-actions"></div>
+      </header>
+      <div id="tree" role="tree" tabindex="0" aria-label="Connections"></div>
+      <div id="welcome" hidden></div>
+    </aside>
+    <div id="sidebar-sash" class="sash" aria-hidden="true"></div>
+    <main id="editors" class="empty">
+      <div class="group" id="group-1">
+        <div class="tabs" id="tabs-1" role="tablist"></div>
+        <div class="group-actions" id="actions-1"></div>
+      </div>
+      <div class="group" id="group-2">
+        <div class="tabs" id="tabs-2" role="tablist"></div>
+        <div class="group-actions" id="actions-2"></div>
+      </div>
+      <div id="contents"></div>
+      <div id="split-sash" class="sash" aria-hidden="true"></div>
+      <div id="watermark">
+        <img src="mongoster-app://res/media/icon.svg" alt="">
+        <dl>
+          <dt>Open a collection</dt><dd>click it in the side bar</dd>
+          <dt>Show all commands</dt><dd><kbd class="mod">Ctrl</kbd><kbd>Shift</kbd><kbd>P</kbd></dd>
+          <dt>New playground</dt><dd><kbd class="mod">Ctrl</kbd><kbd>N</kbd></dd>
+          <dt>Settings</dt><dd><kbd class="mod">Ctrl</kbd><kbd>,</kbd></dd>
+        </dl>
+      </div>
+    </main>
+  </div>
+  <footer id="statusbar">
+    <div id="status-left"></div>
+    <div id="status-right"></div>
+  </footer>
+  <div id="notifications" aria-live="polite"></div>
+  <div id="quick-input" hidden></div>
+  <div id="modal" hidden></div>
+  <script src="shell.js"></script>
+</body>
+</html>
