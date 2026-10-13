@@ -271,6 +271,12 @@
         "icon": "$(type-hierarchy)"
       },
       {
+        "command": "mongoster.openIndexes",
+        "title": "Indexes",
+        "category": "Mongoster",
+        "icon": "$(list-tree)"
+      },
+      {
         "command": "mongoster.addConnectionWithOptions",
         "title": "Add Connection with TLS / SSH…",
         "category": "Mongoster",
@@ -539,6 +545,11 @@
           "group": "1_open@3"
         },
         {
+          "command": "mongoster.openIndexes",
+          "when": "view == mongoster.connections && viewItem =~ /^collection/",
+          "group": "1_open@4"
+        },
+        {
           "command": "mongoster.uploadGridFS",
           "when": "view == mongoster.connections && viewItem =~ /^(database|bucket)(?!.*readonly)/",
           "group": "2_transfer@5"
@@ -739,6 +750,10 @@
         },
         {
           "command": "mongoster.relationDiagram",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.openIndexes",
           "when": "false"
         },
         {

@@ -5,6 +5,7 @@ import type { PipelineStage } from '../shared/pipeline';
 import { HistoryPopover } from './history';
 import { PipelineEditor } from './pipeline';
 import { IndexesView } from './indexes';
+import { IndexDialog } from './indexDialog';
 import { ExplainView } from './explainView';
 import { BulkDialog, BulkOp } from './bulk';
 import { CodeDialog, toCodeQuery } from './codeDialog';
@@ -296,6 +297,10 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       collectionFields = m.fields;
       fieldsState = 'loaded';
       completer.refresh();
+      indexDialog.refreshFields();
+      break;
+    case 'showMode':
+      if (state.mode !== m.mode) setMode(m.mode);
       break;
     case 'history':
       history.update(m.recent, m.saved);
@@ -305,7 +310,7 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       if (m.explain) explain();
       break;
     case 'indexes':
-      indexesView.render(m.indexes, m.error);
+      indexesView.render(m.indexes, m.totals, m.error);
       break;
     case 'schema':
       if (m.requestId !== schemaRequest) break;
@@ -325,7 +330,7 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       break;
     }
     case 'indexResult':
-      pendingIndex.get(m.requestId)?.(m.ok ? undefined : m.message ?? 'Failed');
+      pendingIndex.get(m.requestId)?.({ ok: m.ok, message: m.message });
       pendingIndex.delete(m.requestId);
       break;
     case 'bulkCount':
@@ -1124,10 +1129,11 @@ filterInput.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (explainView.isOpen || bulk.isOpen || codeDialog.isOpen) {
+  if (explainView.isOpen || bulk.isOpen || codeDialog.isOpen || indexDialog.isOpen) {
     if (e.key === 'Escape') {
       if (explainView.isOpen) explainView.close();
       else if (codeDialog.isOpen) codeDialog.close();
+      else if (indexDialog.isOpen) indexDialog.close();
       else bulk.close();
       e.preventDefault();
     }
@@ -1252,7 +1258,8 @@ completeWith(sortInput, 'sort');
 completeWith(projectionInput, 'project');
 completeWith(el<HTMLTextAreaElement>('pipelineText'), 'pipeline');
 completeWith(el<HTMLTextAreaElement>('bulkUpdate'), 'update');
-completeWith(el<HTMLInputElement>('indexKeys'), 'index');
+completeWith(el<HTMLTextAreaElement>('indexKeys'), 'index');
+completeWith(el<HTMLTextAreaElement>('indexPartialFilter'), 'filter');
 
 const pipeline = new PipelineEditor({
   run: () => run(true),
@@ -1387,17 +1394,34 @@ chartSourceSelect.addEventListener('change', () => {
 // ---------------------------------------------------------------------------
 // Indexes & explain
 
-const pendingIndex = new Map<number, (error: string | undefined) => void>();
+const pendingIndex = new Map<number, (result: { ok: boolean; message?: string }) => void>();
 let indexRequest = 0;
 const indexesView = new IndexesView({
-  create: (keys, options) =>
-    new Promise((resolve) => {
-      const requestId = ++indexRequest;
-      pendingIndex.set(requestId, resolve);
-      vscode.postMessage({ type: 'createIndex', requestId, keys, options });
-    }),
+  reload: () => vscode.postMessage({ type: 'loadIndexes' }),
+  edit: (spec, original) => indexDialog.open(spec, original),
   drop: (name) => vscode.postMessage({ type: 'dropIndex', name }),
   hide: (name, hidden) => vscode.postMessage({ type: 'hideIndex', name, hidden }),
+  copy: (text) => vscode.postMessage({ type: 'copy', text }),
+  jsonTree: (value) => jsonNode(null, value, true, 0),
+  collection: () => collectionName,
+  active: () => state.mode === 'indexes',
+});
+const indexDialog = new IndexDialog({
+  save: (original, keys, options) =>
+    new Promise<{ ok: boolean; message?: string }>((resolve) => {
+      const requestId = ++indexRequest;
+      pendingIndex.set(requestId, resolve);
+      // While the index is built, the tab shows how far the build is.
+      indexesView.notify(null);
+      indexesView.track(1);
+      vscode.postMessage({ type: 'saveIndex', requestId, original, keys, options });
+    }).finally(() => indexesView.track(-1)),
+  notify: (message, error) => indexesView.notify(message, error),
+  copy: (text) => vscode.postMessage({ type: 'copy', text }),
+  fields: () => fieldsOfCollection().map((h) => h.path),
+  indexes: () => indexesView.list,
+  documents: () => indexesView.documents,
+  collection: () => collectionName,
 });
 
 let explainRequest = 0;
@@ -1405,7 +1429,7 @@ const explainView = new ExplainView({
   jsonTree: (value) => jsonNode(null, value, true, 0),
   suggest: (keys) => {
     setMode('indexes');
-    indexesView.prefill(keys);
+    indexDialog.open({ keys, options: {} });
   },
 });
 

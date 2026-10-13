@@ -1089,27 +1089,13 @@ body.mode-indexes .not-indexes {
   gap: 8px;
 }
 
-.index-create {
+.index-head {
   align-items: center;
 }
 
-.index-create label {
-  padding-top: 0;
-}
-
-.index-create label:not(:first-child) {
-  width: auto;
-  margin-left: 6px;
-}
-
-#indexKeys {
-  flex: 1;
-  min-width: 140px;
-}
-
-#indexOptions {
-  flex: 2;
-  min-width: 160px;
+.index-summary {
+  color: var(--muted);
+  font-size: 0.92em;
 }
 
 #indexMessage.error,
@@ -1134,9 +1120,24 @@ body.mode-indexes .not-indexes {
   cursor: default;
 }
 
+.index-table th.sortable {
+  cursor: pointer;
+}
+
 .index-table td {
   cursor: default;
   vertical-align: middle;
+}
+
+/* One body per index: hovering highlights its row and its details, not the whole table. */
+.index-table .ix-row td {
+  cursor: pointer;
+}
+
+.index-table .ix-toggle {
+  padding-right: 2px;
+  border-right: none;
+  color: var(--muted);
 }
 
 .index-table .ix-name {
@@ -1152,6 +1153,19 @@ body.mode-indexes .not-indexes {
   color: var(--c-number);
 }
 
+/* The size of the index compared with the largest one. */
+.index-table .ix-bar {
+  height: 2px;
+  margin: 2px 0 0 auto;
+  background: var(--accent);
+  opacity: 0.7;
+}
+
+.index-table .ix-rate {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
 .index-table .ix-unused {
   color: var(--vscode-editorWarning-foreground, #cca700);
 }
@@ -1161,9 +1175,10 @@ body.mode-indexes .not-indexes {
 }
 
 /* A table cell, not a flex box: an empty one (the _id_ index) still takes the row's height. */
-.index-table .ix-actions {
+.index-table .ix-row .ix-actions {
   white-space: nowrap;
   border-right: none;
+  cursor: default;
 }
 
 .index-table .ix-actions button {
@@ -1172,6 +1187,216 @@ body.mode-indexes .not-indexes {
 
 .index-table .ix-actions button + button {
   margin-left: 4px;
+}
+
+.index-table .ix-detail td {
+  max-width: none;
+  padding: 8px 12px 10px 28px;
+  white-space: normal;
+  overflow: visible;
+  border-right: none;
+  user-select: text;
+}
+
+.ix-detail-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+}
+
+.ix-detail-section {
+  min-width: 0;
+}
+
+.ix-detail-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-family: var(--vscode-font-family);
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ix-detail-title button {
+  padding: 0 8px;
+}
+
+.ix-command + .ix-detail-title {
+  margin-top: 10px;
+}
+
+.ix-command,
+.index-preview {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--vscode-editor-font-size, 13px);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.ix-command {
+  color: var(--c-key);
+}
+
+.ix-host {
+  line-height: 1.5;
+}
+
+/* ---------- index dialog ---------- */
+
+.index-box {
+  width: min(720px, 94vw);
+}
+
+.index-body {
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 4px;
+}
+
+#indexModal.busy .index-form,
+#indexModal.busy #indexText {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.index-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.index-section {
+  color: var(--muted);
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.index-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.index-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.index-field input:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.index-field select {
+  flex: none;
+  align-self: stretch;
+  width: 140px;
+}
+
+.index-field .index-weight {
+  flex: none;
+  width: 80px;
+}
+
+.index-options {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.index-options > label {
+  color: var(--muted);
+}
+
+#indexText > label {
+  align-self: start;
+  padding-top: 5px;
+}
+
+.index-options > label.index-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+}
+
+.index-options input[type='checkbox'] {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.index-options textarea {
+  resize: vertical;
+  min-height: 28px;
+  line-height: 1.4;
+}
+
+.index-options > textarea,
+.index-options > input {
+  min-width: 0;
+}
+
+.index-hint {
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.index-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+#indexTtlValue {
+  width: 80px;
+}
+
+#indexTtlUnit {
+  align-self: stretch;
+}
+
+.index-form:not(.has-text) .text-only {
+  display: none;
+}
+
+.index-preview {
+  flex: none;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--c-key);
+}
+
+.index-preview.no-command::before {
+  content: 'The command is shown once the index has its fields.';
+  color: var(--muted);
+  font-family: var(--vscode-font-family);
+}
+
+.index-plan {
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.index-plan.warn {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+#indexError {
+  margin: 0;
 }
 
 .badge {

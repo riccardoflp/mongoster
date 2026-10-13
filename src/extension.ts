@@ -327,6 +327,10 @@ export function activate(context: vscode.ExtensionContext): void {
       CollectionPanel.show(context, connections, documents, collectionTarget(node)),
     ),
 
+    vscode.commands.registerCommand('mongoster.openIndexes', (node?: CollectionNode) => {
+      if (node && !node.isView) CollectionPanel.show(context, connections, documents, collectionTarget(node), undefined, 'indexes');
+    }),
+
     /** Internal: shows a query in a collection's tab (from the server monitor), and explains it if asked. */
     vscode.commands.registerCommand('mongoster.openQuery', async (args: OpenQueryArgs) => {
       const info = connections.get(args.connectionId);

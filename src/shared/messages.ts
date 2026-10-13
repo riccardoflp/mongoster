@@ -49,20 +49,27 @@ export type QuerySource =
 
 export interface IndexInfo {
   name: string;
-  /** Key pattern, relaxed EJSON. */
+  /** Key pattern as listIndexes reports it, relaxed EJSON. */
   key: Record<string, unknown>;
-  unique?: boolean;
-  sparse?: boolean;
-  hidden?: boolean;
-  expireAfterSeconds?: number;
-  partialFilterExpression?: unknown;
-  collation?: string;
+  /** The rest of what listIndexes reports (v, unique, expireAfterSeconds, collation, …), relaxed EJSON. */
+  options: Record<string, unknown>;
   /** Bytes on disk, when the server reports it. */
   size?: number;
   /** Uses since `since` (server restart or index creation), from $indexStats. */
   ops?: number;
   since?: string;
+  /** Uses on each member, when $indexStats reports more than one (a sharded cluster). */
+  hosts?: { host: string; shard?: string; ops: number; since?: string }[];
   building?: boolean;
+  /** How far the current phase of the build is, when currentOp tells. */
+  progress?: { done: number; total: number; phase?: string };
+}
+
+/** Sizes of the collection, to compare its indexes with. */
+export interface IndexTotals {
+  documents?: number;
+  dataSize?: number;
+  indexSize?: number;
 }
 
 /** A find query, or an aggregation when `pipeline` is set (filter/sort/projection are then empty). */
@@ -108,7 +115,8 @@ export type WebviewMessage =
   | UpdateFieldRequest
   | { type: 'explain'; requestId: number; source: QuerySource }
   | { type: 'loadIndexes' }
-  | { type: 'createIndex'; requestId: number; keys: string; options: string }
+  /** Creates an index or, with `original`, changes that one; keys and options in mongosh syntax. */
+  | { type: 'saveIndex'; requestId: number; original?: string; keys: string; options: string }
   | { type: 'dropIndex'; name: string }
   | { type: 'hideIndex'; name: string; hidden: boolean }
   | { type: 'bulkCount'; requestId: number; filter: string }
@@ -142,6 +150,8 @@ export type HostMessage =
       expanded: string[];
       layout: ColumnLayout;
     }
+  /** Shows a tab of the panel, e.g. Indexes when opened from the tree. */
+  | { type: 'showMode'; mode: 'indexes' }
   | { type: 'result'; requestId: number; docs: unknown[]; count: number | null; durationMs: number; note?: string }
   | { type: 'error'; requestId: number; message: string; stage?: number }
   | { type: 'refresh' }
@@ -157,7 +167,8 @@ export type HostMessage =
       suggestion?: Record<string, 1 | -1> | null;
       error?: string;
     }
-  | { type: 'indexes'; indexes: IndexInfo[]; error?: string }
+  | { type: 'indexes'; indexes: IndexInfo[]; totals?: IndexTotals; error?: string }
+  /** `ok: false` without a message: the confirmation was cancelled. */
   | { type: 'indexResult'; requestId: number; ok: boolean; message?: string }
   | { type: 'bulkCount'; requestId: number; count?: number; error?: string }
   | { type: 'fields'; fields: FieldHint[] }

@@ -12,7 +12,7 @@ export interface ExplainResult {
 export interface ExplainOptions {
   /** Renders the raw explain output (the JSON tree of the document dialog). */
   jsonTree(value: unknown): HTMLElement;
-  /** "Create this index": switch to the Indexes tab with the form filled. */
+  /** "Create this index": switch to the Indexes tab with the index dialog filled. */
   suggest(keys: Record<string, 1 | -1>): void;
 }
 
@@ -112,7 +112,7 @@ export class ExplainView {
       const create = document.createElement('button');
       create.className = 'secondary editable';
       create.textContent = 'Create…';
-      create.title = 'Open the Indexes tab with this index filled in';
+      create.title = 'Open the Indexes tab with this index ready to create';
       create.addEventListener('click', () => {
         this.close();
         this.opts.suggest(r.suggestion!);

@@ -11,12 +11,13 @@ import { PipelineStage, parseStageBody } from './shared/pipeline';
 import { StageError, buildPipeline, fromRelaxed, toBson, toUpdate } from './queries';
 import { exportDocuments } from './transfer';
 import { UndoHistory } from './history';
-import type { AggregateRequest, BulkRequest, HostMessage, IndexInfo, QueryRequest, QuerySource, QueryText, UpdateFieldRequest, WebviewMessage } from './shared/messages';
+import type { AggregateRequest, BulkRequest, HostMessage, QueryRequest, QuerySource, QueryText, UpdateFieldRequest, WebviewMessage } from './shared/messages';
 import { suggestIndex, summarizeExplain } from './shared/explain';
 import { analyzeSchema } from './shared/schema';
 import { ChartSpec, chartStages, normalizeSpec, specError } from './shared/chart';
 import { fieldHints } from './shared/complete';
 import { collectionNameError } from './manage';
+import { loadIndexes, saveIndex } from './indexes';
 import type { ColumnLayout } from './shared/columns';
 
 const { EJSON } = BSON;
@@ -65,18 +66,22 @@ export class CollectionPanel {
     target: CollectionTarget,
     /** A query to show instead of the last one. */
     initial?: { query: QueryText; explain: boolean },
+    /** A tab to show instead of the last one. */
+    mode?: 'indexes',
   ): void {
     const key = panelKey(target);
     const existing = CollectionPanel.panels.get(key);
     if (existing) {
       existing.panel.reveal();
       if (initial) existing.post({ type: 'loadQuery', ...initial });
+      if (mode) existing.post({ type: 'showMode', mode });
       return;
     }
     const panel = new CollectionPanel(context, connections, documents, target, () => {
       CollectionPanel.panels.delete(key);
     });
     panel.pending = initial;
+    panel.pendingMode = mode;
     CollectionPanel.panels.set(key, panel);
   }
 
@@ -108,6 +113,8 @@ export class CollectionPanel {
   private readonly history: QueryHistory;
   /** Query to load once the webview is ready. */
   private pending?: { query: QueryText; explain: boolean };
+  /** Tab to show once the webview is ready. */
+  private pendingMode?: 'indexes';
 
   private constructor(
     private readonly context: vscode.ExtensionContext,
@@ -164,7 +171,8 @@ export class CollectionPanel {
         this.postInit();
         this.postHistory();
         if (this.pending) this.post({ type: 'loadQuery', ...this.pending });
-        this.pending = undefined;
+        if (this.pendingMode) this.post({ type: 'showMode', mode: this.pendingMode });
+        this.pending = this.pendingMode = undefined;
         break;
       case 'saveQuery': {
         const name = await vscode.window.showInputBox({
@@ -273,8 +281,8 @@ export class CollectionPanel {
       case 'loadIndexes':
         await this.postIndexes();
         break;
-      case 'createIndex':
-        await this.createIndex(m.requestId, m.keys, m.options);
+      case 'saveIndex':
+        await this.saveIndex(m.requestId, m.original, m.keys, m.options);
         break;
       case 'dropIndex':
         if (this.refuseWrite()) return;
@@ -585,48 +593,19 @@ export class CollectionPanel {
 
   private async postIndexes(): Promise<void> {
     try {
-      const coll = await this.coll();
-      const list = await coll.listIndexes().toArray();
-      const stats = await coll
-        .aggregate<Document>([{ $indexStats: {} }])
-        .toArray()
-        .catch(() => [] as Document[]);
-      const sizes: Record<string, number> = await coll
-        .aggregate<Document>([{ $collStats: { storageStats: {} } }])
-        .toArray()
-        .then((r) => r[0]?.storageStats?.indexSizes ?? {})
-        .catch(() => ({}));
-      const indexes: IndexInfo[] = list.map((ix) => {
-        const stat = stats.find((s) => s.name === ix.name);
-        return {
-          name: String(ix.name),
-          key: relaxed(ix.key) as Record<string, unknown>,
-          unique: ix.unique || undefined,
-          sparse: ix.sparse || undefined,
-          hidden: ix.hidden || undefined,
-          expireAfterSeconds: ix.expireAfterSeconds,
-          partialFilterExpression: ix.partialFilterExpression ? relaxed(ix.partialFilterExpression) : undefined,
-          collation: ix.collation?.locale,
-          size: sizes[ix.name] !== undefined ? Number(sizes[ix.name]) : undefined,
-          ops: stat ? Number(stat.accesses?.ops) : undefined,
-          since: stat?.accesses?.since instanceof Date ? stat.accesses.since.toISOString() : undefined,
-          building: stat?.building || undefined,
-        };
-      });
-      this.post({ type: 'indexes', indexes });
+      this.post({ type: 'indexes', ...(await loadIndexes(await this.db(), await this.coll())) });
     } catch (err) {
       this.post({ type: 'indexes', indexes: [], error: errorMessage(err) });
     }
   }
 
-  private async createIndex(requestId: number, keysText: string, optionsText: string): Promise<void> {
+  private async saveIndex(requestId: number, original: string | undefined, keys: string, options: string): Promise<void> {
     try {
       if (this.target.view) throw new Error('Views have no indexes of their own.');
       if (this.target.locked) throw new Error(readOnlyMessage(this.target));
-      const keys = toBson(keysText, 'Keys');
-      if (!keys || !Object.keys(keys).length) throw new Error('Keys: enter the fields to index, e.g. { status: 1, age: -1 }');
-      const name = await (await this.coll()).createIndex(keys, toBson(optionsText, 'Options') ?? {});
-      this.post({ type: 'indexResult', requestId, ok: true, message: `Created index ${name}.` });
+      if (original === '_id_') throw new Error("The _id index can't be changed.");
+      const message = await saveIndex(await this.db(), await this.coll(), original, keys, options);
+      this.post({ type: 'indexResult', requestId, ok: message !== undefined, message });
     } catch (err) {
       this.post({ type: 'indexResult', requestId, ok: false, message: errorMessage(err) });
     }
@@ -886,12 +865,10 @@ export class CollectionPanel {
     </div>
   </section>
   <section class="indexes-only indexes-view" id="indexesView">
-    <div class="row index-create editable">
-      <label for="indexKeys">Keys</label>
-      <input id="indexKeys" spellcheck="false" placeholder="{ status: 1, createdAt: -1 }">
-      <label for="indexOptions">Options</label>
-      <input id="indexOptions" spellcheck="false" placeholder="{ unique: true, name: &quot;…&quot;, expireAfterSeconds: 3600, partialFilterExpression: { … } }">
-      <button id="createIndex" class="primary">Create</button>
+    <div class="row index-head">
+      <button id="newIndex" class="primary editable" title="Create an index on the collection">Create index…</button>
+      <button id="refreshIndexes" class="secondary" title="Read the indexes, their sizes and their usage again">Refresh</button>
+      <span id="indexSummary" class="index-summary"></span>
     </div>
     <div id="indexMessage" class="hidden"></div>
     <table id="indexTable" class="grid index-table"></table>
@@ -980,6 +957,69 @@ export class CollectionPanel {
       <div class="bulk-actions">
         <button id="bulkCancel" class="secondary">Cancel</button>
         <button id="bulkApply" class="primary" title="Ctrl+Enter">Update</button>
+      </div>
+    </div>
+  </div>
+  <div id="indexModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-box index-box">
+      <div class="modal-head">
+        <span id="indexTitle" class="doc-title">Create index</span>
+        <span class="spacer"></span>
+        <div class="mode" role="tablist" aria-label="Edit the index as">
+          <button id="indexModeForm" role="tab" aria-selected="true" title="Fields, types and the common options">Form</button>
+          <button id="indexModeText" role="tab" aria-selected="false" title="The keys and options as createIndex takes them">Text</button>
+        </div>
+        <button id="indexClose" class="icon" title="Close (Esc)">✕</button>
+      </div>
+      <div class="index-body">
+        <div id="indexForm" class="index-form">
+          <div class="index-section">Fields</div>
+          <div id="indexFields" class="index-fields"></div>
+          <div><button id="indexAddField" class="secondary" title="Add a field: a compound index follows the order of its fields">+ Field</button></div>
+          <datalist id="indexFieldList"></datalist>
+          <div class="index-section">Options</div>
+          <div class="index-options">
+            <label for="indexName">Name</label>
+            <input id="indexName" spellcheck="false">
+            <label class="index-check"><input id="indexUnique" type="checkbox"> Unique</label>
+            <span class="index-hint">No two documents can have the same value in the indexed fields.</span>
+            <label class="index-check"><input id="indexSparse" type="checkbox"> Sparse</label>
+            <span class="index-hint">Only documents that have the indexed fields are in the index.</span>
+            <label class="index-check"><input id="indexHidden" type="checkbox"> Hidden</label>
+            <span class="index-hint">Kept up to date, but not used by queries.</span>
+            <label class="index-check" title="On a single date field: the server deletes the documents when they expire"><input id="indexTtl" type="checkbox"> TTL</label>
+            <span class="index-inline">
+              <span class="index-hint">Documents are deleted</span>
+              <input id="indexTtlValue" type="number" min="0" aria-label="Time before the documents expire">
+              <select id="indexTtlUnit" aria-label="Unit"></select>
+              <span class="index-hint">after the date in the field.</span>
+            </span>
+            <label class="index-check" title="partialFilterExpression"><input id="indexPartial" type="checkbox"> Partial</label>
+            <textarea id="indexPartialFilter" rows="1" spellcheck="false" placeholder="{ status: &quot;active&quot; }  —  only the documents matching this filter are in the index" aria-label="Partial filter"></textarea>
+            <label class="index-check" title="Language rules for comparing strings: queries must ask for the same collation to use the index"><input id="indexCollation" type="checkbox"> Collation</label>
+            <input id="indexCollationValue" spellcheck="false" placeholder="{ locale: &quot;en&quot;, strength: 2 }" aria-label="Collation">
+            <label for="indexLanguage" class="text-only" title="default_language of a text index">Language</label>
+            <input id="indexLanguage" class="text-only" spellcheck="false" placeholder="english">
+            <label for="indexMore" title="Any other option of createIndex">More options</label>
+            <textarea id="indexMore" rows="1" spellcheck="false" placeholder="{ wildcardProjection: { … }, language_override: &quot;…&quot;, bits: 26, … }"></textarea>
+          </div>
+        </div>
+        <div id="indexText" class="index-options hidden">
+          <label for="indexKeys">Keys</label>
+          <textarea id="indexKeys" rows="3" spellcheck="false" placeholder="{ status: 1, createdAt: -1 }"></textarea>
+          <label for="indexOptions">Options</label>
+          <textarea id="indexOptions" rows="6" spellcheck="false" placeholder="{ unique: true, name: &quot;…&quot;, expireAfterSeconds: 3600, partialFilterExpression: { … } }"></textarea>
+        </div>
+        <div class="index-section">Command</div>
+        <pre id="indexPreview" class="index-preview"></pre>
+        <div id="indexPlan" class="index-plan hidden"></div>
+        <div id="indexError" class="error hidden"></div>
+      </div>
+      <div class="bulk-actions">
+        <button id="indexCopy" class="secondary" title="Copy the mongosh command that creates the index">Copy command</button>
+        <span class="spacer"></span>
+        <button id="indexCancel" class="secondary">Cancel</button>
+        <button id="indexSave" class="primary" title="Ctrl+Enter">Create index</button>
       </div>
     </div>
   </div>
