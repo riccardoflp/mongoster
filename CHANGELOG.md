@@ -7,6 +7,7 @@
 - Clicking an index shows its full definition, the command that creates it and the uses on each member of a sharded cluster. The list shows the size of each index compared with the largest, the uses per day, the totals, and can be sorted by name, size and usage.
 - An index being built is listed as `building` with its progress; the dialog can be closed while the build goes on.
 - An option of `createIndex` that MongoDB doesn't know (e.g. a typo) is now refused instead of being silently ignored.
+- Wildcard indexes: a wildcard written wrong (`address.*` or `**` instead of `address.$**` or `$**`, which MongoDB would quietly take as a field with that very name) and what a wildcard index can't have (`unique`, `sparse`, TTL, a type, a `wildcardProjection` missing or out of place) are pointed out in the dialog before saving. An existing index on such a field is marked `not a wildcard` in the list.
 - `Indexes` in the context menu of a collection opens its tab on the indexes.
 - MCP server with several VS Code windows open: the tabs the AI opens appear in the window you used last, instead of the first one opened. The port follows the focus, and is taken over within a few seconds when the window that had it is closed.
 - `Mongoster: Change MCP Server Port…`, also in the setup command. When another program is using the port, a warning says so and `Change Port` suggests a free one, instead of only a line in the log.

@@ -124,6 +124,54 @@ export function indexCommand(collection: string, spec: IndexSpec): string {
   return `db.getCollection(${JSON.stringify(collection)}).createIndex(${args.join(', ')})`;
 }
 
+/** A wildcard key: every field (`$**`) or every field below a path (`path.$**`). */
+export function isWildcard(field: string): boolean {
+  const path = field === '$**' ? '' : field.endsWith('.$**') ? field.slice(0, -4) : null;
+  return path !== null && !path.includes('*') && !path.split('.').some((part) => part.startsWith('$'));
+}
+
+/**
+ * Keys that look like a wildcard but aren't one, e.g. `address.*` or `**`: MongoDB takes those
+ * without a `$` as fields with that very name, and builds an index that matches nothing.
+ */
+export function misspelledWildcards(keys: Record<string, unknown>): string[] {
+  return Object.keys(keys).filter((field) => field.includes('*') && !isWildcard(field));
+}
+
+/**
+ * What is wrong, or probably not meant, in the wildcards of a definition. Only warnings: the
+ * server has the last word, and what it accepts depends on its version.
+ */
+export function wildcardWarnings(spec: IndexSpec): string[] {
+  const { keys, options } = normalizeSpec(spec);
+  const warnings: string[] = [];
+  for (const field of misspelledWildcards(keys)) {
+    warnings.push(
+      field.split('.').some((part) => part.startsWith('$'))
+        ? `${field} isn't a wildcard: write $** for every field or path.$** for every field below a path, with nothing after it.`
+        : `${field} isn't a wildcard: MongoDB would index a field with that very name. Write $** for every field, or path.$** for every field below a path.`,
+    );
+  }
+  const wildcards = Object.keys(keys).filter(isWildcard);
+  if (wildcards.length > 1) warnings.push('An index can have only one wildcard field.');
+  // { "$**": "text" } is a text index on every string field, with the rules of text indexes.
+  const [wildcard] = wildcards.filter((field) => keys[field] !== 'text');
+  const projection = options.wildcardProjection !== undefined;
+  if (!wildcard) {
+    if (projection && !wildcards.length) warnings.push('wildcardProjection is only for wildcard indexes.');
+    return warnings;
+  }
+  if (keys[wildcard] !== 1 && keys[wildcard] !== -1) warnings.push(`${wildcard}: a wildcard field is ascending or descending (1 or -1).`);
+  const refused = [options.unique === true && 'unique', options.sparse === true && 'sparse', options.expireAfterSeconds !== undefined && 'TTL'].filter((o): o is string => !!o);
+  if (refused.length) warnings.push(`A wildcard index can't be ${refused.join(' or ')}.`);
+  if (projection && wildcard !== '$**') warnings.push(`wildcardProjection only goes with $**: ${wildcard} already says which fields are indexed.`);
+  const others = Object.keys(keys).filter((field) => field !== wildcard);
+  if (!projection && wildcard === '$**' && others.length) {
+    warnings.push(`A compound index with $** needs a wildcardProjection that leaves out its other fields, e.g. wildcardProjection: { ${others[0]}: 0 }.`);
+  }
+  return warnings;
+}
+
 const TTL_UNITS: [string, number][] = [
   ['days', 86400],
   ['hours', 3600],

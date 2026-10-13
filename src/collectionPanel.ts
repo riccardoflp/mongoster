@@ -1012,6 +1012,7 @@ export class CollectionPanel {
         </div>
         <div class="index-section">Command</div>
         <pre id="indexPreview" class="index-preview"></pre>
+        <div id="indexWarnings" class="index-plan warn hidden"></div>
         <div id="indexPlan" class="index-plan hidden"></div>
         <div id="indexError" class="error hidden"></div>
       </div>

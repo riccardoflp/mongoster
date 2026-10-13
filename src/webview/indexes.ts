@@ -2,7 +2,7 @@
 // full definition, and the actions create, edit, duplicate, hide and drop them.
 import type { IndexInfo, IndexTotals } from '../shared/messages';
 import { toShell } from '../shared/query';
-import { IndexSpec, KEY_TYPES, editableSpec, indexCommand } from '../shared/indexes';
+import { IndexSpec, KEY_TYPES, editableSpec, indexCommand, isWildcard, misspelledWildcards } from '../shared/indexes';
 import { relativeTime } from './history';
 
 export interface IndexesCallbacks {
@@ -225,7 +225,11 @@ export class IndexesView {
     };
     const types = Object.values(spec.keys).filter((v): v is string => typeof v === 'string');
     for (const t of new Set(types)) badge(t, KEY_TYPES.includes(t) ? '' : 'Index type');
-    if (Object.keys(spec.keys).some((k) => k === '$**' || k.endsWith('.$**'))) badge('wildcard', 'Indexes every field below the path');
+    if (Object.keys(spec.keys).some(isWildcard)) badge('wildcard', 'Indexes every field, or every field below the path');
+    const misspelled = misspelledWildcards(spec.keys);
+    if (misspelled.length) {
+      badge('not a wildcard', `${misspelled.join(', ')}: the index is on a field with that very name, not on every field. A wildcard is written $** or path.$**`, 'warn');
+    }
     if (o.unique) badge('unique', 'No two documents can have the same value');
     if (o.sparse) badge('sparse', 'Only documents that have the indexed fields');
     if (typeof o.expireAfterSeconds === 'number') badge(`TTL ${formatSeconds(o.expireAfterSeconds)}`, 'Documents are deleted this long after the indexed date');

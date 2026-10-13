@@ -3,7 +3,7 @@
 // and, for an existing index, what the change takes are shown while editing.
 import type { IndexInfo } from '../shared/messages';
 import { isPlainObject, parseQuery, prettyShell, toShell } from '../shared/query';
-import { IndexSpec, KEY_TYPES, TTL_UNIT_NAMES, defaultIndexName, editableSpec, indexCommand, indexName, normalizeSpec, planIndexChange, ttlParts, ttlSeconds } from '../shared/indexes';
+import { IndexSpec, KEY_TYPES, TTL_UNIT_NAMES, defaultIndexName, editableSpec, indexCommand, indexName, normalizeSpec, planIndexChange, ttlParts, ttlSeconds, wildcardWarnings } from '../shared/indexes';
 
 export interface IndexDialogCallbacks {
   /** Creates the index or changes `original`; `ok: false` without a message means cancelled. */
@@ -58,6 +58,7 @@ export class IndexDialog {
   private readonly keys = el<HTMLTextAreaElement>('indexKeys');
   private readonly options = el<HTMLTextAreaElement>('indexOptions');
   private readonly preview = el('indexPreview');
+  private readonly warnings = el('indexWarnings');
   private readonly plan = el('indexPlan');
   private readonly error = el('indexError');
   private readonly saveButton = el<HTMLButtonElement>('indexSave');
@@ -343,6 +344,17 @@ export class IndexDialog {
     this.preview.textContent = spec ? indexCommand(this.cb.collection(), spec) : '';
     this.preview.classList.toggle('no-command', !spec);
     this.copyButton.disabled = !spec;
+
+    // What the server would refuse, or build differently from what was meant: said before saving.
+    const warnings = spec ? wildcardWarnings(spec) : [];
+    this.warnings.replaceChildren(
+      ...warnings.map((w) => {
+        const line = document.createElement('div');
+        line.textContent = w;
+        return line;
+      }),
+    );
+    this.warnings.classList.toggle('hidden', !warnings.length);
 
     let note = '';
     let warn = false;
