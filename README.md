@@ -2,6 +2,8 @@
 
 A VS Code extension for working with MongoDB: open collections in a table, write queries and aggregations, edit documents, analyze schemas, indexes and relations, and keep an eye on the server. Filters can also be built by dragging cells and columns.
 
+It works with MongoDB 4.2 or later (standalone, replica set, sharded cluster, Atlas): older servers are refused by the MongoDB driver it uses.
+
 ## Features
 
 - **Connections** in the sidebar (leaf icon): connection → database → collections. Connection strings are stored in VS Code's SecretStorage.
