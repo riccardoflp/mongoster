@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - **Desktop app**: Mongoster also runs without VS Code, as an app for Windows, macOS and Linux with the same features: the connections tree with its menus, tabs on two sides, the editor of VS Code for documents and playgrounds, the Command Palette, a settings tab, dark and light themes, and the MCP server. `npm run app` starts it from the sources and `npm run package:app` builds the installer; a GitHub Actions workflow builds the installers for the three systems and the extension's package.
 - **Indexes tab**: `Create index…` opens a dialog with the fields (suggested from the documents, with direction or type), the name and the options (`Unique`, `Sparse`, `Hidden`, `TTL`, `Partial`, `Collation`, text weights and language, any other option), or the keys and options as text; the mongosh command is shown while editing. It replaces the `Keys` / `Options` line.

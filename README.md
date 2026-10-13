@@ -218,7 +218,9 @@ The same code also runs as a desktop app (Electron) for Windows, macOS and Linux
 - **Storage**: connections, history and settings are kept in the app's own folder (`%APPDATA%\Mongoster`, `~/Library/Application Support/Mongoster`, `~/.config/Mongoster`), and connection strings, passwords and the MCP token are encrypted with the system's keychain. The app and the extension don't share their connections.
 - **AI assistants (MCP)**: the MCP server works in the app too, with the same setup command (`Tools` menu). Only the automatic discovery by GitHub Copilot needs the extension. The app and VS Code have their own access tokens and the same default port: the first one started gets it, and `Change MCP Server Port…` gives the other one its own.
 
-To run it from the sources or build the installers, see [Development](#development).
+The installers of each version are on the [Releases page](https://github.com/riccardoflp/mongoster/releases): `.exe` for Windows, `.dmg` for macOS (Intel and Apple silicon), `.AppImage` for Linux. They are not signed with a certificate yet, so the first time Windows SmartScreen asks to confirm (`More info`, then `Run anyway`) and macOS wants the app allowed in `System Settings › Privacy & Security`.
+
+To run it from the sources or build the installers yourself, see [Development](#development).
 
 ## Development
 
@@ -233,7 +235,7 @@ To build an installable package:
 
 ```bash
 npm run package    # creates mongoster-<version>.vsix
-code --install-extension mongoster-0.2.0.vsix
+code --install-extension mongoster-0.3.0.vsix
 ```
 
 The desktop app:
