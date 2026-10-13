@@ -5,6 +5,7 @@
 - MCP server with several VS Code windows open: the tabs the AI opens appear in the window you used last, instead of the first one opened. The port follows the focus, and is taken over within a few seconds when the window that had it is closed.
 - `Mongoster: Change MCP Server Port…`, also in the setup command. When another program is using the port, a warning says so and `Change Port` suggests a free one, instead of only a line in the log.
 - A new access token generated in one window now applies to the others right away.
+- Disconnecting a connection that is expanded in the tree no longer reconnects it at once: it collapses and stays disconnected until it is expanded again.
 
 ## 0.2.0
 

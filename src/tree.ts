@@ -17,9 +17,10 @@ export class ConnectionNode extends vscode.TreeItem {
   constructor(
     readonly info: ConnectionInfo,
     connected: boolean,
+    epoch = 0,
   ) {
     super(info.name, vscode.TreeItemCollapsibleState.Collapsed);
-    this.id = `conn:${info.id}`;
+    this.id = `conn:${info.id}${epoch ? `:${epoch}` : ''}`;
     this.contextValue = `connection${connected ? '.connected' : ''}${info.noHistory ? '.nohistory' : ''}${info.readOnly ? '.readonly' : ''}`;
     // The connection's color wins over the green "connected" tint; the description then says it.
     const color = info.color ? `charts.${info.color}` : connected ? 'testing.iconPassed' : undefined;
@@ -106,8 +107,19 @@ export class MongoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   private readonly changeEmitter = new vscode.EventEmitter<TreeNode | undefined>();
   readonly onDidChangeTreeData = this.changeEmitter.event;
 
+  private connected = new Set<string>();
+  /**
+   * Bumped when a connection closes: its node gets a new id, so VS Code shows it collapsed. With the same id
+   * it would stay expanded, and loading its databases again would reconnect at once.
+   */
+  private readonly epochs = new Map<string, number>();
+
   constructor(private readonly connections: ConnectionManager) {
-    connections.onDidChange(() => this.refresh());
+    connections.onDidChange(() => {
+      for (const id of this.connected) if (!connections.isConnected(id)) this.epochs.set(id, (this.epochs.get(id) ?? 0) + 1);
+      this.connected = new Set(connections.list().flatMap((c) => (connections.isConnected(c.id) ? [c.id] : [])));
+      this.refresh();
+    });
   }
 
   refresh(node?: TreeNode): void {
@@ -120,7 +132,7 @@ export class MongoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
   async getChildren(node?: TreeNode): Promise<TreeNode[]> {
     try {
-      const connectionNode = (c: ConnectionInfo) => new ConnectionNode(c, this.connections.isConnected(c.id));
+      const connectionNode = (c: ConnectionInfo) => new ConnectionNode(c, this.connections.isConnected(c.id), this.epochs.get(c.id));
       if (!node) {
         return [
           ...this.connections.folders().map((f) => new FolderNode(f)),
