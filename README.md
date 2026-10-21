@@ -26,7 +26,7 @@ Mongoster also runs without VS Code, as a [desktop app](#desktop-app) with the s
   - `Rename Collection…` renames within the same database; the open tab, the query history and the expanded columns follow the new name. Views can't be renamed.
   - `Drop…` on collections and views, `Drop Database…` on a database: for collections and databases you type the name to confirm, and the message says how many documents, indexes or collections will be deleted. The tabs of dropped collections are closed.
 - **Table** for each collection: one column per field, values colored by type, paging, total count. Values take the syntax colors of the active color theme, as in a JSON file in the editor (strings, numbers, booleans, keys; ObjectId, dates and regexes take the colors of keywords, types and regexes), including `editor.tokenColorCustomizations`, and change with the theme. The same colors are used by the playground results, the server monitor, the global search and the index advisor.
-- **Filter / Sort / Project** in mongosh syntax: `{ _id: ObjectId("…"), name: /mario/i, createdAt: { $gte: ISODate("2024-01-01") } }`. `Ctrl+Enter` runs the query.
+- **Filter / Sort / Project** in mongosh syntax: `{ _id: ObjectId("…"), name: /mario/i, createdAt: { $gte: ISODate("2024-01-01") } }`. `Ctrl+Enter` runs the query. What you type takes the syntax colors of the theme too: field names, operators, strings, numbers, `ObjectId(…)`, dates, regexes and comments, also in the pipeline stages, in `Update many` and in the index dialog.
 - **Visual query builder**: `Builder` next to the filter opens a list of conditions below it, each with a field, an operator and a value, for those who don't want to write mongosh syntax:
   - operators `=`, `≠`, `>`, `≥`, `<`, `≤`, `in` / `not in` (comma-separated values or an array), `matches` (regular expression, `/^mario/i` or just the text), `exists`, `missing`, `type` (BSON type from a list) and `size` (arrays with that number of elements);
   - the field is picked from the collection's fields (nested ones too), the value from the field's most frequent values; values are written as in mongosh (`42`, `true`, `"text"`, `ISODate("2024-01-01")`, `ObjectId("…")`), and a word without quotes is a string;
@@ -238,7 +238,7 @@ To build an installable package:
 
 ```bash
 npm run package    # creates mongoster-<version>.vsix
-code --install-extension mongoster-0.3.0.vsix
+code --install-extension mongoster-0.4.0.vsix
 ```
 
 The desktop app:

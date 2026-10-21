@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - **Backups as a single `.agz` archive**: `Back Up…` can write an archive in `mongodump --archive --gzip`'s format (`Archive (.agz)`), which `mongorestore --gzip --archive` restores, besides the folder formats.
 - `Restore from Backup…` restores archives written by Mongoster or by `mongodump --archive` (`.agz` or uncompressed `.archive`, also with collections alternating), with each collection's checksum checked. It now asks first whether the backup is an archive or a folder: before, the dialog only accepted folders, so an archive file couldn't be chosen. On a collection, an archive can be chosen too, then one of its collections.
