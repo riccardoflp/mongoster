@@ -323,3 +323,39 @@ function mergeField(obj: Record<string, unknown>, key: string, condition: unknow
   const existing = obj[key];
   obj[key] = isOperatorObject(condition) && isOperatorObject(existing) ? { ...existing, ...condition } : condition;
 }
+
+function parseObject(text: string): Record<string, unknown> {
+  const obj = text.trim() ? parseQuery(text) : {};
+  if (!isPlainObject(obj)) throw new Error('must be an object');
+  return obj;
+}
+
+/**
+ * Sets the direction of `key` in a sort text, or removes it with null. A key already in the sort
+ * keeps its priority; a new one sorts after the others. Throws if the text isn't an object.
+ */
+export function mergeSort(text: string, key: string, dir: 1 | -1 | null): string {
+  const sort = parseObject(text);
+  if (dir === null) delete sort[key];
+  else sort[key] = dir;
+  return Object.keys(sort).length ? toShell(sort) : '';
+}
+
+/**
+ * Includes (1) or excludes (0) `key` in a projection text, or removes it with null. Entries that
+ * can't go with it are dropped: the opposite kind (only _id can be excluded from an inclusion) and
+ * paths above or below `key`, which MongoDB rejects as a path collision. Throws if the text isn't an object.
+ */
+export function mergeProjection(text: string, key: string, value: 1 | 0 | null): string {
+  const projection = parseObject(text);
+  if (value !== null && key !== '_id') {
+    for (const [k, v] of Object.entries(projection)) {
+      const excludes = v === 0 || v === false;
+      const opposite = k !== '_id' && excludes === (value === 1);
+      if (opposite || k.startsWith(`${key}.`) || key.startsWith(`${k}.`)) delete projection[k];
+    }
+  }
+  if (value === null) delete projection[key];
+  else projection[key] = value;
+  return Object.keys(projection).length ? toShell(projection) : '';
+}

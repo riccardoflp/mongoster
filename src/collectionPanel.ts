@@ -779,9 +779,15 @@ export class CollectionPanel {
       <div id="builder" class="builder hidden" role="group" aria-label="Filter builder"></div>
       <div class="row options not-schema not-chart">
         <label for="sort">Sort</label>
-        <input id="sort" spellcheck="false" placeholder="{ field: -1 }">
+        <div class="option-wrap" id="sortWrap">
+          <input id="sort" spellcheck="false" placeholder="{ field: -1 }  —  or drag a column here">
+          <div class="dropzones" id="sortDrop"></div>
+        </div>
         <label for="projection">Project</label>
-        <input id="projection" spellcheck="false" placeholder="{ field: 1 }">
+        <div class="option-wrap" id="projectionWrap">
+          <input id="projection" spellcheck="false" placeholder="{ field: 1 }  —  or drag a column here">
+          <div class="dropzones" id="projectionDrop"></div>
+        </div>
       </div>
     </div>
     <div class="aggregate-only pipeline">

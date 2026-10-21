@@ -109,7 +109,15 @@ body.loading .progress::after {
   margin-left: 6px;
 }
 
-.options input {
+.option-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  border-radius: 2px;
+}
+
+.option-wrap input {
   flex: 1;
   min-width: 0;
 }
@@ -178,7 +186,8 @@ select:focus {
   overflow-y: auto;
 }
 
-.filter-wrap.flash {
+.filter-wrap.flash,
+.option-wrap.flash {
   animation: flash 0.6s ease-out;
 }
 
@@ -255,10 +264,17 @@ button:disabled {
   inset: 0;
   gap: 4px;
   z-index: 5;
+  /* Hides the field under the gaps between the zones. */
+  background: var(--vscode-editor-background);
 }
 
 body.dragging .dropzones {
   display: flex;
+}
+
+/* Sort and Project get no zones while a cell is dragged. */
+body.dragging .dropzones:empty {
+  display: none;
 }
 
 .dropzone {
@@ -2321,7 +2337,7 @@ body[data-color] .ns-conn {
     row-gap: 6px;
   }
 
-  .options input {
+  .option-wrap {
     flex-basis: calc(100% - 60px);
   }
 

@@ -1,5 +1,5 @@
 import './tokenColors';
-import { isEjsonWrapper, isPlainObject, mergeCondition, parseQuery, prettyShell, toShell } from '../shared/query';
+import { isEjsonWrapper, isPlainObject, mergeCondition, mergeProjection, mergeSort, parseQuery, prettyShell, toShell } from '../shared/query';
 import type { HostMessage, QuerySource, QueryText, WebviewMessage } from '../shared/messages';
 import type { PipelineStage } from '../shared/pipeline';
 import { HistoryPopover } from './history';
@@ -114,6 +114,8 @@ const projectionInput = el<HTMLInputElement>('projection');
 const limitSelect = el<HTMLSelectElement>('limit');
 const grid = el<HTMLTableElement>('grid');
 const dropzones = el('dropzones');
+const sortDrop = el('sortDrop');
+const projectionDrop = el('projectionDrop');
 const pipelineDrop = el('pipelineDrop');
 const modal = el('modal');
 
@@ -443,7 +445,7 @@ function renderGrid(): void {
     th.dataset.key = node.key;
     th.dataset.leaf = String(leafIndex);
     th.draggable = true;
-    th.title = `${node.key}\nClick to sort · drag to the filter or onto another column · right-click for options`;
+    th.title = `${node.key}\nClick to sort · drag to the filter, sort or projection, or onto another column · right-click for options`;
     if (widths[node.key]) setWidth(th, widths[node.key], true);
     groupClasses(th, leaf.starts.length > 0, leaf.ends.length > 0);
     // Parent segments of an expanded column: click one to collapse that group.
@@ -858,7 +860,7 @@ function toggleSort(key: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Drag & drop into the filter
+// Drag & drop into the filter, sort and projection
 
 const COMPARABLE = new Set(['t-number', 't-date', 't-string']);
 
@@ -895,31 +897,91 @@ function showDropzones(p: DragPayload): void {
   }
   dropzones.replaceChildren();
   for (const zone of zonesFor(p)) {
-    const div = document.createElement('div');
-    div.className = 'dropzone';
-    div.title = zone.title;
-    div.append(span('dz-label', zone.label), span('dz-key', displayKey(p)));
-    if (p.kind === 'cell' && p.within) div.title += ` · same element of ${p.within} ($elemMatch)`;
-    div.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      e.dataTransfer!.dropEffect = 'copy';
-      div.classList.add('over');
-    });
-    div.addEventListener('dragleave', () => div.classList.remove('over'));
-    div.addEventListener('drop', (e) => {
-      e.preventDefault();
+    const div = dropzone(zone.label, zone.title, displayKey(p), () => {
       if (drag) addCondition(drag.key, zone.condition(drag), drag.kind === 'cell' ? drag.within : undefined);
-      endDrag();
     });
+    if (p.kind === 'cell' && p.within) div.title += ` · same element of ${p.within} ($elemMatch)`;
     container.append(div);
   }
+  if (p.kind === 'column' && !aggregate) showOptionZones(p.key);
   document.body.classList.add('dragging');
+}
+
+function dropzone(label: string, title: string, key: string, drop: () => void): HTMLDivElement {
+  const div = document.createElement('div');
+  div.className = 'dropzone';
+  div.title = title;
+  div.append(span('dz-label', label), span('dz-key', key));
+  div.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer!.dropEffect = 'copy';
+    div.classList.add('over');
+  });
+  div.addEventListener('dragleave', () => div.classList.remove('over'));
+  div.addEventListener('drop', (e) => {
+    e.preventDefault();
+    drop();
+    endDrag();
+  });
+  return div;
+}
+
+/** A column dropped on Sort sorts by it, on Project includes or excludes it; a field already there can be removed. */
+function showOptionZones(key: string): void {
+  const sortZones: [string, string, 1 | -1 | null][] = [
+    ['▲ ascending', `${key}: 1 (after the fields already in the sort)`, 1],
+    ['▼ descending', `${key}: -1 (after the fields already in the sort)`, -1],
+  ];
+  if (key in currentSort()) sortZones.push(['✕ remove', `Remove ${key} from the sort`, null]);
+  sortDrop.replaceChildren(
+    ...sortZones.map(([label, title, dir]) =>
+      dropzone(label, title, key, () => setOption(sortInput, el('sortWrap'), (text) => mergeSort(text, key, dir))),
+    ),
+  );
+
+  const projectionZones: [string, string, 1 | 0 | null][] = [
+    ['include', `${key}: 1 (only the included fields are shown, and _id)`, 1],
+    ['exclude', `${key}: 0 (every field but the excluded ones is shown)`, 0],
+  ];
+  if (key in currentProjection()) projectionZones.push(['✕ remove', `Remove ${key} from the projection`, null]);
+  projectionDrop.replaceChildren(
+    ...projectionZones.map(([label, title, value]) =>
+      dropzone(label, title, key, () =>
+        setOption(projectionInput, el('projectionWrap'), (text) => mergeProjection(text, key, value)),
+      ),
+    ),
+  );
+}
+
+function currentProjection(): Record<string, unknown> {
+  try {
+    const v = projectionInput.value.trim() ? parseQuery(projectionInput.value) : {};
+    return isPlainObject(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Puts a dropped field into the sort or the projection and runs the query. */
+function setOption(input: HTMLInputElement, wrap: HTMLElement, merge: (text: string) => string): void {
+  try {
+    input.value = merge(input.value);
+  } catch (err) {
+    showError(`Fix the ${input.id} before adding fields by drag & drop: ${(err as Error).message}`);
+    input.classList.add('invalid');
+    return;
+  }
+  input.classList.remove('invalid');
+  flash(wrap);
+  run(true);
 }
 
 function endDrag(): void {
   drag = null;
   document.body.classList.remove('dragging');
   dropzones.replaceChildren();
+  sortDrop.replaceChildren();
+  projectionDrop.replaceChildren();
   pipelineDrop.replaceChildren();
 }
 
