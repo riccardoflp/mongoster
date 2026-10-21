@@ -297,6 +297,7 @@ export class UsersPanel {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${asset('media', 'monitor.css')}">
   <link rel="stylesheet" href="${asset('media', 'users.css')}">
+  <link rel="stylesheet" href="${asset('media', 'controls.css')}">
   <title>Users</title>
 </head>
 <body>

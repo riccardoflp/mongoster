@@ -103,7 +103,7 @@ input[type='number'] {
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
   border: 1px solid var(--vscode-input-border, transparent);
-  border-radius: 2px;
+  border-radius: var(--radius);
   font-family: inherit;
   font-size: inherit;
 }
@@ -134,8 +134,8 @@ input.invalid {
 
 button {
   padding: 4px 14px;
-  border: none;
-  border-radius: 2px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: var(--radius);
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
   font-family: inherit;
@@ -147,6 +147,7 @@ button {
 button.secondary {
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
+  border-color: var(--vscode-button-secondaryBorder, var(--vscode-button-border, transparent));
 }
 
 button:disabled {

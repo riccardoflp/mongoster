@@ -279,6 +279,7 @@ export class DiagramPanel {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${asset('media', 'monitor.css')}">
   <link rel="stylesheet" href="${asset('media', 'diagram.css')}">
+  <link rel="stylesheet" href="${asset('media', 'controls.css')}">
   <title>Diagram</title>
 </head>
 <body>

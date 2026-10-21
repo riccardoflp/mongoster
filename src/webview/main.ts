@@ -32,6 +32,7 @@ import {
 import { CellEditor } from './cellEditor';
 import { ColumnMenu, ColumnsPanel, LayoutActions } from './columnsUi';
 import { Completer } from './autocomplete';
+import { highlight } from './highlight';
 import { FilterBuilder } from './builder';
 import { CompletionKind, FieldHint, fieldHints } from '../shared/complete';
 import { analyzeSchema } from '../shared/schema';
@@ -1299,6 +1300,7 @@ function fieldsBefore(index: number): FieldHint[] {
 const completeWith = (field: HTMLTextAreaElement | HTMLInputElement, kind: CompletionKind) => {
   completer.attach(field, { kind: () => kind, fields: fieldsOfCollection });
   field.addEventListener('focus', fieldsOfCollection);
+  highlight(field);
 };
 completeWith(filterInput, 'filter');
 
@@ -1331,6 +1333,7 @@ const pipeline = new PipelineEditor({
   attachCompletion: (field, stage, index) => {
     completer.attach(field, { kind: () => ({ stage: stage.op }), fields: () => fieldsBefore(index) });
     field.addEventListener('focus', () => fieldsBefore(index));
+    highlight(field);
   },
 });
 el('modeFind').addEventListener('click', () => state.mode !== 'find' && setMode('find'));

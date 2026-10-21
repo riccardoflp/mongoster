@@ -5,6 +5,9 @@
 - **Backups as a single `.agz` archive**: `Back Up…` can write an archive in `mongodump --archive --gzip`'s format (`Archive (.agz)`), which `mongorestore --gzip --archive` restores, besides the folder formats.
 - `Restore from Backup…` restores archives written by Mongoster or by `mongodump --archive` (`.agz` or uncompressed `.archive`, also with collections alternating), with each collection's checksum checked. It now asks first whether the backup is an archive or a folder: before, the dialog only accepted folders, so an archive file couldn't be chosen. On a collection, an archive can be chosen too, then one of its collections.
 - A column header can be dragged onto Sort (`▲ ascending`, `▼ descending`) and Project (`include`, `exclude`), not only onto the filter; a field already there can be dropped on `✕ remove`. Sorting by several fields no longer needs typing.
+- **Syntax colors in the query inputs**: the filter, Sort, Project, the stages, the pipeline as text, Update many and the index options color field names, operators, strings, numbers, `ObjectId(…)`, dates, regexes and comments with the syntax colors of the active color theme, as the table does. Field paths in a stage (`"$amount"`) take the color of field names.
+- A stage of the pipeline widens to its longest line, up to 640 px, instead of wrapping it at 280 px: a value like `ObjectId("…")` is no longer cut in two.
+- The panels follow the color theme more closely: selected tabs (Find / Aggregate / …, the monitor's tabs) and toggles that are on (Builder, the pipeline's view) take the colors of VS Code's toggles instead of the primary button's, checkboxes, radio buttons and dropdowns are drawn with the theme's colors instead of the system's blue, and buttons and inputs have VS Code's rounded corners and secondary button border.
 
 ## 0.3.0
 

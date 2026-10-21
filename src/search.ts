@@ -470,6 +470,7 @@ export class SearchPanel {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${asset('media', 'monitor.css')}">
   <link rel="stylesheet" href="${asset('media', 'search.css')}">
+  <link rel="stylesheet" href="${asset('media', 'controls.css')}">
   <title>Search</title>
 </head>
 <body${ThemeColors.bodyAttribute()}>

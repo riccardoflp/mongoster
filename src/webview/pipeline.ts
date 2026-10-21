@@ -399,7 +399,25 @@ function isValidBody(stage: PipelineStage): boolean {
 
 const isValidOp = (op: string) => /^\$[A-Za-z]+$/.test(op.trim());
 
+const STAGE_WIDTH = { min: 280, max: 640 };
+const measure = document.createElement('canvas').getContext('2d');
+
+/** Widens the stage to its longest line, so that a value like `ObjectId("…")` isn't cut in two. */
+function fitWidth(t: HTMLTextAreaElement): void {
+  const card = t.parentElement;
+  if (!card || !measure) return;
+  const s = getComputedStyle(t);
+  measure.font = `${s.fontStyle} ${s.fontWeight} ${s.fontSize} ${s.fontFamily}`;
+  const tab = ' '.repeat(Number(s.tabSize) || 2);
+  const longest = Math.max(0, ...t.value.split('\n').map((line) => measure.measureText(line.replace(/\t/g, tab)).width));
+  // Padding, scrollbar and the borders of the textarea and of the card, and room for the caret.
+  const extra = parseFloat(s.paddingLeft) + parseFloat(s.paddingRight) + t.offsetWidth - t.clientWidth + card.offsetWidth - card.clientWidth + 4;
+  const max = Math.min(STAGE_WIDTH.max, window.innerWidth - 40);
+  card.style.width = `${Math.round(Math.max(STAGE_WIDTH.min, Math.min(longest + extra, max)))}px`;
+}
+
 function autosize(t: HTMLTextAreaElement): void {
+  fitWidth(t);
   t.style.height = 'auto';
   const borders = t.offsetHeight - t.clientHeight;
   t.style.height = `${Math.min(t.scrollHeight + borders, 220)}px`;

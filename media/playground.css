@@ -37,8 +37,8 @@ body {
 
 button {
   font: inherit;
-  border: none;
-  border-radius: 2px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: var(--radius);
   padding: 3px 10px;
   cursor: pointer;
   background: var(--vscode-button-background);
@@ -48,6 +48,7 @@ button {
 button.secondary {
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
+  border-color: var(--vscode-button-secondaryBorder, var(--vscode-button-border, transparent));
 }
 
 button:disabled {
@@ -97,14 +98,20 @@ body.running .meta::before {
 
 .tabs button {
   background: transparent;
-  color: var(--vscode-foreground);
+  color: var(--muted);
+  border: none;
   border-radius: 0;
   padding: 2px 10px;
 }
 
+.tabs button:hover {
+  color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+}
+
 .tabs button[aria-selected='true'] {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
+  background: var(--toggle-bg);
+  color: var(--toggle-fg);
 }
 
 .error {

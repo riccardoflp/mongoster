@@ -231,6 +231,7 @@ export class ConnectionEditor {
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; font-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${asset('media', 'connectionEditor.css')}">
+  <link rel="stylesheet" href="${asset('media', 'controls.css')}">
   <title>Connection</title>
 </head>
 <body>

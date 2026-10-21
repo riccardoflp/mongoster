@@ -37,8 +37,8 @@ body {
 
 button {
   font: inherit;
-  border: none;
-  border-radius: 2px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: var(--radius);
   padding: 3px 10px;
   cursor: pointer;
   background: var(--vscode-button-background);
@@ -48,6 +48,7 @@ button {
 button.secondary {
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
+  border-color: var(--vscode-button-secondaryBorder, var(--vscode-button-border, transparent));
 }
 
 button:disabled {
@@ -107,20 +108,26 @@ body.locked .not-locked {
 .tabs {
   display: flex;
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
 .tabs button {
   background: transparent;
-  color: var(--vscode-foreground);
+  color: var(--muted);
+  border: none;
   border-radius: 0;
   padding: 2px 12px;
 }
 
+.tabs button:hover {
+  color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+}
+
 .tabs button[aria-selected='true'] {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
+  background: var(--toggle-bg);
+  color: var(--toggle-fg);
 }
 
 select,
@@ -130,7 +137,7 @@ input[type='number'] {
   background: var(--vscode-input-background, #3c3c3c);
   color: var(--vscode-input-foreground, inherit);
   border: 1px solid var(--vscode-input-border, var(--border));
-  border-radius: 2px;
+  border-radius: var(--radius);
   padding: 2px 4px;
 }
 

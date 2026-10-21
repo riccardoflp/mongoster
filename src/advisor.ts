@@ -380,6 +380,7 @@ export class AdvisorPanel {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${asset('media', 'monitor.css')}">
   <link rel="stylesheet" href="${asset('media', 'advisor.css')}">
+  <link rel="stylesheet" href="${asset('media', 'controls.css')}">
   <title>Index Advisor</title>
 </head>
 <body${ThemeColors.bodyAttribute()}>

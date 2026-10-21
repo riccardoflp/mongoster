@@ -4,6 +4,7 @@
 import type { IndexInfo } from '../shared/messages';
 import { isPlainObject, parseQuery, prettyShell, toShell } from '../shared/query';
 import { IndexSpec, KEY_TYPES, TTL_UNIT_NAMES, defaultIndexName, editableSpec, indexCommand, indexName, normalizeSpec, planIndexChange, ttlParts, ttlSeconds, wildcardWarnings } from '../shared/indexes';
+import { highlight } from './highlight';
 
 export interface IndexDialogCallbacks {
   /** Creates the index or changes `original`; `ok: false` without a message means cancelled. */
@@ -74,6 +75,8 @@ export class IndexDialog {
 
   constructor(private readonly cb: IndexDialogCallbacks) {
     for (const unit of TTL_UNIT_NAMES) this.ttlUnit.append(new Option(unit, unit));
+    highlight(this.more);
+    highlight(this.options);
     el('indexClose').addEventListener('click', () => this.close());
     this.cancelButton.addEventListener('click', () => this.close());
     this.modal.addEventListener('click', (e) => {

@@ -9,6 +9,8 @@
   --c-oid: var(--t-oid, var(--vscode-terminal-ansiMagenta, #c586c0));
   --c-date: var(--t-date, var(--vscode-terminal-ansiCyan, #4ec9b0));
   --c-regex: var(--t-regex, var(--vscode-terminal-ansiYellow, #d7ba7d));
+  --c-op: var(--t-op, var(--c-bool));
+  --c-comment: var(--t-comment, var(--muted));
   --accent: var(--vscode-focusBorder, #007fd4);
   --group-border: color-mix(in srgb, var(--accent) 45%, transparent);
 }
@@ -114,7 +116,7 @@ body.loading .progress::after {
   flex: 1;
   min-width: 0;
   display: flex;
-  border-radius: 2px;
+  border-radius: var(--radius);
 }
 
 .option-wrap input {
@@ -130,7 +132,7 @@ select {
   color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
-  border-radius: 2px;
+  border-radius: var(--radius);
   padding: 4px 6px;
   outline: none;
 }
@@ -175,7 +177,7 @@ select:focus {
   flex: 1 1 360px;
   min-width: 0;
   display: flex;
-  border-radius: 2px;
+  border-radius: var(--radius);
 }
 
 .filter-wrap textarea {
@@ -191,6 +193,78 @@ select:focus {
   animation: flash 0.6s ease-out;
 }
 
+/* ---------- syntax colors of the query inputs (highlight.ts) ---------- */
+
+.hl-host {
+  position: relative;
+}
+
+.hl-field {
+  color: transparent !important;
+  caret-color: var(--vscode-editorCursor-foreground, var(--vscode-input-foreground));
+}
+
+.hl-field::selection {
+  color: transparent;
+}
+
+.hl-field::placeholder {
+  color: var(--vscode-input-placeholderForeground, var(--muted));
+}
+
+.hl {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  color: var(--vscode-input-foreground);
+}
+
+.hl.single {
+  white-space: pre;
+}
+
+.hl .t-key,
+.hl .t-ref {
+  color: var(--c-key);
+}
+
+.hl .t-op {
+  color: var(--c-op);
+}
+
+.hl .t-string {
+  color: var(--c-string);
+}
+
+.hl .t-number {
+  color: var(--c-number);
+}
+
+.hl .t-bool {
+  color: var(--c-bool);
+}
+
+.hl .t-oid {
+  color: var(--c-oid);
+}
+
+.hl .t-date {
+  color: var(--c-date);
+}
+
+.hl .t-regex {
+  color: var(--c-regex);
+}
+
+.hl .t-comment {
+  color: var(--c-comment);
+}
+
 @keyframes flash {
   from {
     box-shadow: 0 0 0 2px var(--accent);
@@ -204,7 +278,7 @@ button {
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size, 13px);
   border: 1px solid var(--vscode-button-border, transparent);
-  border-radius: 2px;
+  border-radius: var(--radius);
   padding: 4px 12px;
   cursor: pointer;
   white-space: nowrap;
@@ -222,6 +296,7 @@ button.primary:hover {
 button.secondary {
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
+  border-color: var(--vscode-button-secondaryBorder, var(--vscode-button-border, transparent));
 }
 
 button.secondary:hover {
@@ -817,7 +892,7 @@ button.link:hover {
 .mode {
   display: flex;
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
@@ -835,8 +910,8 @@ button.link:hover {
 }
 
 .mode button[aria-selected='true'] {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
+  background: var(--toggle-bg);
+  color: var(--toggle-fg);
 }
 
 body:not(.mode-aggregate) .aggregate-only,
@@ -884,7 +959,8 @@ body.mode-aggregate .doc-write {
   opacity: 0.5;
 }
 
-.stage.disabled .stage-body {
+.stage.disabled .stage-body,
+.stage.disabled .hl {
   text-decoration: line-through;
 }
 
@@ -919,10 +995,14 @@ body.mode-aggregate .doc-write {
   color: var(--vscode-badge-foreground, var(--vscode-foreground));
 }
 
-.stage-num:hover,
+.stage-num:hover {
+  background: var(--toggle-bg);
+  color: var(--toggle-fg);
+}
+
 .stage.previewed .stage-num {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
+  background: var(--accent);
+  color: var(--vscode-editor-background);
 }
 
 .stage-op {
@@ -930,12 +1010,11 @@ body.mode-aggregate .doc-write {
   min-width: 0;
   padding: 2px 4px;
   font-weight: 600;
-  color: var(--c-key);
+  color: var(--c-op);
 }
 
 .stage-head input[type='checkbox'] {
   margin: 0 2px;
-  accent-color: var(--accent);
 }
 
 .stage-head button.icon {
@@ -1000,8 +1079,9 @@ body.mode-aggregate .doc-write {
 }
 
 .pipeline-actions button.active {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
+  background: var(--toggle-bg);
+  color: var(--toggle-fg);
+  border-color: var(--toggle-border);
 }
 
 .preview-info {
@@ -1350,7 +1430,6 @@ body.mode-indexes .not-indexes {
 
 .index-options input[type='checkbox'] {
   margin: 0;
-  accent-color: var(--accent);
 }
 
 .index-options textarea {
@@ -2322,8 +2401,9 @@ body[data-color] .ns-conn {
 }
 
 #builderToggle.active {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
+  background: var(--toggle-bg);
+  color: var(--toggle-fg);
+  border-color: var(--toggle-border);
 }
 
 @media (max-width: 560px) {

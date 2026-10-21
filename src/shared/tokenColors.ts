@@ -1,6 +1,6 @@
 /** The colors of the active theme's syntax highlighting, for the values shown in the webviews. */
 
-export type TokenRole = 'key' | 'string' | 'number' | 'bool' | 'oid' | 'date' | 'regex';
+export type TokenRole = 'key' | 'string' | 'number' | 'bool' | 'oid' | 'date' | 'regex' | 'op' | 'comment';
 export type TokenColors = Partial<Record<TokenRole, string>>;
 
 export interface TokenRule {
@@ -10,7 +10,8 @@ export interface TokenRule {
 
 /**
  * The scopes a token of each kind has in the editor, outermost first: the values are colored as
- * in a JSON file; ObjectId, dates and regexes take the colors of keywords, types and regexes.
+ * in a JSON file; ObjectId, dates and regexes take the colors of keywords, types and regexes;
+ * the operators of a query (`$gt`, `$match`) that of `const`, its comments that of comments.
  */
 export const ROLE_SCOPES: Record<TokenRole, string[]> = {
   key: ['source.json', 'meta.structure.dictionary.json', 'string.json', 'support.type.property-name.json'],
@@ -20,6 +21,8 @@ export const ROLE_SCOPES: Record<TokenRole, string[]> = {
   oid: ['source.js', 'keyword.control.flow.js'],
   date: ['source.js', 'support.class.js'],
   regex: ['source.js', 'string.regexp.js'],
+  op: ['source.js', 'storage.type.js'],
+  comment: ['source.js', 'comment.line.double-slash.js'],
 };
 
 /** `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa`: anything else is ignored. */
