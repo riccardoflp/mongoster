@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Backups as a single `.agz` archive**: `Back Up…` can write an archive in `mongodump --archive --gzip`'s format (`Archive (.agz)`), which `mongorestore --gzip --archive` restores, besides the folder formats.
+- `Restore from Backup…` restores archives written by Mongoster or by `mongodump --archive` (`.agz` or uncompressed `.archive`, also with collections alternating), with each collection's checksum checked. It now asks first whether the backup is an archive or a folder: before, the dialog only accepted folders, so an archive file couldn't be chosen. On a collection, an archive can be chosen too, then one of its collections.
+
 ## 0.3.0
 
 - **Desktop app**: Mongoster also runs without VS Code, as an app for Windows, macOS and Linux with the same features: the connections tree with its menus, tabs on two sides, the editor of VS Code for documents and playgrounds, the Command Palette, a settings tab, dark and light themes, and the MCP server. `npm run app` starts it from the sources and `npm run package:app` builds the installer; a GitHub Actions workflow builds the installers for the three systems and the extension's package.
