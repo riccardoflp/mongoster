@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 - **Filter for databases and collections**: `Filter Databases and Collections…` (the filter icon in the tree's title) shows only the databases and collections whose name contains the text, ignoring case, while it's typed; database and collection can be written together, so `shop.ord` finds `shop.orders`. The databases that match, or that have a collection that matches, open by themselves under the connected connections; `Filter: …` above the tree says what's filtered, and `Clear Filter` (the filled icon) shows everything again.
 

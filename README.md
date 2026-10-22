@@ -21,6 +21,7 @@ Mongoster also runs without VS Code, as a [desktop app](#desktop-app) with the s
     - `Test Connection` tries the connection and shows the server version; `Save` saves it. Passwords and passphrases are kept in SecretStorage and never sent back to the form: leaving the field empty keeps the saved one.
     - The first time you connect to an SSH server, its key fingerprint (`SHA256:…`) is shown for you to confirm; if it changes later, Mongoster warns you and asks again.
     - In the tree, SSH connections are labeled `SSH`; the tooltip shows the tunnel and TLS.
+- **Filtering the tree**: `Filter Databases and Collections…` (the filter icon in the tree's title) shows only the databases and collections whose name contains the text, ignoring case, while you type. Database and collection can be written together: `shop.ord` finds `shop.orders`. Matching databases open by themselves under the connected connections; `Filter: …` above the tree says what's filtered, and `Clear Filter` shows everything again.
 - **Managing databases and collections** from the tree's context menu:
   - `Create Database…` on a connection asks for the name of the database and of its first collection (MongoDB only creates a database together with a collection) and opens it.
   - `Create Collection…` (also `+` on a database) accepts optional options, for example `{ capped: true, size: 1048576 }` or `{ timeseries: { timeField: "ts" } }`.
@@ -239,7 +240,7 @@ To build an installable package:
 
 ```bash
 npm run package    # creates mongoster-<version>.vsix
-code --install-extension mongoster-0.4.0.vsix
+code --install-extension mongoster-0.5.0.vsix
 ```
 
 The desktop app:
