@@ -18,9 +18,13 @@ export class ConnectionNode extends vscode.TreeItem {
     readonly info: ConnectionInfo,
     connected: boolean,
     epoch = 0,
+    /** How many times the filter changed: connected connections then open to show what matches, and stay open once it's cleared. */
+    filters = 0,
   ) {
-    super(info.name, vscode.TreeItemCollapsibleState.Collapsed);
-    this.id = `conn:${info.id}${epoch ? `:${epoch}` : ''}`;
+    // A new id makes VS Code open them: with the same one it would keep their state, and forgets it when they're filtered.
+    const open = connected && filters > 0;
+    super(info.name, open ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
+    this.id = `conn:${info.id}${epoch ? `:${epoch}` : ''}${open ? `?${filters}` : ''}`;
     this.contextValue = `connection${connected ? '.connected' : ''}${info.noHistory ? '.nohistory' : ''}${info.readOnly ? '.readonly' : ''}`;
     // The connection's color wins over the green "connected" tint; the description then says it.
     const color = info.color ? `charts.${info.color}` : connected ? 'testing.iconPassed' : undefined;
@@ -44,9 +48,10 @@ export class DatabaseNode extends vscode.TreeItem {
     readonly connection: ConnectionInfo,
     readonly database: string,
     sizeOnDisk?: number,
+    filter = '',
   ) {
-    super(database, vscode.TreeItemCollapsibleState.Collapsed);
-    this.id = `db:${connection.id}/${database}`;
+    super(database, filter ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
+    this.id = `db:${connection.id}/${database}${filter ? `?${filter}` : ''}`;
     this.contextValue = connection.readOnly ? 'database.readonly' : 'database';
     this.iconPath = new vscode.ThemeIcon('database');
     if (sizeOnDisk !== undefined) this.description = formatBytes(sizeOnDisk);
@@ -113,6 +118,9 @@ export class MongoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
    * it would stay expanded, and loading its databases again would reconnect at once.
    */
   private readonly epochs = new Map<string, number>();
+  /** Shows only the databases and collections whose `database.collection` name contains it, ignoring case. */
+  private filterText = '';
+  private filterChanges = 0;
 
   constructor(private readonly connections: ConnectionManager) {
     connections.onDidChange(() => {
@@ -126,13 +134,29 @@ export class MongoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     this.changeEmitter.fire(node);
   }
 
+  get filter(): string {
+    return this.filterText;
+  }
+
+  setFilter(text: string): void {
+    this.filterText = text.trim();
+    this.filterChanges++;
+    this.refresh();
+  }
+
+  private matches(database: string, collection?: string): boolean {
+    const name = collection === undefined ? database : `${database}.${collection}`;
+    return name.toLowerCase().includes(this.filterText.toLowerCase());
+  }
+
   getTreeItem(node: TreeNode): vscode.TreeItem {
     return node;
   }
 
   async getChildren(node?: TreeNode): Promise<TreeNode[]> {
     try {
-      const connectionNode = (c: ConnectionInfo) => new ConnectionNode(c, this.connections.isConnected(c.id), this.epochs.get(c.id));
+      const connectionNode = (c: ConnectionInfo) =>
+        new ConnectionNode(c, this.connections.isConnected(c.id), this.epochs.get(c.id), this.filterChanges);
       if (!node) {
         return [
           ...this.connections.folders().map((f) => new FolderNode(f)),
@@ -150,25 +174,38 @@ export class MongoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
   private async databases(info: ConnectionInfo): Promise<TreeNode[]> {
     const client = await this.connections.getClient(info.id);
+    let databases: { name: string; sizeOnDisk?: number }[];
     try {
       const res = await client.db('admin').admin().listDatabases({ authorizedDatabases: true });
-      const dbs = res.databases
-        .map((d) => new DatabaseNode(info, d.name, d.sizeOnDisk))
-        .sort((a, b) => a.database.localeCompare(b.database));
-      return dbs.length ? dbs : [new MessageNode('No databases')];
+      databases = res.databases.sort((a, b) => a.name.localeCompare(b.name));
     } catch {
       // Users without listDatabases privileges: fall back to the database named in the URI.
-      return [new DatabaseNode(info, client.options.dbName)];
+      databases = [{ name: client.options.dbName }];
     }
+    if (!this.filterText) {
+      const dbs = databases.map((d) => new DatabaseNode(info, d.name, d.sizeOnDisk));
+      return dbs.length ? dbs : [new MessageNode('No databases')];
+    }
+    // A database is shown when its name matches, or the name of one of its collections.
+    const shown = await Promise.all(
+      databases.map(
+        async (d) =>
+          this.matches(d.name) || (await this.collectionInfos(info, d.name).catch(() => [])).some((c) => this.matches(d.name, c.name)),
+      ),
+    );
+    const dbs = databases.filter((_, i) => shown[i]).map((d) => new DatabaseNode(info, d.name, d.sizeOnDisk, this.filterText));
+    return dbs.length ? dbs : [new MessageNode(`Nothing matches "${this.filterText}"`, 'filter')];
+  }
+
+  private async collectionInfos(info: ConnectionInfo, database: string) {
+    const client = await this.connections.getClient(info.id);
+    return client.db(database).listCollections({}, { nameOnly: true, authorizedCollections: true }).toArray();
   }
 
   private async collections(node: DatabaseNode): Promise<TreeNode[]> {
-    const client = await this.connections.getClient(node.connection.id);
-    const infos = await client
-      .db(node.database)
-      .listCollections({}, { nameOnly: true, authorizedCollections: true })
-      .toArray();
+    const infos = await this.collectionInfos(node.connection, node.database);
     const colls = infos
+      .filter((c) => this.matches(node.database, c.name))
       .map((c) => new CollectionNode(node.connection, node.database, c.name, c.type === 'view'))
       .sort(
         (a, b) =>
@@ -176,8 +213,11 @@ export class MongoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
           a.collection.localeCompare(b.collection),
       );
     // GridFS buckets first; their collections stay listed too.
-    const buckets = bucketNames(infos.map((c) => c.name)).map((b) => new BucketNode(node.connection, node.database, b));
-    return colls.length ? [...buckets, ...colls] : [new MessageNode('No collections')];
+    const buckets = bucketNames(infos.map((c) => c.name))
+      .filter((b) => this.matches(node.database, b))
+      .map((b) => new BucketNode(node.connection, node.database, b));
+    if (colls.length) return [...buckets, ...colls];
+    return [this.filterText ? new MessageNode(`No collections match "${this.filterText}"`, 'filter') : new MessageNode('No collections')];
   }
 }
 

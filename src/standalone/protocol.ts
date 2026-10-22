@@ -150,7 +150,7 @@ export interface TabRef {
 export type HostMessage =
   | { type: 'init'; title: string; viewTitle: string; welcome: { text: string; button?: MenuAction }; theme: ThemeInfo; platform: string }
   | { type: 'theme'; theme: ThemeInfo }
-  | { type: 'viewTitle'; actions: MenuAction[] }
+  | { type: 'viewTitle'; actions: MenuAction[]; message?: string }
   | { type: 'treeChanged'; handle?: string }
   | { type: 'panelOpen'; id: number; title: string; icon?: string; src: string; column: Column; preserveFocus: boolean }
   | { type: 'panelUpdate'; id: number; title?: string; icon?: string; src?: string }

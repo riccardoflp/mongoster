@@ -14,6 +14,7 @@ interface Node {
 const list = document.getElementById('tree')!;
 const welcome = document.getElementById('welcome')!;
 const titleActions = document.getElementById('view-actions')!;
+const viewMessage = document.getElementById('view-message')!;
 
 let roots: Node[] = [];
 let loaded = false;
@@ -183,7 +184,10 @@ function activateNode(node: Node): void {
 
 // ---- the view's title
 
-export function setTitleActions(actions: MenuAction[]): void {
+export function setTitleActions(actions: MenuAction[], message: string | undefined): void {
+  viewMessage.textContent = message ?? '';
+  viewMessage.title = message ?? '';
+  viewMessage.hidden = !message;
   titleActions.replaceChildren(
     ...actions.map((a) => iconButton(a.icon ?? 'circle-small', a.title, () => host.send({ type: 'execute', command: a.command }))),
     iconButton('collapse-all', 'Collapse All', collapseAll),

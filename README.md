@@ -9,6 +9,7 @@ Mongoster also runs without VS Code, as a [desktop app](#desktop-app) with the s
 ## Features
 
 - **Connections** in the sidebar (leaf icon): connection → database → collections. Connection strings are stored in VS Code's SecretStorage.
+  - **Filter**: the filter icon in the tree's title shows only the databases and collections whose name contains what you type (`orders`, `shop`, or `shop.ord` for database and collection), ignoring case; the tree follows while you type. Under each connected connection, the databases that match, or that have a collection that matches, open with just those collections. `Escape` keeps the previous filter, an empty one shows everything, and the filled icon clears it.
   - `Edit Connection…` changes the connection string and the name (a new connection string is tested before it is saved); `Copy Connection String` copies it to the clipboard.
   - **Folders**: `Move to Folder…` groups connections (in an existing or a new folder); on a folder, `+` adds a connection inside it, `Rename Folder…` renames it and `Remove Folder` removes it, keeping its connections.
   - **Color**: `Set Color…` (red, orange, yellow, green, blue, purple) colors the icon in the tree and adds a colored stripe at the top of the tabs of its collections, for example red for production.

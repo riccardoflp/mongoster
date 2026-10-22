@@ -79,6 +79,18 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "mongoster.filterTree",
+        "title": "Filter Databases and Collections…",
+        "category": "Mongoster",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "mongoster.clearTreeFilter",
+        "title": "Clear Filter",
+        "category": "Mongoster",
+        "icon": "$(filter-filled)"
+      },
+      {
         "command": "mongoster.openCollection",
         "title": "Open Collection",
         "category": "Mongoster"
@@ -354,6 +366,16 @@
           "group": "navigation@2"
         },
         {
+          "command": "mongoster.filterTree",
+          "when": "view == mongoster.connections && !mongoster.treeFiltered",
+          "group": "navigation@1.9"
+        },
+        {
+          "command": "mongoster.clearTreeFilter",
+          "when": "view == mongoster.connections && mongoster.treeFiltered",
+          "group": "navigation@1.9"
+        },
+        {
           "command": "mongoster.newPlayground",
           "when": "view == mongoster.connections",
           "group": "navigation@1.5"
@@ -617,6 +639,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "mongoster.clearTreeFilter",
+          "when": "mongoster.treeFiltered"
+        },
         {
           "command": "mongoster.openCollection",
           "when": "false"

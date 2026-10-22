@@ -27,7 +27,8 @@ import {
 } from './documents';
 import { runtime } from './runtime';
 import { Memento, SecretStorage, settings } from './storage';
-import { createTreeView } from './tree';
+import { setContextKey } from './contributions';
+import { createTreeView, postViewTitle } from './tree';
 import {
   createOutputChannel,
   createStatusBarItem,
@@ -51,6 +52,7 @@ export type { ConfigurationChangeEvent, WorkspaceConfiguration } from './storage
 export type { InputBoxOptions, MessageOptions, OutputChannel, Progress, ProgressOptions, QuickPickItem, QuickPickOptions, SaveDialogOptions, StatusBarItem } from './ui';
 export { Webview, WebviewPanel } from './webview';
 export type { WebviewOptions } from './webview';
+export type { TreeView } from './tree';
 export type { ColorTheme } from './appearance';
 
 // ---- the extension and its context
@@ -245,6 +247,10 @@ export function registerBuiltinCommands(): Disposable {
     }),
     registerCommand('workbench.action.openSettings', (query?: string) => openSettings(typeof query === 'string' ? query : undefined)),
     registerCommand('editor.action.triggerSuggest', () => post({ type: 'editorCommand', command: 'editor.action.triggerSuggest' })),
-    registerCommand('setContext', () => undefined),
+    registerCommand('setContext', (key: string, value: unknown) => {
+      setContextKey(key, value);
+      // The view's title actions are the ones whose `when` may have changed.
+      postViewTitle();
+    }),
   );
 }

@@ -15,6 +15,27 @@ interface View {
   provider: TreeDataProvider<unknown>;
   /** The elements the shell knows, by the handle it names them with. */
   elements: Map<string, { element: unknown; item: TreeItem }>;
+  /** Shown above the tree, under the title. */
+  message?: string;
+}
+
+/** What createTreeView gives back: the message above the view's tree can be set. `T` is there for the types VS Code has. */
+export class TreeView<T = unknown> extends Disposable {
+  constructor(
+    private readonly current: View,
+    callOnDispose: () => unknown,
+  ) {
+    super(callOnDispose);
+  }
+
+  get message(): string | undefined {
+    return this.current.message;
+  }
+
+  set message(value: string | undefined) {
+    this.current.message = value;
+    if (view === this.current) postViewTitle();
+  }
 }
 
 let view: View | undefined;
@@ -46,7 +67,11 @@ export function viewTitleActions(): MenuAction[] {
     .map((e) => action(e.command));
 }
 
-export function createTreeView<T>(viewId: string, options: { treeDataProvider: TreeDataProvider<T>; showCollapseAll?: boolean }): Disposable {
+export function postViewTitle(): void {
+  post({ type: 'viewTitle', actions: viewTitleActions(), message: view?.message });
+}
+
+export function createTreeView<T>(viewId: string, options: { treeDataProvider: TreeDataProvider<T>; showCollapseAll?: boolean }): TreeView {
   const current: View = { id: viewId, provider: options.treeDataProvider as TreeDataProvider<unknown>, elements: new Map() };
   view = current;
   const subscription = current.provider.onDidChangeTreeData?.((element) => {
@@ -56,8 +81,8 @@ export function createTreeView<T>(viewId: string, options: { treeDataProvider: T
     const handle = [...current.elements].find(([key, known]) => known.element === element || (id !== undefined && key === id))?.[0];
     post({ type: 'treeChanged', handle });
   });
-  post({ type: 'viewTitle', actions: viewTitleActions() });
-  return new Disposable(() => {
+  postViewTitle();
+  return new TreeView(current, () => {
     subscription?.dispose();
     if (view === current) view = undefined;
   });

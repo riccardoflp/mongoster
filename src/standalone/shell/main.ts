@@ -61,7 +61,7 @@ function receive(m: HostMessage): void {
       themePanels(m.theme);
       break;
     case 'viewTitle':
-      setTitleActions(m.actions);
+      setTitleActions(m.actions, m.message);
       break;
     case 'treeChanged':
       treeChanged(m.handle);

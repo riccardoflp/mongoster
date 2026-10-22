@@ -5,6 +5,13 @@ import { runtime } from './runtime';
 
 export type Context = Record<string, string | boolean | undefined>;
 
+/** The keys the extension sets with the `setContext` command: every `when` clause sees them. */
+const contextKeys: Context = {};
+
+export function setContextKey(key: string, value: unknown): void {
+  contextKeys[key] = typeof value === 'string' || typeof value === 'boolean' ? value : value === undefined || value === null ? undefined : !!value;
+}
+
 interface MenuEntry {
   command: string;
   group: string;
@@ -98,6 +105,7 @@ function tokenize(text: string): Token[] {
 
 export function evaluate(when: string | undefined, context: Context): boolean {
   if (!when) return true;
+  context = { ...contextKeys, ...context };
   let tokens: Token[];
   try {
     tokens = tokenize(when);

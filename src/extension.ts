@@ -37,6 +37,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const history = UndoHistory.init(context, connections);
   const backups = new Backups(context, connections);
   const tree = new MongoTreeProvider(connections);
+  const treeView = vscode.window.createTreeView('mongoster.connections', { treeDataProvider: tree, showCollapseAll: true });
   const documents = new DocumentFileSystem(connections);
   const manager = new Manager(connections);
   const definitions = new DefinitionFileSystem(connections);
@@ -90,7 +91,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mongoster.mcp.setup', () => mcp.setup()),
     vscode.commands.registerCommand('mongoster.mcp.changePort', () => mcp.changePort()),
     new Playgrounds(context, connections),
-    vscode.window.createTreeView('mongoster.connections', { treeDataProvider: tree, showCollapseAll: true }),
+    treeView,
     vscode.workspace.registerFileSystemProvider(DOC_SCHEME, documents, { isCaseSensitive: true }),
     documents.onDidSave((ref) => CollectionPanel.refresh(ref)),
     vscode.workspace.registerFileSystemProvider(DEF_SCHEME, definitions, { isCaseSensitive: true }),
@@ -322,6 +323,10 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
 
     vscode.commands.registerCommand('mongoster.refresh', (node?: TreeNode) => tree.refresh(node)),
+
+    vscode.commands.registerCommand('mongoster.filterTree', () => filterTree(tree, treeView)),
+
+    vscode.commands.registerCommand('mongoster.clearTreeFilter', () => setTreeFilter(tree, treeView, '')),
 
     vscode.commands.registerCommand('mongoster.openCollection', (node: CollectionNode) =>
       CollectionPanel.show(context, connections, documents, collectionTarget(node)),
@@ -563,6 +568,33 @@ async function askConnection(connections: ConnectionManager, existing?: Connecti
     if (choice !== 'Save Anyway') return undefined;
   }
   return { uri, name: name.trim() || existing?.name || fallbackName };
+}
+
+/** Asks for the text to filter the tree with; the tree follows it while it's typed, and goes back if the box is dismissed. */
+async function filterTree(tree: MongoTreeProvider, view: vscode.TreeView<TreeNode>): Promise<void> {
+  const before = tree.filter;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const text = await vscode.window.showInputBox({
+    title: 'Filter Databases and Collections',
+    prompt: 'Part of a database or collection name, or database.collection; empty shows everything',
+    placeHolder: 'e.g. orders, shop, shop.ord',
+    value: before,
+    validateInput: (value) => {
+      // Each change lists the collections of every open connection: only once typing pauses.
+      clearTimeout(timer);
+      timer = setTimeout(() => setTreeFilter(tree, view, value), 300);
+      return undefined;
+    },
+  });
+  clearTimeout(timer);
+  setTreeFilter(tree, view, text ?? before);
+}
+
+function setTreeFilter(tree: MongoTreeProvider, view: vscode.TreeView<TreeNode>, text: string): void {
+  if (text.trim() === tree.filter) return;
+  tree.setFilter(text);
+  view.message = tree.filter ? `Filter: ${tree.filter}` : undefined;
+  void vscode.commands.executeCommand('setContext', 'mongoster.treeFiltered', !!tree.filter);
 }
 
 /** Host part of a connection string, without credentials. */
