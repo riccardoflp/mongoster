@@ -245,7 +245,7 @@ To build an installable package:
 
 ```bash
 npm run package    # creates mongoster-<version>.vsix
-code --install-extension mongoster-0.5.0.vsix
+code --install-extension mongoster-0.6.0.vsix
 ```
 
 The desktop app:

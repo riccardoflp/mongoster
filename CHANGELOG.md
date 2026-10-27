@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
 - **redis-oplog**: a connection can publish the writes made in Mongoster to Redis as the Meteor package `cultofcoders:redis-oplog` does, so that the publications of the Meteor apps using it update as for their own writes. The `redis-oplog` section of `Connection Settings (TLS / SSH)…` takes the Redis URL (`redis://` or `rediss://`, kept in SecretStorage), the app's channel prefix (`globalRedisPrefix`), its namespaces and the databases and collections to publish (`app`, `app.users`, `app.*`, `*.logs`; empty, all of them); `Test Connection` checks Redis too. Inline edits, `Edit` / `Insert` / `Delete` of documents, `Update many` / `Delete many`, undo and the playground's writes (`insertOne` to `bulkWrite`, `findOneAnd…` included) are announced document by document, with the fields they changed. A Redis error doesn't stop the write: a warning says the change couldn't be published.
 
