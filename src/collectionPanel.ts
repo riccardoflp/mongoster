@@ -11,6 +11,8 @@ import { PipelineStage, parseStageBody } from './shared/pipeline';
 import { StageError, buildPipeline, fromRelaxed, toBson, toUpdate } from './queries';
 import { exportDocuments } from './transfer';
 import { UndoHistory } from './history';
+import { RedisOplog } from './redisOplog';
+import { updatedFields } from './shared/oplog';
 import type { AggregateRequest, BulkRequest, HostMessage, QueryRequest, QuerySource, QueryText, UpdateFieldRequest, WebviewMessage } from './shared/messages';
 import { suggestIndex, summarizeExplain } from './shared/explain';
 import { analyzeSchema } from './shared/schema';
@@ -319,12 +321,14 @@ export class CollectionPanel {
     if (answer !== 'Delete') return;
     try {
       const coll = await this.coll();
-      const filter = byId(fromRelaxed(id));
+      const _id = fromRelaxed(id);
+      const filter = byId(_id);
       const rec = UndoHistory.start(this.target, `Delete document ${toShell(id)}`);
       await rec?.snapshot(coll, filter);
       const res = await coll.deleteOne(filter);
       if (!res.deletedCount) void vscode.window.showWarningMessage('Document not found: it may have been deleted already.');
       else {
+        RedisOplog.sink(this.target)?.removed([_id]);
         const entry = await rec?.commit(coll);
         if (entry) UndoHistory.notify(`Deleted document ${toShell(id)} from ${this.target.collection}.`, entry);
       }
@@ -374,8 +378,10 @@ export class CollectionPanel {
       const filter = { ...byId(id), [key]: current === MISSING ? { $exists: false } : current };
       const rec = UndoHistory.start(this.target, `Edit ${key} of ${toShell(m.id)}`);
       await rec?.snapshot(coll, byId(id));
-      const res = await coll.updateOne(filter, { $set: { [key]: value } });
+      const update = { $set: { [key]: value } };
+      const res = await coll.updateOne(filter, update);
       if (!res.matchedCount) return reply(false, `${key} changed again in the database: refresh and retry.`);
+      if (res.modifiedCount) RedisOplog.sink(this.target)?.updated([id], updatedFields(update)!);
       await rec?.commit(coll);
       reply(true);
       this.post({ type: 'refresh' });
@@ -529,13 +535,18 @@ export class CollectionPanel {
         );
         if (answer !== `${verb} Without Undo`) return reply(false);
       }
+      // redis-oplog announces each document: their _ids, before the write.
+      const sink = RedisOplog.sink(this.target);
+      const ids = !sink ? [] : rec && !rec.overflow ? rec.ids() : (await coll.find(filter, { projection: { _id: 1 } }).toArray()).map((d) => d._id);
       let message: string;
       if (update) {
         const res = await coll.updateMany(filter, update);
         message = `Updated ${this.target.collection}: ${res.matchedCount.toLocaleString('en-US')} matched, ${res.modifiedCount.toLocaleString('en-US')} modified.`;
+        if (res.modifiedCount) await sink?.updatedBy(coll, ids, update);
       } else {
         const res = await coll.deleteMany(filter);
         message = `Deleted ${res.deletedCount.toLocaleString('en-US')} document${res.deletedCount === 1 ? '' : 's'} from ${this.target.collection}.`;
+        await sink?.removedOf(coll, ids, res.deletedCount);
       }
       const entry = await rec?.commit(coll);
       reply(true, message);

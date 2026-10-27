@@ -11,6 +11,7 @@ import { gunzip, gzip } from 'zlib';
 import { createHash } from 'crypto';
 import { AnyBulkWriteOperation, BSON, Collection, Document, MongoBulkWriteError } from 'mongodb';
 import type { ConnectionManager } from './connections';
+import { RedisOplog } from './redisOplog';
 import { fieldDiff, FieldDiff } from './shared/compare';
 import { relaxEjson, toShell } from './shared/query';
 import type { HistoryDocument, HistoryEntry, HistoryHostMessage, HistoryUsage, HistoryViewMessage } from './shared/messages';
@@ -471,6 +472,12 @@ export class UndoHistory implements vscode.Disposable {
         failed += errors.length;
         firstError ||= errors[0]?.errmsg ?? err.message;
       }
+    }
+    const sink = RedisOplog.sink(entry);
+    if (sink) {
+      const chosenKeys = new Set(chosen.map((d) => keyOf(d.id)));
+      const before = [...current].filter(([key]) => chosenKeys.has(key)).map(([, doc]) => doc);
+      sink.changes(before, [...(await fetchByIds(coll, chosen.map((d) => d.id))).values()]);
     }
     const undoEntry = await rec?.commit(coll, entry.id);
     if (failed) {

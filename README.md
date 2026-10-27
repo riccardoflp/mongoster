@@ -21,6 +21,11 @@ Mongoster also runs without VS Code, as a [desktop app](#desktop-app) with the s
     - `Test Connection` tries the connection and shows the server version; `Save` saves it. Passwords and passphrases are kept in SecretStorage and never sent back to the form: leaving the field empty keeps the saved one.
     - The first time you connect to an SSH server, its key fingerprint (`SHA256:…`) is shown for you to confirm; if it changes later, Mongoster warns you and asks again.
     - In the tree, SSH connections are labeled `SSH`; the tooltip shows the tunnel and TLS.
+  - **redis-oplog**: for Meteor apps using [`cultofcoders:redis-oplog`](https://github.com/cult-of-coders/redis-oplog), which only see the writes announced on Redis, the `redis-oplog` section of the same form publishes the writes made in Mongoster as the package does, so that the apps' publications update right away:
+    - **Redis URL** (`redis://user:password@host:6379`, `rediss://` for TLS; kept in SecretStorage), **Channel prefix** (the app's `globalRedisPrefix`, if set), **Namespaces** (the events also go to `namespace::collection`) and **Databases and collections**, one per line: `app` for a whole database, `app.users`, `app.*`, `*.logs`; empty, all of them. `Test Connection` checks Redis too.
+    - Published: inline edits, `Edit` / `Insert` / `Delete` of documents, `Update many` / `Delete many`, undo, and in the playground `insertOne`, `insertMany`, `updateOne`, `updateMany`, `replaceOne`, `deleteOne`, `deleteMany`, `findOneAndUpdate` / `Replace` / `Delete` and `bulkWrite`. Each document gets its event (`{ e, d: { _id }, f }`) on the collection's channel, on its namespaces and on the document's dedicated channel, with the fields the update changed; the app then reads the document from MongoDB. As redis-oplog does, a write of one document in the playground first finds its `_id` and then runs only on it.
+    - Not published: import, copy, restore, the comparison, GridFS, `$out` / `$merge`, `runCommand` and dropping collections, and documents whose `_id` can't be a Meteor id (only strings, ObjectIds and numbers can). Writes made outside Mongoster need [oplogtoredis](https://github.com/tulip/oplogtoredis) or the app itself.
+    - A Redis error doesn't stop the write: a warning says it couldn't be published, at most every 30 seconds. In the tree, these connections are labeled `redis-oplog`.
 - **Filtering the tree**: `Filter Databases and Collections…` (the filter icon in the tree's title) shows only the databases and collections whose name contains the text, ignoring case, while you type. Database and collection can be written together: `shop.ord` finds `shop.orders`. Matching databases open by themselves under the connected connections; `Filter: …` above the tree says what's filtered, and `Clear Filter` shows everything again.
 - **Managing databases and collections** from the tree's context menu:
   - `Create Database…` on a connection asks for the name of the database and of its first collection (MongoDB only creates a database together with a collection) and opens it.
@@ -262,7 +267,8 @@ An installer is built on the system it is for (a macOS disk image can only be ma
 - `src/connections.ts` – saved connections and the `MongoClient` cache
 - `src/mcpServer.ts`, `src/mcpTools.ts`, `src/shared/mcp.ts` – MCP server for AI assistants: HTTP on `127.0.0.1` with a bearer token, JSON-RPC, the read-only tools, the VS Code provider for Copilot
 - `src/transport.ts` – TLS options and SSH tunnel (`ssh2`) with host key verification
-- `src/connectionEditor.ts`, `src/webview/connectionEditor.ts`, `media/connectionEditor.css` – connection form (TLS, SSH, test)
+- `src/connectionEditor.ts`, `src/webview/connectionEditor.ts`, `media/connectionEditor.css` – connection form (TLS, SSH, redis-oplog, test)
+- `src/redisOplog.ts`, `src/shared/oplog.ts`, `src/playground/oplogWrites.ts` – publishing writes to Redis for redis-oplog: the RESP client, channels and messages, the fields an update changes, the playground's writes that find the documents they change
 - `src/tree.ts` – connections/databases/collections tree
 - `src/collectionPanel.ts` – webview for a collection, running queries
 - `src/queryHistory.ts` – history and saved queries per collection

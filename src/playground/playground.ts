@@ -9,6 +9,7 @@ import { analyzeSchema } from '../shared/schema';
 import { argumentKind, callAt, databaseAt, memberAt } from './context';
 import { PlaygroundError, RESULT_LIMIT, runPlayground } from './shell';
 import { PlaygroundResultPanel } from './resultPanel';
+import { RedisOplog } from '../redisOplog';
 
 const { EJSON } = BSON;
 
@@ -323,6 +324,7 @@ export class Playgrounds implements vscode.Disposable {
             client,
             database,
             readOnly: !!info.readOnly,
+            oplog: (db, collection) => RedisOplog.sink({ connectionId: info.id, database: db, collection }),
             print: (line) => {
               output.push(line);
               this.output.appendLine(line);

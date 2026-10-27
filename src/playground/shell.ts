@@ -24,6 +24,8 @@ import {
 } from 'mongodb';
 import { prettyShell, relaxEjson, toShell } from '../shared/query';
 import { RESOLVE_FN, ScriptSyntaxError, rewritePlayground } from './rewrite';
+import { publishedWrites } from './oplogWrites';
+import type { OplogSink } from '../redisOplog';
 
 const { EJSON } = BSON;
 
@@ -35,6 +37,8 @@ export interface RunOptions {
   database: string;
   /** The connection is read-only: methods that write throw. */
   readOnly: boolean;
+  /** Where the writes on a collection are published for redis-oplog; undefined: not published. */
+  oplog?(database: string, collection: string): OplogSink | undefined;
   print(line: string): void;
 }
 
@@ -271,6 +275,8 @@ class Shell {
   private collection(db: Db, name: string): Record<string, unknown> {
     const shell = this;
     const coll = db.collection(name);
+    const sink = this.opts.oplog?.(db.databaseName, name);
+    const writes = sink ? publishedWrites(coll, sink) : coll;
     const write =
       <A extends unknown[]>(method: string, fn: (...args: A) => unknown) =>
       (...args: A) => {
@@ -300,20 +306,20 @@ class Shell {
         find: (filter: Document = {}) => coll.find(filter).explain('executionStats'),
         aggregate: (pipeline: Document[]) => coll.aggregate(pipeline).explain('executionStats'),
       }),
-      insertOne: write('insertOne', (doc: Document, options?: Document) => coll.insertOne(doc, options)),
-      insertMany: write('insertMany', (docs: Document[], options?: Document) => coll.insertMany(docs, options)),
+      insertOne: write('insertOne', (doc: Document, options?: Document) => writes.insertOne(doc, options)),
+      insertMany: write('insertMany', (docs: Document[], options?: Document) => writes.insertMany(docs, options)),
       insert: write('insert', (docs: Document | Document[]) =>
-        Array.isArray(docs) ? coll.insertMany(docs) : coll.insertOne(docs),
+        Array.isArray(docs) ? writes.insertMany(docs) : writes.insertOne(docs),
       ),
-      updateOne: write('updateOne', (f: Document, u: Document, o?: Document) => coll.updateOne(f, u, o)),
-      updateMany: write('updateMany', (f: Document, u: Document, o?: Document) => coll.updateMany(f, u, o)),
-      replaceOne: write('replaceOne', (f: Document, r: Document, o?: Document) => coll.replaceOne(f, r, o)),
-      deleteOne: write('deleteOne', (f: Document, o?: Document) => coll.deleteOne(f, o)),
-      deleteMany: write('deleteMany', (f: Document, o?: Document) => coll.deleteMany(f, o)),
-      findOneAndUpdate: write('findOneAndUpdate', (f: Document, u: Document, o?: Document) => coll.findOneAndUpdate(f, u, o ?? {})),
-      findOneAndReplace: write('findOneAndReplace', (f: Document, r: Document, o?: Document) => coll.findOneAndReplace(f, r, o ?? {})),
-      findOneAndDelete: write('findOneAndDelete', (f: Document, o?: Document) => coll.findOneAndDelete(f, o ?? {})),
-      bulkWrite: write('bulkWrite', (ops: Document[], o?: Document) => coll.bulkWrite(ops as never, o)),
+      updateOne: write('updateOne', (f: Document, u: Document, o?: Document) => writes.updateOne(f, u, o)),
+      updateMany: write('updateMany', (f: Document, u: Document, o?: Document) => writes.updateMany(f, u, o)),
+      replaceOne: write('replaceOne', (f: Document, r: Document, o?: Document) => writes.replaceOne(f, r, o)),
+      deleteOne: write('deleteOne', (f: Document, o?: Document) => writes.deleteOne(f, o)),
+      deleteMany: write('deleteMany', (f: Document, o?: Document) => writes.deleteMany(f, o)),
+      findOneAndUpdate: write('findOneAndUpdate', (f: Document, u: Document, o?: Document) => writes.findOneAndUpdate(f, u, o ?? {})),
+      findOneAndReplace: write('findOneAndReplace', (f: Document, r: Document, o?: Document) => writes.findOneAndReplace(f, r, o ?? {})),
+      findOneAndDelete: write('findOneAndDelete', (f: Document, o?: Document) => writes.findOneAndDelete(f, o ?? {})),
+      bulkWrite: write('bulkWrite', (ops: Document[], o?: Document) => writes.bulkWrite(ops as never, o)),
       createIndex: write('createIndex', (keys: Document, o?: Document) => coll.createIndex(keys, o)),
       createIndexes: write('createIndexes', (specs: Document[]) =>
         coll.createIndexes(specs.map((key) => ('key' in key ? key : { key })) as never),

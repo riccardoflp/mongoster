@@ -4,10 +4,14 @@ import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { ConnectionInfo, ConnectionManager } from './connections';
 import type { ConnectionEditorHostMessage, ConnectionEditorViewMessage, ConnectionFileField, ConnectionForm } from './shared/messages';
+import type { RedisOplogSettings } from './shared/oplog';
+import { parseRedisUrl, testRedis } from './redisOplog';
 import { ConnectionOptions, tunnelTarget } from './transport';
 import { errorMessage } from './tree';
 
-export type SaveConnection = (id: string, name: string, uri: string, options: ConnectionOptions | undefined) => Promise<void>;
+/** The redis-oplog section of the form: the Redis URL (secret) and the settings; undefined when off. */
+export type RedisOplogForm = { url: string; settings: RedisOplogSettings } | undefined;
+export type SaveConnection = (id: string, name: string, uri: string, options: ConnectionOptions | undefined, redis: RedisOplogForm) => Promise<void>;
 
 const FILE_LABELS: Record<ConnectionFileField, string> = {
   caFile: 'CA certificate',
@@ -34,6 +38,7 @@ function emptyForm(): ConnectionForm {
     uri: 'mongodb://localhost:27017',
     tls: { enabled: false, caFile: '', certificateKeyFile: '', certificateKeyFilePassword: '', allowInvalidCertificates: false, allowInvalidHostnames: false },
     ssh: { enabled: false, host: '', port: '22', username: '', auth: 'password', password: '', privateKeyFile: '', passphrase: '' },
+    redis: { enabled: false, url: 'redis://localhost:6379', prefix: '', namespaces: '', scope: '' },
   };
 }
 
@@ -125,6 +130,16 @@ export class ConnectionEditor {
         saved.sshPassword = !!ssh.password;
         saved.passphrase = !!ssh.passphrase;
       }
+      const redis = this.existing.redisOplog;
+      if (redis) {
+        form.redis = {
+          enabled: true,
+          url: (await this.connections.redisUrl(this.existing.id)) ?? '',
+          prefix: redis.prefix ?? '',
+          namespaces: (redis.namespaces ?? []).join(', '),
+          scope: (redis.scope ?? []).join('\n'),
+        };
+      }
     }
     this.post({ type: 'init', isNew: !this.existing, form, saved });
   }
@@ -140,7 +155,7 @@ export class ConnectionEditor {
   }
 
   /** The form as connection string, name and options, with the saved secrets for the empty password fields. */
-  private async parse(form: ConnectionForm): Promise<{ uri: string; name: string; options: ConnectionOptions | undefined }> {
+  private async parse(form: ConnectionForm): Promise<{ uri: string; name: string; options: ConnectionOptions | undefined; redis: RedisOplogForm }> {
     const uri = form.uri.trim();
     if (!/^mongodb(\+srv)?:\/\//.test(uri)) throw new Invalid('The connection string must start with mongodb:// or mongodb+srv://', 'uri');
     const saved = this.existing ? await this.connections.options(this.existing.id) : undefined;
@@ -184,7 +199,7 @@ export class ConnectionEditor {
     }
     // Drop the unset keys, so that the stored JSON stays small.
     const clean = JSON.parse(JSON.stringify(options)) as ConnectionOptions;
-    return { uri, name: form.name.trim() || hostOf(uri), options: clean.tls || clean.ssh ? clean : undefined };
+    return { uri, name: form.name.trim() || hostOf(uri), options: clean.tls || clean.ssh ? clean : undefined, redis: parseRedis(form.redis) };
   }
 
   private async run(what: 'test' | 'save', form: ConnectionForm): Promise<void> {
@@ -203,14 +218,23 @@ export class ConnectionEditor {
         try {
           const version = await ConnectionManager.test(parsed.uri, parsed.options, this.connections.checkHostKey);
           const via = parsed.options?.ssh ? ` through ${parsed.options.ssh.username}@${parsed.options.ssh.host}` : '';
-          this.post({ type: 'result', ok: true, message: `Connected to ${hostOf(parsed.uri)}${via}: MongoDB ${version}.` });
+          const mongo = `Connected to ${hostOf(parsed.uri)}${via}: MongoDB ${version}.`;
+          if (!parsed.redis) return this.post({ type: 'result', ok: true, message: mongo });
+          try {
+            this.post({ type: 'result', ok: true, message: `${mongo} ${await testRedis(parsed.redis.url)} answers.` });
+          } catch (err) {
+            this.post({ type: 'result', ok: false, message: `${mongo} Could not connect to Redis: ${errorMessage(err)}`, field: 'redisUrl' });
+          }
         } catch (err) {
           this.post({ type: 'result', ok: false, message: `Could not connect: ${errorMessage(err)}` });
         }
         return;
       }
-      if (this.existing) await this.save(this.existing.id, parsed.name, parsed.uri, parsed.options);
-      else await this.connections.add(parsed.name, parsed.uri, this.folder, parsed.options);
+      if (this.existing) await this.save(this.existing.id, parsed.name, parsed.uri, parsed.options, parsed.redis);
+      else {
+        const info = await this.connections.add(parsed.name, parsed.uri, this.folder, parsed.options);
+        if (parsed.redis) await this.connections.setRedisOplog(info.id, parsed.redis);
+      }
       this.panel.dispose();
       void vscode.window.setStatusBarMessage(`Mongoster: connection ${parsed.name} saved`, 3000);
     } catch (err) {
@@ -288,6 +312,21 @@ export class ConnectionEditor {
       </div>
     </section>
 
+    <section>
+      <h2><label class="check"><input id="redisEnabled" type="checkbox"> redis-oplog</label></h2>
+      <p class="hint">Publishes the writes made in Mongoster to Redis as the Meteor package <code>cultofcoders:redis-oplog</code> does, so that the publications of the apps using it see them. Only Mongoster's own writes: edits, inserts, deletes, the playground and undo.</p>
+      <div class="fields" id="redisFields">
+        <label for="redisUrl">Redis URL</label>
+        <input id="redisUrl" class="mono" type="text" spellcheck="false" placeholder="redis://user:password@localhost:6379 (rediss:// for TLS)">
+        <label for="redisPrefix">Channel prefix</label>
+        <input id="redisPrefix" class="mono" type="text" spellcheck="false" placeholder="The globalRedisPrefix of the app, if set">
+        <label for="redisNamespaces">Namespaces</label>
+        <input id="redisNamespaces" class="mono" type="text" spellcheck="false" placeholder="Also published on namespace::collection, comma separated">
+        <label for="redisScope" class="top">Databases and collections</label>
+        <textarea id="redisScope" class="mono" rows="3" spellcheck="false" placeholder="One per line: app (a whole database), app.users, app.*, *.logs. Empty: all of them"></textarea>
+      </div>
+    </section>
+
     <div id="result" class="result hidden" role="status"></div>
     <div class="actions">
       <button type="button" id="test" class="secondary">Test Connection</button>
@@ -300,4 +339,27 @@ export class ConnectionEditor {
 </body>
 </html>`;
   }
+}
+
+/** The redis-oplog section: undefined when off. */
+function parseRedis(form: ConnectionForm['redis']): RedisOplogForm {
+  if (!form.enabled) return undefined;
+  const url = form.url.trim();
+  if (!url) throw new Invalid('The Redis URL is missing', 'redisUrl');
+  try {
+    parseRedisUrl(url);
+  } catch (err) {
+    throw new Invalid(errorMessage(err), 'redisUrl');
+  }
+  const list = (text: string) => text.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+  const scope = list(form.scope);
+  const bad = scope.find((s) => s.split('.').some((part) => !part));
+  if (bad) throw new Invalid(`Not a database or database.collection: ${bad}`, 'redisScope');
+  const namespaces = list(form.namespaces);
+  const settings: RedisOplogSettings = {
+    ...(form.prefix.trim() && { prefix: form.prefix.trim() }),
+    ...(namespaces.length && { namespaces }),
+    ...(scope.length && { scope }),
+  };
+  return { url, settings };
 }

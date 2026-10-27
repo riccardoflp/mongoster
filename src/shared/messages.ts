@@ -479,6 +479,15 @@ export interface ConnectionForm {
     privateKeyFile: string;
     passphrase: string;
   };
+  redis: {
+    enabled: boolean;
+    url: string;
+    prefix: string;
+    /** Comma or newline separated. */
+    namespaces: string;
+    /** One database or database.collection per line. */
+    scope: string;
+  };
 }
 
 export type ConnectionFileField = 'caFile' | 'certificateKeyFile' | 'privateKeyFile';

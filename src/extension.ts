@@ -20,6 +20,7 @@ import { SearchPanel, SearchScope } from './search';
 import { AdvisorPanel, AdvisorScope } from './advisor';
 import { DiagramPanel, DiagramScope } from './relations';
 import { ConnectionEditor, SaveConnection } from './connectionEditor';
+import { RedisOplog } from './redisOplog';
 import { McpServer } from './mcpServer';
 import type { QueryText } from './shared/messages';
 
@@ -35,6 +36,7 @@ export function activate(context: vscode.ExtensionContext): void {
   ThemeColors.init(context);
   const connections = new ConnectionManager(context);
   const history = UndoHistory.init(context, connections);
+  const oplog = RedisOplog.init(connections);
   const backups = new Backups(context, connections);
   const tree = new MongoTreeProvider(connections);
   const treeView = vscode.window.createTreeView('mongoster.connections', { treeDataProvider: tree, showCollapseAll: true });
@@ -57,8 +59,9 @@ export function activate(context: vscode.ExtensionContext): void {
     color: node.connection.color,
   });
   /** Saves the connection form: options first (they reconnect), then name and connection string. */
-  const saveConnection: SaveConnection = async (id, name, uri, options) => {
+  const saveConnection: SaveConnection = async (id, name, uri, options, redis) => {
     await connections.setOptions(id, options);
+    await connections.setRedisOplog(id, redis);
     await updateConnection(id, { name }, uri);
   };
   /** Saves connection changes and applies them to the open collection tabs. */
@@ -87,6 +90,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     connections,
     history,
+    oplog,
     mcp,
     vscode.commands.registerCommand('mongoster.mcp.setup', () => mcp.setup()),
     vscode.commands.registerCommand('mongoster.mcp.changePort', () => mcp.changePort()),

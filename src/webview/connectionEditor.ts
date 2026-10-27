@@ -7,7 +7,7 @@ const vscode = acquireVsCodeApi();
 const input = (id: string) => document.getElementById(id) as HTMLInputElement;
 const el = (id: string) => document.getElementById(id)!;
 
-const TEXT = ['name', 'uri', 'caFile', 'certificateKeyFile', 'certificateKeyFilePassword', 'sshHost', 'sshPort', 'sshUsername', 'sshPassword', 'privateKeyFile', 'passphrase'];
+const TEXT = ['name', 'uri', 'caFile', 'certificateKeyFile', 'certificateKeyFilePassword', 'sshHost', 'sshPort', 'sshUsername', 'sshPassword', 'privateKeyFile', 'passphrase', 'redisUrl', 'redisPrefix', 'redisNamespaces', 'redisScope'];
 let busy = false;
 
 function auth(): ConnectionForm['ssh']['auth'] {
@@ -36,6 +36,13 @@ function read(): ConnectionForm {
       privateKeyFile: input('privateKeyFile').value,
       passphrase: input('passphrase').value,
     },
+    redis: {
+      enabled: input('redisEnabled').checked,
+      url: input('redisUrl').value,
+      prefix: input('redisPrefix').value,
+      namespaces: input('redisNamespaces').value,
+      scope: input('redisScope').value,
+    },
   };
 }
 
@@ -56,6 +63,11 @@ function fill(form: ConnectionForm, saved: SavedSecrets): void {
   input('sshPassword').value = '';
   input('privateKeyFile').value = form.ssh.privateKeyFile;
   input('passphrase').value = '';
+  input('redisEnabled').checked = form.redis.enabled;
+  input('redisUrl').value = form.redis.url;
+  input('redisPrefix').value = form.redis.prefix;
+  input('redisNamespaces').value = form.redis.namespaces;
+  input('redisScope').value = form.redis.scope;
   const keep = 'Saved — leave empty to keep it';
   input('certificateKeyFilePassword').placeholder = saved.certificateKeyFilePassword ? keep : 'If the client key is encrypted';
   input('sshPassword').placeholder = saved.sshPassword ? keep : '';
@@ -67,10 +79,13 @@ function fill(form: ConnectionForm, saved: SavedSecrets): void {
 function sync(): void {
   const tls = input('tlsEnabled').checked;
   const ssh = input('sshEnabled').checked;
+  const redis = input('redisEnabled').checked;
   for (const c of el('tlsFields').querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) c.disabled = !tls;
   for (const c of el('sshFields').querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) c.disabled = !ssh;
+  for (const c of el('redisFields').querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea')) c.disabled = !redis;
   el('tlsFields').classList.toggle('off', !tls);
   el('sshFields').classList.toggle('off', !ssh);
+  el('redisFields').classList.toggle('off', !redis);
   const a = auth();
   for (const c of document.querySelectorAll<HTMLElement>('.auth-password')) c.classList.toggle('hidden', a !== 'password');
   for (const c of document.querySelectorAll<HTMLElement>('.auth-key')) c.classList.toggle('hidden', a !== 'privateKey');
@@ -120,7 +135,7 @@ window.addEventListener('message', (e: MessageEvent<ConnectionEditorHostMessage>
   }
 });
 
-for (const id of ['tlsEnabled', 'sshEnabled']) input(id).addEventListener('change', sync);
+for (const id of ['tlsEnabled', 'sshEnabled', 'redisEnabled']) input(id).addEventListener('change', sync);
 for (const r of document.querySelectorAll<HTMLInputElement>('input[name="sshAuth"]')) r.addEventListener('change', sync);
 for (const id of TEXT) input(id).addEventListener('input', () => input(id).classList.remove('invalid'));
 for (const b of document.querySelectorAll<HTMLButtonElement>('[data-browse]')) {

@@ -3,6 +3,8 @@ import { BSON, Document, Filter } from 'mongodb';
 import { ConnectionManager } from './connections';
 import { errorMessage } from './tree';
 import { UndoHistory } from './history';
+import { RedisOplog } from './redisOplog';
+import { documentFields } from './shared/oplog';
 import { isPlainObject, parseQuery, relaxEjson, toShell } from './shared/query';
 
 const { EJSON } = BSON;
@@ -90,12 +92,14 @@ export class DocumentFileSystem implements vscode.FileSystemProvider {
     if (!isPlainObject(parsed)) throw new Error('A document must be a JSON object');
     const doc = restoreTypes(EJSON.deserialize(parsed, { relaxed: false }), entry.original) as Document;
     const coll = await this.collection(entry.ref);
+    const sink = RedisOplog.sink(entry.ref);
 
     if (entry.id === undefined) {
       const rec = UndoHistory.start(entry.ref, 'Insert document');
       const { insertedId } = await coll.insertOne(doc);
       entry.id = insertedId;
       rec?.addNew(insertedId);
+      sink?.inserted([insertedId]);
       await rec?.commit(coll);
       void vscode.window.showInformationMessage(`Inserted document ${toShell(relaxed(insertedId))}`);
     } else {
@@ -113,6 +117,7 @@ export class DocumentFileSystem implements vscode.FileSystemProvider {
         if (choice !== 'Insert Again') throw new Error('Save cancelled: the document no longer exists.');
         await coll.insertOne({ ...doc, _id: entry.id } as Document);
         rec?.addNew(entry.id);
+        sink?.inserted([entry.id]);
       } else {
         if (entry.original && !sameBson(current, entry.original)) {
           const choice = await vscode.window.showWarningMessage(
@@ -123,7 +128,8 @@ export class DocumentFileSystem implements vscode.FileSystemProvider {
           if (choice !== 'Overwrite') throw new Error('Save cancelled: the document changed in the database.');
         }
         await rec?.snapshotIds(coll, [entry.id]);
-        await coll.replaceOne(byId(entry.id), doc);
+        const res = await coll.replaceOne(byId(entry.id), doc);
+        if (res.modifiedCount) sink?.updated([entry.id], documentFields(current, doc));
       }
       await rec?.commit(coll);
     }

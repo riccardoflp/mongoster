@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { MongoClient } from 'mongodb';
 import { ConnectionOptions, HostKeyCheck, openClient, SshTunnel } from './transport';
+import type { RedisOplogSettings } from './shared/oplog';
 
 export const CONNECTION_COLORS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
 export type ConnectionColor = (typeof CONNECTION_COLORS)[number];
@@ -20,11 +21,14 @@ export interface ConnectionInfo {
   ssh?: string;
   /** TLS certificates or options are set. */
   tls?: boolean;
+  /** Writes through this connection are published to Redis for redis-oplog (the Redis URL is secret). */
+  redisOplog?: RedisOplogSettings;
 }
 
 const STATE_KEY = 'mongoster.connections';
 const secretKey = (id: string) => `mongoster.uri.${id}`;
 const optionsKey = (id: string) => `mongoster.options.${id}`;
+const redisKey = (id: string) => `mongoster.redis.${id}`;
 const KNOWN_HOSTS_KEY = 'mongoster.knownHosts';
 
 const CLIENT_OPTIONS = { appName: 'mongoster', serverSelectionTimeoutMS: 10_000 };
@@ -70,7 +74,7 @@ export class ConnectionManager implements vscode.Disposable {
     const current = this.get(id);
     if (!current) return undefined;
     const info: ConnectionInfo = { ...current, ...changes };
-    for (const key of ['folder', 'color', 'readOnly', 'noHistory', 'ssh', 'tls'] as const) if (!info[key]) delete info[key];
+    for (const key of ['folder', 'color', 'readOnly', 'noHistory', 'ssh', 'tls', 'redisOplog'] as const) if (!info[key]) delete info[key];
     if (uri !== undefined && uri !== (await this.uri(id))) {
       await this.context.secrets.store(secretKey(id), uri);
       await this.disconnect(id);
@@ -123,10 +127,22 @@ export class ConnectionManager implements vscode.Disposable {
     return this.update(id, { ssh, tls });
   }
 
+  redisUrl(id: string): Thenable<string | undefined> {
+    return this.context.secrets.get(redisKey(id));
+  }
+
+  /** Turns the publishing to Redis for redis-oplog on (with the Redis URL) or off (`redis` undefined). */
+  async setRedisOplog(id: string, redis: { url: string; settings: RedisOplogSettings } | undefined): Promise<ConnectionInfo | undefined> {
+    if (redis) await this.context.secrets.store(redisKey(id), redis.url);
+    else await this.context.secrets.delete(redisKey(id));
+    return this.update(id, { redisOplog: redis?.settings });
+  }
+
   async remove(id: string): Promise<void> {
     await this.disconnect(id);
     await this.context.secrets.delete(secretKey(id));
     await this.context.secrets.delete(optionsKey(id));
+    await this.context.secrets.delete(redisKey(id));
     await this.context.globalState.update(
       STATE_KEY,
       this.list().filter((c) => c.id !== id),

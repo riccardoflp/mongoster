@@ -97,7 +97,8 @@ label,
 
 input[type='text'],
 input[type='password'],
-input[type='number'] {
+input[type='number'],
+textarea {
   width: 100%;
   padding: 4px 6px;
   background: var(--vscode-input-background);
@@ -108,17 +109,29 @@ input[type='number'] {
   font-size: inherit;
 }
 
-input:focus {
+textarea {
+  resize: vertical;
+}
+
+input:focus,
+textarea:focus {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;
 }
 
-input.mono {
+input.mono,
+textarea.mono {
   font-family: var(--mono);
 }
 
-input.invalid {
+input.invalid,
+textarea.invalid {
   border-color: var(--vscode-inputValidation-errorBorder, #be1100);
+}
+
+label.top {
+  align-self: start;
+  padding-top: 4px;
 }
 
 .file,
