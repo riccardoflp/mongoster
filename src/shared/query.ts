@@ -188,6 +188,11 @@ function base64ToHex(b64: string): string {
   }
 }
 
+/** A regex pattern as the body of a /…/ literal: its slashes escaped, its escapes (\/, \\, …) kept as they are. */
+export function escapeSlashes(pattern: string): string {
+  return pattern.replace(/\\[\s\S]|\//g, (m) => (m === '/' ? '\\/' : m));
+}
+
 export function formatWrapper(v: Record<string, unknown>): string | undefined {
   const [key] = Object.keys(v);
   const val = v[key] as any;
@@ -217,7 +222,7 @@ export function formatWrapper(v: Record<string, unknown>): string | undefined {
       return `BinData(${parseInt(val?.subType ?? '0', 16)}, ${q(val?.base64 ?? '')})`;
     }
     case '$regularExpression':
-      return `/${String(val?.pattern ?? '').replace(/(^|[^\\])\//g, '$1\\/')}/${val?.options ?? ''}`;
+      return `/${escapeSlashes(String(val?.pattern ?? ''))}/${val?.options ?? ''}`;
     case '$timestamp':
       return `Timestamp({ t: ${val?.t}, i: ${val?.i} })`;
     case '$minKey':
