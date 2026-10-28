@@ -125,6 +125,8 @@ export type WebviewMessage =
   | { type: 'loadFields' }
   | { type: 'saveView'; stages: PipelineStage[]; upto: number }
   | { type: 'editValidation' }
+  /** Generates documents like those of the analysis shown in the Schema tab (of `filter`). */
+  | { type: 'generateDocuments'; schema: SchemaSummary; filter: string }
   /** Opens the change stream tab of the collection. */
   | { type: 'watch' }
   /** Opens generated code in an untitled editor. */

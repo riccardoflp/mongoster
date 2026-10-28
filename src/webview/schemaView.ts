@@ -14,6 +14,8 @@ export interface SchemaResult {
 export interface SchemaOptions {
   /** Adds `condition` on `path` to the filter and analyzes again. */
   filter(path: string, condition: unknown): void;
+  /** Generates documents like those analyzed (`filter` is the filter of the analysis). */
+  generate(schema: SchemaSummary, filter: string): void;
 }
 
 const TYPE_CLASS: Partial<Record<BsonType, string>> = {
@@ -36,7 +38,11 @@ const typeClass = (t: BsonType) => TYPE_CLASS[t] ?? 't-special';
 export class SchemaView {
   private readonly info = document.getElementById('schemaInfo')!;
   private readonly body = document.getElementById('schemaBody')!;
+  private readonly generate = document.getElementById('schemaGenerate') as HTMLButtonElement;
   private result: SchemaResult | null = null;
+  /** The filter of the analysis running, and of the one shown. */
+  private pendingFilter = '';
+  private shownFilter = '';
   /** Labels of the expanded fields. */
   private readonly expanded = new Set<string>();
 
@@ -55,20 +61,28 @@ export class SchemaView {
       this.expanded.clear();
       this.render();
     });
+    this.generate.disabled = true;
+    this.generate.addEventListener('click', () => {
+      const schema = this.result?.schema;
+      if (schema?.sampled) this.opts.generate(schema, this.shownFilter);
+    });
   }
 
-  loading(): void {
+  loading(filter = ''): void {
+    this.pendingFilter = filter;
     this.info.textContent = 'Analyzing…';
     this.body.classList.add('stale');
   }
 
   show(result: SchemaResult): void {
     this.result = result;
+    this.shownFilter = this.pendingFilter;
     this.render();
   }
 
   private render(): void {
     const r = this.result;
+    this.generate.disabled = !r?.schema?.sampled;
     this.body.classList.remove('stale');
     this.body.replaceChildren();
     if (!r) return;

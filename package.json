@@ -114,6 +114,12 @@
         "icon": "$(cloud-upload)"
       },
       {
+        "command": "mongoster.generateDocuments",
+        "title": "Generate Test Documents…",
+        "category": "Mongoster",
+        "icon": "$(sparkle)"
+      },
+      {
         "command": "mongoster.createDatabase",
         "title": "Create Database…",
         "category": "Mongoster",
@@ -433,6 +439,11 @@
           "group": "2_transfer@1"
         },
         {
+          "command": "mongoster.generateDocuments",
+          "when": "view == mongoster.connections && viewItem =~ /^(collection|view)/",
+          "group": "2_transfer@1.5"
+        },
+        {
           "command": "mongoster.exportCollection",
           "when": "view == mongoster.connections && viewItem =~ /^(collection|view)/",
           "group": "2_transfer@2"
@@ -665,6 +676,10 @@
         },
         {
           "command": "mongoster.importDocuments",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.generateDocuments",
           "when": "false"
         },
         {
