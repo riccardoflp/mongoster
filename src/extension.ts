@@ -22,6 +22,7 @@ import { DiagramPanel, DiagramScope } from './relations';
 import { ConnectionEditor, SaveConnection } from './connectionEditor';
 import { RedisOplog } from './redisOplog';
 import { McpServer } from './mcpServer';
+import { exportConnections, importConnections } from './connectionsTransfer';
 import type { QueryText } from './shared/messages';
 
 interface OpenQueryArgs {
@@ -506,6 +507,14 @@ export function activate(context: vscode.ExtensionContext): void {
       if (node instanceof CollectionNode) return backups.restore(node.connection, node.database, node.collection);
       return undefined;
     }),
+
+    vscode.commands.registerCommand('mongoster.importConnections', (node?: FolderNode) =>
+      importConnections(connections, updateConnection, node instanceof FolderNode ? node.folder : undefined),
+    ),
+
+    vscode.commands.registerCommand('mongoster.exportConnections', (node?: FolderNode) =>
+      exportConnections(connections, node instanceof FolderNode ? node.folder : undefined),
+    ),
 
     vscode.commands.registerCommand('mongoster.importDocuments', async (node?: CollectionNode) => {
       if (!node) return;
