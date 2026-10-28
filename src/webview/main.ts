@@ -6,6 +6,9 @@ import { HistoryPopover } from './history';
 import { PipelineEditor } from './pipeline';
 import { IndexesView } from './indexes';
 import { IndexDialog } from './indexDialog';
+import { SearchIndexesView } from './searchIndexes';
+import { SearchIndexDialog } from './searchIndexDialog';
+import { FIRST_STAGES } from '../shared/pipeline';
 import { ExplainView } from './explainView';
 import { BulkDialog, BulkOp } from './bulk';
 import { CodeDialog, toCodeQuery } from './codeDialog';
@@ -133,6 +136,7 @@ function run(resetSkip = false): void {
   if (state.mode === 'indexes') {
     indexesView.setLoading();
     vscode.postMessage({ type: 'loadIndexes' });
+    searchIndexesView.load();
     return;
   }
   if (state.mode === 'schema') {
@@ -301,6 +305,7 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       fieldsState = 'loaded';
       completer.refresh();
       indexDialog.refreshFields();
+      searchIndexDialog.refreshFields();
       break;
     case 'showMode':
       if (state.mode !== m.mode) setMode(m.mode);
@@ -335,6 +340,14 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
     case 'indexResult':
       pendingIndex.get(m.requestId)?.({ ok: m.ok, message: m.message });
       pendingIndex.delete(m.requestId);
+      break;
+    case 'searchIndexes':
+      searchIndexesView.render(m.indexes, m.unsupported, m.error);
+      completer.refresh();
+      break;
+    case 'searchIndexResult':
+      pendingSearchIndex.get(m.requestId)?.({ ok: m.ok, message: m.message });
+      pendingSearchIndex.delete(m.requestId);
       break;
     case 'bulkCount':
       bulk.onCount(m);
@@ -1192,11 +1205,12 @@ filterInput.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (explainView.isOpen || bulk.isOpen || codeDialog.isOpen || indexDialog.isOpen) {
+  if (explainView.isOpen || bulk.isOpen || codeDialog.isOpen || indexDialog.isOpen || searchIndexDialog.isOpen) {
     if (e.key === 'Escape') {
       if (explainView.isOpen) explainView.close();
       else if (codeDialog.isOpen) codeDialog.close();
       else if (indexDialog.isOpen) indexDialog.close();
+      else if (searchIndexDialog.isOpen) searchIndexDialog.close();
       else bulk.close();
       e.preventDefault();
     }
@@ -1331,7 +1345,11 @@ const pipeline = new PipelineEditor({
   notify: showError,
   copy: (text) => vscode.postMessage({ type: 'copy', text }),
   attachCompletion: (field, stage, index) => {
-    completer.attach(field, { kind: () => ({ stage: stage.op }), fields: () => fieldsBefore(index) });
+    completer.attach(field, {
+      kind: () => ({ stage: stage.op }),
+      fields: () => fieldsBefore(index),
+      searchIndexes: () => (FIRST_STAGES.has(stage.op.trim()) ? searchIndexHints() : []),
+    });
     field.addEventListener('focus', () => fieldsBefore(index));
     highlight(field);
   },
@@ -1488,6 +1506,47 @@ const indexDialog = new IndexDialog({
   documents: () => indexesView.documents,
   collection: () => collectionName,
 });
+
+// ---------------------------------------------------------------------------
+// Atlas Search and Vector Search indexes
+
+const pendingSearchIndex = new Map<number, (result: { ok: boolean; message?: string }) => void>();
+let searchIndexRequest = 0;
+const searchIndexesView = new SearchIndexesView({
+  reload: () => vscode.postMessage({ type: 'loadSearchIndexes' }),
+  edit: (index) => searchIndexDialog.open(index),
+  drop: (name) => {
+    searchIndexesView.follow();
+    vscode.postMessage({ type: 'dropSearchIndex', name });
+  },
+  copy: (text) => vscode.postMessage({ type: 'copy', text }),
+  jsonTree: (value) => jsonNode(null, value, true, 0),
+  collection: () => collectionName,
+  active: () => state.mode === 'indexes',
+});
+const searchIndexDialog = new SearchIndexDialog({
+  save: (original, name, searchType, definition) =>
+    new Promise<{ ok: boolean; message?: string }>((resolve) => {
+      const requestId = ++searchIndexRequest;
+      pendingSearchIndex.set(requestId, resolve);
+      searchIndexesView.notify(null);
+      searchIndexesView.follow();
+      vscode.postMessage({ type: 'saveSearchIndex', requestId, original, name, searchType, definition });
+    }),
+  notify: (message, error) => searchIndexesView.notify(message, error),
+  copy: (text) => vscode.postMessage({ type: 'copy', text }),
+  fields: fieldsOfCollection,
+  indexes: () => searchIndexesView.list,
+  collection: () => collectionName,
+});
+completer.attach(searchIndexDialog.definition, { kind: () => searchIndexDialog.kind, fields: fieldsOfCollection });
+highlight(searchIndexDialog.definition);
+
+/** The search indexes for the `index` of the search stages, read the first time they are needed. */
+function searchIndexHints(): { name: string; type: string; status?: string }[] {
+  if (searchIndexesView.unread) searchIndexesView.load();
+  return searchIndexesView.list.map((ix) => ({ name: ix.name, type: ix.type, status: ix.status }));
+}
 
 let explainRequest = 0;
 const explainView = new ExplainView({

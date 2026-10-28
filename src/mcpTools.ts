@@ -162,10 +162,12 @@ export function mcpTools(host: ToolHost): McpTool[] {
       run: async (args) => {
         const sample = intArg(args, 'sample', 200, 1, 1000);
         const { database, collection, coll } = await target(args);
-        const [count, docs, indexes] = await Promise.all([
+        const [count, docs, indexes, searchIndexes] = await Promise.all([
           coll.estimatedDocumentCount({ maxTimeMS: MAX_TIME_MS }).catch(() => undefined),
           coll.aggregate([{ $sample: { size: sample } }], { maxTimeMS: MAX_TIME_MS }).toArray(),
           coll.indexes().catch(() => [] as Document[]),
+          // Only on servers with search (Atlas, mongot): elsewhere the section is left out.
+          coll.listSearchIndexes().toArray().then((list) => list as Document[], () => [] as Document[]),
         ]);
         const schema = analyzeSchema(docs.map((d) => EJSON.serialize(d, { relaxed: false })));
         const lines = [
@@ -173,6 +175,9 @@ export function mcpTools(host: ToolHost): McpTool[] {
           '',
           'Indexes:',
           ...(indexes.length ? indexes.map((ix) => `- ${ix.name}: ${shell(ix.key)}${ix.unique ? ' unique' : ''}${ix.sparse ? ' sparse' : ''}${ix.expireAfterSeconds !== undefined ? ` TTL ${ix.expireAfterSeconds}s` : ''}${ix.partialFilterExpression ? ` partial ${shell(ix.partialFilterExpression)}` : ''}${ix.hidden ? ' hidden' : ''}`) : ['- none (a view)']),
+          ...(searchIndexes.length
+            ? ['', 'Search indexes (the `index` of $search / $vectorSearch, which must be the first stage):', ...searchIndexes.map((ix) => `- ${ix.name}: ${ix.type ?? 'search'}${ix.status ? ` ${ix.status}` : ''} ${shell(ix.latestDefinition ?? {})}`)]
+            : []),
           '',
           'Fields (path: types, % of documents that have it):',
           ...flattenFields(schema.fields, schema.sampled).slice(0, 400),

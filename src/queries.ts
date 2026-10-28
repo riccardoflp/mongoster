@@ -2,7 +2,7 @@
 import { BSON, Document } from 'mongodb';
 import { errorMessage } from './tree';
 import { isPlainObject, parseQuery } from './shared/query';
-import { PipelineStage, isWriteStage, parseStageBody } from './shared/pipeline';
+import { PipelineStage, isWriteStage, misplacedFirstStages, parseStageBody } from './shared/pipeline';
 export type { QuerySource } from './shared/messages';
 
 const { EJSON } = BSON;
@@ -68,6 +68,8 @@ export function buildPipeline(stages: PipelineStage[], upto: number): { pipeline
       throw new StageError(`Stage ${index + 1} (${stage.op}): ${errorMessage(err)}`, index);
     }
   }
+  const [notFirst] = misplacedFirstStages(stages.slice(0, upto + 1));
+  if (notFirst !== undefined) throw new StageError(`${stages[notFirst].op.trim()} must be the first stage of the pipeline`, notFirst);
   const writes = active.filter(({ stage }) => isWriteStage(stage));
   const misplaced = writes.find((w) => w !== active[active.length - 1]);
   if (misplaced) throw new StageError(`${misplaced.stage.op} must be the last stage of the pipeline`, misplaced.index);

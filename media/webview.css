@@ -968,6 +968,10 @@ body.mode-aggregate .doc-write {
   border-color: var(--vscode-editorWarning-foreground, #cca700);
 }
 
+.stage.misplaced {
+  border-color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
 .stage.error {
   border-color: var(--vscode-inputValidation-errorBorder, #be1100);
   box-shadow: 0 0 0 1px var(--vscode-inputValidation-errorBorder, #be1100);
@@ -1341,6 +1345,136 @@ body.mode-indexes .not-indexes {
 
 .ix-host {
   line-height: 1.5;
+}
+
+/* ---------- search indexes ---------- */
+
+.search-indexes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.search-indexes-title {
+  font-weight: 600;
+}
+
+#searchIndexMessage.error,
+#searchIndexMessage.info {
+  margin: 0;
+}
+
+#searchIndexMessage.info {
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.search-unsupported-detail {
+  margin-top: 2px;
+  opacity: 0.8;
+  font-size: 0.92em;
+}
+
+.search-index-table .ix-type {
+  color: var(--muted);
+}
+
+.search-index-table .search-summary {
+  max-width: 380px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-index-table .search-queryable {
+  text-align: center;
+  color: var(--vscode-testing-iconPassed, #73c991);
+}
+
+.search-index-table .search-queryable.no {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.badge.busy {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid currentColor;
+}
+
+.badge.bad {
+  background: transparent;
+  color: var(--vscode-errorForeground, #f48771);
+  border: 1px solid currentColor;
+}
+
+.badge.muted {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid currentColor;
+}
+
+#searchIndexModal .search-type {
+  justify-self: start;
+}
+
+#searchIndexModal:not(.vector) .vector-only,
+#searchIndexModal.vector .search-only {
+  display: none;
+}
+
+#searchIndexModal.busy .index-body {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+#searchVectorDims {
+  width: 90px;
+}
+
+.search-field-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  max-height: 120px;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.search-field-list.stale {
+  opacity: 0.5;
+}
+
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  font-family: var(--mono);
+}
+
+.search-field input {
+  margin: 0;
+}
+
+.search-field-type {
+  color: var(--muted);
+  font-size: 0.88em;
+  font-family: var(--vscode-font-family);
+}
+
+.search-definition {
+  resize: vertical;
+  min-height: 120px;
+  line-height: 1.4;
+}
+
+#searchIndexPreview {
+  max-height: 160px;
+  overflow: auto;
+}
+
+#searchIndexError {
+  margin: 0;
 }
 
 /* ---------- index dialog ---------- */
