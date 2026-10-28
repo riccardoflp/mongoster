@@ -14,7 +14,7 @@ import { exportDocuments } from './transfer';
 import { UndoHistory } from './history';
 import { RedisOplog } from './redisOplog';
 import { updatedFields } from './shared/oplog';
-import type { AggregateRequest, BulkRequest, HostMessage, QueryRequest, QuerySource, QueryText, UpdateFieldRequest, WebviewMessage } from './shared/messages';
+import type { AggregateRequest, BulkRequest, HistoryEntry, HostMessage, QueryRequest, QuerySource, QueryText, UpdateFieldRequest, WebviewMessage } from './shared/messages';
 import { suggestIndex, summarizeExplain } from './shared/explain';
 import { analyzeSchema } from './shared/schema';
 import { ChartSpec, chartStages, normalizeSpec, specError } from './shared/chart';
@@ -299,6 +299,9 @@ export class CollectionPanel {
       case 'deleteDocument':
         await this.deleteDocument(m.id);
         break;
+      case 'deleteDocuments':
+        await this.deleteDocuments(m.ids);
+        break;
       case 'export':
         await exportDocuments(this.connections, this.target, m.source, { expanded: m.expanded, layout: m.layout, page: m.page, count: m.count });
         break;
@@ -562,49 +565,93 @@ export class CollectionPanel {
       const filter = toBson(m.filter, 'Filter') ?? {};
       const update = m.op === 'update' ? toUpdate(m.update ?? '') : undefined;
       const coll = await this.coll();
+      const verb = update ? 'Update' : 'Delete';
       if (!Object.keys(filter).length) {
-        const verb = m.op === 'update' ? 'Update' : 'Delete';
         const total = await coll.countDocuments();
-        const answer = await vscode.window.showWarningMessage(
-          `${verb} all ${total.toLocaleString('en-US')} documents of ${this.target.collection}?`,
-          { modal: true, detail: 'The filter is empty, so every document of the collection is affected.' },
-          `${verb} All`,
-        );
-        if (answer !== `${verb} All`) return reply(false);
+        if (!(await confirmEmptyFilter(`${verb} all ${total.toLocaleString('en-US')} documents of ${this.target.collection}?`, `${verb} All`))) {
+          return reply(false);
+        }
       }
       const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
-      const label = `${update ? 'Update' : 'Delete'} many ${oneLine(m.filter) || '{}'}${update ? ` with ${oneLine(m.update ?? '')}` : ''}`;
-      const rec = UndoHistory.start(this.target, label.length > 300 ? `${label.slice(0, 299)}…` : label);
-      if (rec && !(await rec.snapshot(coll, filter))) {
-        const verb = m.op === 'update' ? 'Update' : 'Delete';
-        const answer = await vscode.window.showWarningMessage(
-          `${verb} without the possibility to undo?`,
-          { modal: true, detail: `The documents matching the filter are ${rec.overflow}: too many for the undo history (settings mongoster.history).` },
-          `${verb} Without Undo`,
-        );
-        if (answer !== `${verb} Without Undo`) return reply(false);
-      }
-      // redis-oplog announces each document: their _ids, before the write.
-      const sink = RedisOplog.sink(this.target);
-      const ids = !sink ? [] : rec && !rec.overflow ? rec.ids() : (await coll.find(filter, { projection: { _id: 1 } }).toArray()).map((d) => d._id);
-      let message: string;
-      if (update) {
-        const res = await coll.updateMany(filter, update);
-        message = `Updated ${this.target.collection}: ${res.matchedCount.toLocaleString('en-US')} matched, ${res.modifiedCount.toLocaleString('en-US')} modified.`;
-        if (res.modifiedCount) await sink?.updatedBy(coll, ids, update);
-      } else {
-        const res = await coll.deleteMany(filter);
-        message = `Deleted ${res.deletedCount.toLocaleString('en-US')} document${res.deletedCount === 1 ? '' : 's'} from ${this.target.collection}.`;
-        await sink?.removedOf(coll, ids, res.deletedCount);
-      }
-      const entry = await rec?.commit(coll);
+      const label = `${verb} many ${oneLine(m.filter) || '{}'}${update ? ` with ${oneLine(m.update ?? '')}` : ''}`;
+      const done = await this.writeMany(coll, filter, update, label);
+      if (!done) return reply(false);
+      const message = update
+        ? `Updated ${this.target.collection}: ${done.matched.toLocaleString('en-US')} matched, ${done.modified.toLocaleString('en-US')} modified.`
+        : `Deleted ${done.deleted.toLocaleString('en-US')} document${done.deleted === 1 ? '' : 's'} from ${this.target.collection}.`;
       reply(true, message);
-      UndoHistory.notify(message, entry);
+      UndoHistory.notify(message, done.entry);
       this.post({ type: 'refresh' });
       void vscode.commands.executeCommand('mongoster.refresh');
     } catch (err) {
       reply(false, errorMessage(err));
     }
+  }
+
+  /**
+   * Updates (with `update`) or deletes the documents matching `filter`, keeping them in the undo history
+   * and announcing them to redis-oplog: the path of Update many / Delete many, the selected rows and the
+   * column actions. Undefined when the user cancels (too many documents to undo).
+   */
+  private async writeMany(
+    coll: Collection,
+    filter: Document,
+    update: Document | Document[] | undefined,
+    label: string,
+  ): Promise<{ matched: number; modified: number; deleted: number; entry?: HistoryEntry } | undefined> {
+    const verb = update ? 'Update' : 'Delete';
+    const rec = UndoHistory.start(this.target, label.length > 300 ? `${label.slice(0, 299)}…` : label);
+    if (rec && !(await rec.snapshot(coll, filter))) {
+      const answer = await vscode.window.showWarningMessage(
+        `${verb} without the possibility to undo?`,
+        { modal: true, detail: `The documents matching the filter are ${rec.overflow}: too many for the undo history (settings mongoster.history).` },
+        `${verb} Without Undo`,
+      );
+      if (answer !== `${verb} Without Undo`) return undefined;
+    }
+    // redis-oplog announces each document: their _ids, before the write.
+    const sink = RedisOplog.sink(this.target);
+    const ids = !sink ? [] : rec && !rec.overflow ? rec.ids() : (await coll.find(filter, { projection: { _id: 1 } }).toArray()).map((d) => d._id);
+    const done = { matched: 0, modified: 0, deleted: 0 };
+    if (update) {
+      const res = await coll.updateMany(filter, update);
+      done.matched = res.matchedCount;
+      done.modified = res.modifiedCount;
+      if (res.modifiedCount) await sink?.updatedBy(coll, ids, update);
+    } else {
+      const res = await coll.deleteMany(filter);
+      done.deleted = res.deletedCount;
+      await sink?.removedOf(coll, ids, res.deletedCount);
+    }
+    return { ...done, entry: await rec?.commit(coll) };
+  }
+
+  /** Deletes the rows selected in the table, after a confirmation. */
+  private async deleteDocuments(ids: unknown[]): Promise<void> {
+    if (this.refuseWrite() || !ids.length) return;
+    const n = ids.length;
+    const answer = await vscode.window.showWarningMessage(
+      `Delete ${n.toLocaleString('en-US')} documents from ${this.target.collection}?`,
+      { modal: true, detail: `The ${n.toLocaleString('en-US')} documents selected in the table. ${UndoHistory.note(this.target.connectionId, n)}` },
+      'Delete',
+    );
+    if (answer !== 'Delete') return;
+    try {
+      const coll = await this.coll();
+      const label = `Delete ${n.toLocaleString('en-US')} documents ${ids.map((id) => toShell(id)).join(', ')}`;
+      const done = await this.writeMany(coll, { _id: { $in: ids.map(fromRelaxed) } }, undefined, label);
+      if (done) {
+        const message =
+          done.deleted < n
+            ? `Deleted ${done.deleted.toLocaleString('en-US')} of ${n.toLocaleString('en-US')} documents from ${this.target.collection}: the others were already gone.`
+            : `Deleted ${n.toLocaleString('en-US')} documents from ${this.target.collection}.`;
+        UndoHistory.notify(message, done.entry);
+        void vscode.commands.executeCommand('mongoster.refresh');
+      }
+    } catch (err) {
+      void vscode.window.showErrorMessage(`Delete failed: ${errorMessage(err)}`);
+    }
+    this.post({ type: 'refresh' });
   }
 
   private async coll() {
@@ -943,6 +990,9 @@ export class CollectionPanel {
   <div class="statusbar">
     <span id="status"></span>
     <span class="spacer"></span>
+    <span id="selectionInfo" class="status-group selection-info hidden" aria-live="polite">
+      <span id="selectionCount"></span><span aria-hidden="true">·</span><button id="selectionClear" class="link" title="Clear the selection (Esc)">Clear</button>
+    </span>
     <button id="columnsBtn" class="secondary columns-btn" title="Show, hide, pin and reorder the columns" aria-haspopup="true" aria-expanded="false">Columns</button>
     <span class="status-group">
     <label for="limit">Page size</label>
@@ -1130,6 +1180,16 @@ export class CollectionPanel {
 </body>
 </html>`;
   }
+}
+
+/** The extra confirmation of a write on every document of the collection (an empty filter). */
+async function confirmEmptyFilter(question: string, button: string): Promise<boolean> {
+  const answer = await vscode.window.showWarningMessage(
+    question,
+    { modal: true, detail: 'The filter is empty, so every document of the collection is affected.' },
+    button,
+  );
+  return answer === button;
 }
 
 const MISSING = Symbol('missing');

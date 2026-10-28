@@ -104,6 +104,8 @@ export type WebviewMessage =
   | AggregateRequest
   | { type: 'editDocument'; id: unknown }
   | { type: 'deleteDocument'; id: unknown }
+  /** Deletes the rows selected in the table, by _id, after a confirmation. */
+  | { type: 'deleteDocuments'; ids: unknown[] }
   /** Inserts the documents of the insert dialog (one, or an array; mongosh syntax). */
   | { type: 'insertDocuments'; requestId: number; text: string }
   /** Opens the text of the insert dialog in an editor tab, inserted on save. */
@@ -136,7 +138,8 @@ export type WebviewMessage =
   /** Saves the chart image (a PNG data URL). */
   | { type: 'savePng'; dataUrl: string; name: string }
   | BulkRequest
-  | { type: 'export'; source: QuerySource; expanded: string[]; layout: ColumnLayout; page: { skip: number; limit: number }; count: number | null };
+  /** Without `page`, everything the source finds is exported (e.g. the selected rows). */
+  | { type: 'export'; source: QuerySource; expanded: string[]; layout: ColumnLayout; page?: { skip: number; limit: number }; count: number | null };
 
 export type HostMessage =
   | {

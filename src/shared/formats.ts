@@ -1,4 +1,4 @@
-// Documents as text to copy (mongosh, Extended JSON, plain JSON, YAML, an insert command),
+// Documents as text to copy (mongosh, Extended JSON, JSON Lines, plain JSON, YAML, an insert command),
 // and the text of the insert dialog back into documents. Shared by the host and the webview.
 import { formatWrapper, isEjsonWrapper, isPlainObject, parseQuery, prettyShell, toShell } from './query';
 
@@ -25,6 +25,36 @@ export function formatDocument(doc: unknown, format: CopyFormat, collection: str
       return toYaml(plainValue(doc, true));
     case 'insert':
       return `db.getCollection(${JSON.stringify(collection)}).insertOne(${toShell(doc, 2)});`;
+  }
+}
+
+export type CopyManyFormat = 'shell' | 'ejson' | 'jsonl' | 'json' | 'yaml' | 'insert';
+
+/** The formats of several documents (the rows selected in the table). */
+export const COPY_MANY_FORMATS: { id: CopyManyFormat; label: string; title: string }[] = [
+  { id: 'shell', label: 'mongosh', title: 'An array with ObjectId(…), ISODate(…): pastes into Insert, a query or the playground' },
+  { id: 'ejson', label: 'Extended JSON', title: 'An array keeping every type ({ "$oid": … }): pastes into Insert' },
+  { id: 'jsonl', label: 'JSON Lines', title: 'One document per line in Extended JSON, as mongoexport writes them: pastes into Insert' },
+  { id: 'json', label: 'JSON', title: 'A plain JSON array: ids and dates as strings, for other tools' },
+  { id: 'yaml', label: 'YAML', title: 'A YAML list: ids as strings, dates as YAML timestamps' },
+  { id: 'insert', label: 'insertMany command', title: 'db.getCollection(…).insertMany([…]) for mongosh' },
+];
+
+/** Several documents (relaxed EJSON) as text in `format`. */
+export function formatDocuments(docs: unknown[], format: CopyManyFormat, collection: string): string {
+  switch (format) {
+    case 'shell':
+      return toShell(docs, 2);
+    case 'ejson':
+      return JSON.stringify(docs, null, 2);
+    case 'jsonl':
+      return docs.map((d) => JSON.stringify(d)).join('\n') + '\n';
+    case 'json':
+      return JSON.stringify(plainValue(docs), null, 2);
+    case 'yaml':
+      return docs.length ? toYaml(plainValue(docs, true)) : '[]\n';
+    case 'insert':
+      return `db.getCollection(${JSON.stringify(collection)}).insertMany(${toShell(docs, 2)});`;
   }
 }
 
