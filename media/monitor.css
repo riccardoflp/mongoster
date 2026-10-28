@@ -482,3 +482,92 @@ tr.op-insert { --op-color: var(--vscode-charts-green, #89d185); }
 tr.op-update { --op-color: var(--vscode-charts-blue, #3794ff); }
 tr.op-delete { --op-color: var(--vscode-charts-red, #f14c4c); }
 tr.op-other { --op-color: var(--vscode-charts-orange, #d18616); }
+
+/* ---------- sharding ---------- */
+
+:root {
+  --shard-0: var(--vscode-charts-blue, #3794ff);
+  --shard-1: var(--vscode-charts-green, #89d185);
+  --shard-2: var(--vscode-charts-orange, #d18616);
+  --shard-3: var(--vscode-charts-purple, #b180d7);
+  --shard-4: var(--vscode-charts-yellow, #cca700);
+  --shard-5: var(--vscode-charts-red, #f14c4c);
+}
+
+#shardView {
+  display: block;
+  padding-bottom: 16px;
+}
+
+#shardMessage {
+  white-space: pre-wrap;
+}
+
+#shardCollFilter,
+#shardEventsNs {
+  min-width: 240px;
+}
+
+td.muted {
+  color: var(--muted);
+}
+
+.swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.dist {
+  display: flex;
+  width: 140px;
+  height: 8px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--border);
+}
+
+.dist span {
+  display: block;
+  height: 100%;
+}
+
+table.mini {
+  min-width: 0;
+  margin: 4px 0 6px;
+}
+
+table.mini th {
+  position: static;
+  background: none;
+}
+
+.zones {
+  margin: 4px 0;
+  font-family: var(--mono);
+}
+
+.zones code {
+  font-family: var(--mono);
+}
+
+#shardEventsTable td.time,
+#shardEventsTable td.ns {
+  color: var(--muted);
+}
+
+#shardEventsTable td.op {
+  font-weight: 600;
+  color: var(--op-color, var(--muted));
+}
+
+tr.event-error {
+  --op-color: var(--vscode-errorForeground, #f48771);
+}
+
+tr.event-error td.command {
+  color: var(--vscode-errorForeground, #f48771);
+}

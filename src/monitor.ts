@@ -1,6 +1,6 @@
 // Server monitor: one tab per connection with the running operations (currentOp, killOp), the slow
 // queries recorded by the profiler or logged by the server, server, database and collection statistics,
-// and the replica set's members and oplog.
+// the replica set's members and oplog, and the shards, sharded collections and balancer of a cluster.
 import * as vscode from 'vscode';
 import { ThemeColors } from './themeColors';
 import { BSON, Db, Document, MongoClient } from 'mongodb';
@@ -18,6 +18,7 @@ import type {
 import { relaxEjson, toShell } from './shared/query';
 import { OpQuery, SlowOp, SlowOpSource, fromLogLine, fromProfileDoc, isNoise, splitNs } from './shared/profile';
 import { helloMembers, oplogEntry, oplogFilter, replMembers } from './replication';
+import { setBalancer, setCollectionBalancing, shardingEvents, shardingStatus } from './sharding';
 import { errorMessage } from './tree';
 
 const { EJSON } = BSON;
@@ -152,6 +153,18 @@ export class MonitorPanel {
         break;
       case 'stepDown':
         await this.stepDown();
+        break;
+      case 'loadSharding':
+        await this.loadSharding(m.requestId, m.full);
+        break;
+      case 'loadShardingEvents':
+        await this.loadShardingEvents(m.requestId, m.scope, m.ns, m.limit);
+        break;
+      case 'setBalancer':
+        await this.setBalancer(m.enabled);
+        break;
+      case 'setCollectionBalancing':
+        await this.setCollectionBalancing(m.ns, m.enabled);
         break;
       case 'copy':
         await vscode.env.clipboard.writeText(m.text);
@@ -472,6 +485,68 @@ export class MonitorPanel {
     }
   }
 
+  // ---- sharding
+
+  private async loadSharding(requestId: number, full: boolean): Promise<void> {
+    try {
+      this.post({ type: 'sharding', requestId, status: await shardingStatus(await this.client(), full) });
+    } catch (err) {
+      this.post({ type: 'sharding', requestId, error: errorMessage(err) });
+    }
+  }
+
+  private async loadShardingEvents(requestId: number, scope: 'balancer' | 'all', ns: string, limit: number): Promise<void> {
+    try {
+      this.post({ type: 'shardingEvents', requestId, events: await shardingEvents(await this.client(), scope, ns, limit) });
+    } catch (err) {
+      this.post({ type: 'shardingEvents', requestId, error: errorMessage(err) });
+    }
+  }
+
+  private async setBalancer(enabled: boolean): Promise<void> {
+    const reply = (ok: boolean, message?: string) => this.post({ type: 'shardingAction', ok, message });
+    if (this.info.readOnly) return reply(false, `The connection ${this.info.name} is read-only.`);
+    const answer = await vscode.window.showWarningMessage(
+      enabled ? 'Start the balancer?' : 'Stop the balancer?',
+      {
+        modal: true,
+        detail: enabled
+          ? 'The balancer moves chunks between the shards to even out the data and to respect the zones (within its active window, if one is set). Migrations load the shards involved.'
+          : 'No more chunks are moved between the shards until it is started again: the data can become uneven and ranges can stay on shards outside their zone. A migration in progress is completed first (balancerStop waits for it).',
+      },
+      enabled ? 'Start Balancer' : 'Stop Balancer',
+    );
+    if (!answer) return reply(false);
+    try {
+      await setBalancer(await this.client(), enabled);
+      reply(true, enabled ? 'The balancer is started.' : 'The balancer is stopped.');
+    } catch (err) {
+      reply(false, errorMessage(err));
+    }
+  }
+
+  private async setCollectionBalancing(ns: string, enabled: boolean): Promise<void> {
+    const reply = (ok: boolean, message?: string) => this.post({ type: 'shardingAction', ok, message });
+    if (this.info.readOnly) return reply(false, `The connection ${this.info.name} is read-only.`);
+    const answer = await vscode.window.showWarningMessage(
+      enabled ? `Enable balancing for ${ns}?` : `Disable balancing for ${ns}?`,
+      {
+        modal: true,
+        detail: enabled
+          ? 'The balancer can move the chunks of this collection again.'
+          : 'The balancer no longer moves the chunks of this collection (a migration in progress is completed): its data can become uneven across the shards.',
+      },
+      enabled ? 'Enable Balancing' : 'Disable Balancing',
+    );
+    if (!answer) return reply(false);
+    try {
+      const how = await setCollectionBalancing(await this.client(), ns, enabled);
+      reply(true, `Balancing ${enabled ? 'enabled' : 'disabled'} for ${ns} (${how}).`);
+    } catch (err) {
+      reply(false, errorMessage(err));
+    }
+  }
+
   private html(): string {
     const webview = this.panel.webview;
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...p));
@@ -494,6 +569,7 @@ export class MonitorPanel {
       <button id="tabProfile" role="tab" aria-selected="false">Slow queries</button>
       <button id="tabStats" role="tab" aria-selected="false">Stats</button>
       <button id="tabRepl" role="tab" aria-selected="false">Replication</button>
+      <button id="tabShard" role="tab" aria-selected="false">Sharding</button>
     </div>
     <div class="spacer"></div>
     <label class="auto" title="Refresh the current tab periodically">Auto
@@ -615,6 +691,40 @@ export class MonitorPanel {
       </div>
       <div id="oplogError" class="error hidden"></div>
       <div class="table-wrap"><table id="oplogTable"></table></div>
+    </div>
+  </section>
+  <section id="shardView" class="view hidden">
+    <div id="shardError" class="error hidden"></div>
+    <div id="shardMessage" class="message hidden"></div>
+    <div id="shardAction" class="message hidden"></div>
+    <div id="shardCards" class="cards"></div>
+    <div id="shardBody" class="hidden">
+      <div class="toolbar">
+        <h3 class="inline">Shards</h3>
+        <span id="shardInfo" class="info"></span>
+        <span class="spacer"></span>
+        <button id="balancerToggle" class="secondary not-locked">Stop Balancer…</button>
+      </div>
+      <div class="table-wrap"><table id="shardTable"></table></div>
+      <div class="toolbar">
+        <h3 class="inline">Sharded collections</h3>
+        <input id="shardCollFilter" type="search" placeholder="Filter by namespace or shard key" spellcheck="false">
+        <span id="shardCollInfo" class="info"></span>
+      </div>
+      <div class="table-wrap"><table id="shardCollTable" class="sortable"></table></div>
+      <div class="toolbar">
+        <h3 class="inline">Recent events</h3>
+        <input id="shardEventsNs" type="search" placeholder="Database or collection (shop, shop.orders)" spellcheck="false">
+        <label>Show
+          <select id="shardEventsScope">
+            <option value="balancer">migrations, splits, balancer</option>
+            <option value="all">every event</option>
+          </select>
+        </label>
+        <span id="shardEventsInfo" class="info"></span>
+      </div>
+      <div id="shardEventsError" class="error hidden"></div>
+      <div class="table-wrap"><table id="shardEventsTable"></table></div>
     </div>
   </section>
   <script nonce="${nonce}" src="${asset('dist', 'monitor.js')}"></script>
