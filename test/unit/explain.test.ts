@@ -110,6 +110,49 @@ describe('summarizeExplain', () => {
       },
     });
     expect(s.plan?.stage).toBe('SINGLE_SHARD');
+    // The shard's own plan is walked too: its collection scan is reported.
+    expect(s.plan?.children).toMatchObject([{ stage: 'SHARD', details: { shardName: 'rs0' }, children: [{ stage: 'COLLSCAN' }] }]);
+    expect(s.collscan).toBe(true);
+  });
+
+  it('reports the index each shard used, with the shards execution stats', () => {
+    const s = summarizeExplain({
+      queryPlanner: {
+        winningPlan: {
+          stage: 'SHARD_MERGE',
+          shards: [
+            { shardName: 'sh1', winningPlan: { stage: 'FETCH', inputStage: { stage: 'IXSCAN', indexName: 'a_1' } }, rejectedPlans: [{}] },
+            { shardName: 'sh2', winningPlan: { stage: 'COLLSCAN' }, rejectedPlans: [] },
+          ],
+        },
+      },
+      executionStats: {
+        nReturned: 5,
+        totalDocsExamined: 40,
+        executionStages: {
+          stage: 'SHARD_MERGE',
+          nReturned: 5,
+          shards: [
+            {
+              shardName: 'sh1',
+              nReturned: 2,
+              totalKeysExamined: 2,
+              totalDocsExamined: 2,
+              executionStages: { stage: 'FETCH', nReturned: 2, inputStage: { stage: 'IXSCAN', indexName: 'a_1', keysExamined: 2 } },
+            },
+            // Slot-based stages: the shard's logical plan is shown instead.
+            { shardName: 'sh2', nReturned: 3, totalDocsExamined: 38, executionStages: { stage: 'filter' } },
+          ],
+        },
+      },
+    });
+    expect(s.indexes).toEqual(['a_1']);
+    expect(s.collscan).toBe(true);
+    expect(s.rejectedPlans).toBe(1);
+    expect(s.plan?.children).toMatchObject([
+      { stage: 'SHARD', details: { shardName: 'sh1' }, nReturned: 2, children: [{ stage: 'FETCH', children: [{ stage: 'IXSCAN', keysExamined: 2 }] }] },
+      { stage: 'SHARD', details: { shardName: 'sh2' }, docsExamined: 38, children: [{ stage: 'COLLSCAN' }] },
+    ]);
   });
 
   it('copes with nothing recognizable', () => {

@@ -56,17 +56,40 @@ const DETAIL_KEYS = [
   'isMultiKey',
 ];
 
-function toNode(stage: Obj): PlanNode {
+const isClassic = (stage: unknown): stage is Obj =>
+  isPlainObject(stage) && typeof stage.stage === 'string' && stage.stage === stage.stage.toUpperCase();
+
+/** Each shard's entry of the query planner, by shard name: the execution stats don't repeat the logical plan. */
+type PlannerShards = Map<unknown, Obj>;
+
+/** One shard of a sharded plan (`SINGLE_SHARD`, `SHARD_MERGE`, …): its execution stages, or its logical plan. */
+function shardNode(shard: Obj, plannerShards?: PlannerShards): PlanNode {
+  const winning = (shard.winningPlan ?? plannerShards?.get(shard.shardName)?.winningPlan) as Obj | undefined;
+  const logical = winning && isPlainObject(winning.queryPlan) ? winning.queryPlan : winning;
+  const inner = isClassic(shard.executionStages) ? shard.executionStages : logical;
+  return {
+    stage: 'SHARD',
+    details: shard.shardName !== undefined ? { shardName: shard.shardName } : {},
+    children: isPlainObject(inner) ? [toNode(inner as Obj)] : [],
+    nReturned: num(shard.nReturned),
+    keysExamined: num(shard.totalKeysExamined),
+    docsExamined: num(shard.totalDocsExamined),
+    timeMs: num(shard.executionTimeMillis),
+  };
+}
+
+function toNode(stage: Obj, plannerShards?: PlannerShards): PlanNode {
   const children: unknown[] = [];
   if (isPlainObject(stage.inputStage)) children.push(stage.inputStage);
   if (Array.isArray(stage.inputStages)) children.push(...stage.inputStages);
   if (isPlainObject(stage.queryPlan)) children.push(stage.queryPlan);
   const details: Obj = {};
   for (const k of DETAIL_KEYS) if (stage[k] !== undefined) details[k] = stage[k];
+  const shards = Array.isArray(stage.shards) ? stage.shards.filter(isPlainObject).map((s) => shardNode(s as Obj, plannerShards)) : [];
   return {
     stage: String(stage.stage ?? '?'),
     details,
-    children: children.filter(isPlainObject).map((c) => toNode(c as Obj)),
+    children: [...children.filter(isPlainObject).map((c) => toNode(c as Obj, plannerShards)), ...shards],
     nReturned: num(stage.nReturned),
     keysExamined: num(stage.keysExamined),
     docsExamined: num(stage.docsExamined),
@@ -87,9 +110,11 @@ export function summarizeExplain(raw: unknown): ExplainSummary {
   const winning = planner?.winningPlan as Obj | undefined;
   const logical = (winning && isPlainObject(winning.queryPlan) ? winning.queryPlan : winning) as Obj | undefined;
   // Classic execution stages mirror the plan with per-stage stats; slot-based (SBE) ones use other, lowercase names.
-  const exec = stats?.executionStages as Obj | undefined;
-  const classic = exec && typeof exec.stage === 'string' && exec.stage === exec.stage.toUpperCase();
-  const plan = classic ? toNode(exec) : logical ? toNode(logical) : null;
+  const exec = stats?.executionStages;
+  const plannerShards: PlannerShards = new Map(
+    (Array.isArray(winning?.shards) ? winning.shards : []).filter(isPlainObject).map((s) => [(s as Obj).shardName, s as Obj]),
+  );
+  const plan = isClassic(exec) ? toNode(exec, plannerShards) : logical ? toNode(logical) : null;
 
   const indexes = new Set<string>();
   let collscan = false;
@@ -118,7 +143,10 @@ export function summarizeExplain(raw: unknown): ExplainSummary {
     totalKeysExamined: num(stats?.totalKeysExamined),
     totalDocsExamined: num(stats?.totalDocsExamined),
     executionTimeMillis: num(stats?.executionTimeMillis),
-    rejectedPlans: Array.isArray(planner?.rejectedPlans) ? planner.rejectedPlans.length : 0,
+    rejectedPlans: Array.isArray(planner?.rejectedPlans)
+      ? planner.rejectedPlans.length
+      : // A sharded plan keeps the rejected plans in each shard.
+        [...plannerShards.values()].reduce((n, s) => n + (Array.isArray(s.rejectedPlans) ? s.rejectedPlans.length : 0), 0),
     pipeline,
   };
 }
