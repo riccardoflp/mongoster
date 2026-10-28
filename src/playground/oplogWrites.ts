@@ -2,8 +2,9 @@
 // collection's, which also tell the sink which documents they changed. A write of one document
 // (updateOne, replaceOne, deleteOne, findOneAnd…) first finds the _id of the document it changes and then
 // runs only on it, as redis-oplog does; a write of many finds their _ids before running. bulkWrite compares
-// the documents it may touch before and after.
-import { Collection, Document, MongoBulkWriteError } from 'mongodb';
+// the documents it may touch before and after. With a session in the write's options (a transaction), the
+// finds run in it too, so they see the transaction's own uncommitted writes.
+import { ClientSession, Collection, Document, MongoBulkWriteError } from 'mongodb';
 import type { OplogSink } from '../redisOplog';
 import { documentFields } from '../shared/oplog';
 
@@ -14,15 +15,18 @@ function only(filter: Document, id: unknown): Document {
   return '_id' in filter ? { $and: [filter, { _id: id }] } : { ...filter, _id: id };
 }
 
-async function idsOf(coll: Collection, filter: Document): Promise<unknown[]> {
-  return (await coll.find(filter, { projection: { _id: 1 } }).toArray()).map((d) => d._id);
+async function idsOf(coll: Collection, filter: Document, session?: ClientSession): Promise<unknown[]> {
+  return (await coll.find(filter, { projection: { _id: 1 }, session }).toArray()).map((d) => d._id);
 }
 
-async function docsOf(coll: Collection, ids: unknown[]): Promise<Document[]> {
+async function docsOf(coll: Collection, ids: unknown[], session?: ClientSession): Promise<Document[]> {
   const out: Document[] = [];
-  for (let i = 0; i < ids.length; i += BATCH) out.push(...(await coll.find({ _id: { $in: ids.slice(i, i + BATCH) } } as Document).toArray()));
+  for (let i = 0; i < ids.length; i += BATCH) out.push(...(await coll.find({ _id: { $in: ids.slice(i, i + BATCH) } } as Document, { session }).toArray()));
   return out;
 }
+
+/** The session of a write's options, if any. */
+const sessionOf = (o?: Document): ClientSession | undefined => o?.session;
 
 /** Which operations of a failed bulk write ran: all but the failed ones, and an ordered write stops at the first. */
 function ranOf(err: unknown, total: number, ordered: boolean): ((i: number) => boolean) | undefined {
@@ -37,11 +41,12 @@ export function publishedWrites(coll: Collection, sink: OplogSink) {
   /** The value of a findOneAnd… result, also with includeResultMetadata. */
   const valueOf = (res: unknown, o: Document) => (o.includeResultMetadata ? (res as { value?: Document | null } | null)?.value : (res as Document | null));
   /** A findOneAnd… that matched nothing and upserted: the new document is the one now matching. */
-  const upserted = async (filter: Document, value: Document | null | undefined) => {
-    const id = value?._id ?? (await coll.findOne(filter, { projection: { _id: 1 } }))?._id;
+  const upserted = async (filter: Document, value: Document | null | undefined, o: Document) => {
+    const id = value?._id ?? (await coll.findOne(filter, { projection: { _id: 1 }, session: sessionOf(o) }))?._id;
     sink.inserted([id]);
   };
-  const sortOf = (o?: Document) => (o?.sort ? { sort: o.sort } : {});
+  /** Options of the find before a write: its sort, and its session. */
+  const sortOf = (o?: Document) => ({ ...(o?.sort && { sort: o.sort }), session: sessionOf(o) });
 
   const insertOne = async (doc: Document, o?: Document) => {
     const res = await coll.insertOne(doc, o);
@@ -68,14 +73,14 @@ export function publishedWrites(coll: Collection, sink: OplogSink) {
       const doc = await coll.findOne(f, { projection: { _id: 1 }, ...sortOf(o) });
       const res = await coll.updateOne(doc ? only(f, doc._id) : f, u, o);
       if (res.upsertedId != null) sink.inserted([res.upsertedId]);
-      else if (doc && res.modifiedCount) await sink.updatedBy(coll, [doc._id], u);
+      else if (doc && res.modifiedCount) await sink.updatedBy(coll, [doc._id], u, sessionOf(o));
       return res;
     },
     async updateMany(f: Document, u: Document, o?: Document) {
-      const ids = await idsOf(coll, f);
+      const ids = await idsOf(coll, f, sessionOf(o));
       const res = await coll.updateMany(f, u, o);
       if (res.upsertedId != null) sink.inserted([res.upsertedId]);
-      if (res.modifiedCount) await sink.updatedBy(coll, ids, u);
+      if (res.modifiedCount) await sink.updatedBy(coll, ids, u, sessionOf(o));
       return res;
     },
     async replaceOne(f: Document, r: Document, o?: Document) {
@@ -86,15 +91,15 @@ export function publishedWrites(coll: Collection, sink: OplogSink) {
       return res;
     },
     async deleteOne(f: Document, o?: Document) {
-      const doc = await coll.findOne(f, { projection: { _id: 1 } });
+      const doc = await coll.findOne(f, { projection: { _id: 1 }, session: sessionOf(o) });
       const res = await coll.deleteOne(doc ? only(f, doc._id) : f, o);
       if (doc && res.deletedCount) sink.removed([doc._id]);
       return res;
     },
     async deleteMany(f: Document, o?: Document) {
-      const ids = await idsOf(coll, f);
+      const ids = await idsOf(coll, f, sessionOf(o));
       const res = await coll.deleteMany(f, o);
-      await sink.removedOf(coll, ids, res.deletedCount);
+      await sink.removedOf(coll, ids, res.deletedCount, sessionOf(o));
       return res;
     },
     async findOneAndUpdate(f: Document, u: Document, o: Document) {
@@ -102,8 +107,8 @@ export function publishedWrites(coll: Collection, sink: OplogSink) {
       const res = await coll.findOneAndUpdate(doc ? only(f, doc._id) : f, u, o);
       const value = valueOf(res, o);
       if (doc) {
-        if (value) await sink.updatedBy(coll, [doc._id], u);
-      } else if (o.upsert) await upserted(f, value);
+        if (value) await sink.updatedBy(coll, [doc._id], u, sessionOf(o));
+      } else if (o.upsert) await upserted(f, value, o);
       return res;
     },
     async findOneAndReplace(f: Document, r: Document, o: Document) {
@@ -112,7 +117,7 @@ export function publishedWrites(coll: Collection, sink: OplogSink) {
       const value = valueOf(res, o);
       if (doc) {
         if (value) sink.updated([doc._id], documentFields(doc, r));
-      } else if (o.upsert) await upserted(f, value);
+      } else if (o.upsert) await upserted(f, value, o);
       return res;
     },
     async findOneAndDelete(f: Document, o: Document) {
@@ -130,11 +135,11 @@ export function publishedWrites(coll: Collection, sink: OplogSink) {
         const [kind, body] = (Object.entries(op ?? {})[0] ?? []) as [string, Document | undefined];
         const filter = (body?.filter ?? {}) as Document;
         if (kind === 'insertOne') ids.push(insertedId(op));
-        else if (kind === 'updateOne' || kind === 'replaceOne' || kind === 'deleteOne') ids.push((await coll.findOne(filter, { projection: { _id: 1 } }))?._id);
-        else if (kind === 'updateMany' || kind === 'deleteMany') ids.push(...(await idsOf(coll, filter)));
+        else if (kind === 'updateOne' || kind === 'replaceOne' || kind === 'deleteOne') ids.push((await coll.findOne(filter, { projection: { _id: 1 }, session: sessionOf(o) }))?._id);
+        else if (kind === 'updateMany' || kind === 'deleteMany') ids.push(...(await idsOf(coll, filter, sessionOf(o))));
       }
       const known = ids.filter((id) => id !== undefined && id !== null);
-      const before = await docsOf(coll, known);
+      const before = await docsOf(coll, known, sessionOf(o));
       let res: Awaited<ReturnType<Collection['bulkWrite']>> | undefined;
       let error: unknown;
       try {
@@ -144,7 +149,7 @@ export function publishedWrites(coll: Collection, sink: OplogSink) {
       }
       const upsertedIds = res?.upsertedIds ?? (error instanceof MongoBulkWriteError ? error.result?.upsertedIds : undefined) ?? {};
       const touched = [...known, ...ops.map(insertedId), ...Object.values(upsertedIds)].filter((id) => id !== undefined && id !== null);
-      sink.changes(before, await docsOf(coll, touched));
+      sink.changes(before, await docsOf(coll, touched, sessionOf(o)));
       if (error) throw error;
       return res;
     },

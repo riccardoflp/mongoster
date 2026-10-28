@@ -5,7 +5,7 @@
 import * as net from 'net';
 import * as tls from 'tls';
 import * as vscode from 'vscode';
-import { BSON, Collection, Document } from 'mongodb';
+import { BSON, ClientSession, Collection, Document } from 'mongodb';
 import type { ConnectionManager } from './connections';
 import { documentFields, inScope, OplogEvent, oplogMessage, RedisOplogSettings, updatedFields } from './shared/oplog';
 
@@ -180,12 +180,25 @@ export async function testRedis(url: string): Promise<string> {
   }
 }
 
+/** Where a sink's events go: RedisOplog, or the events of a transaction kept until it commits. */
+interface OplogQueue {
+  enqueue(target: OplogTarget, events: OplogEvent[]): void;
+}
+
 /** The events of one collection's writes: they are sent in the background, in order. */
 export class OplogSink {
   constructor(
-    private readonly oplog: RedisOplog,
+    private readonly oplog: OplogQueue,
     readonly target: OplogTarget,
   ) {}
+
+  /**
+   * A sink whose events wait in `pending` (in order) instead of going out: a transaction's writes are
+   * published by running them once it commits, and dropped if it aborts.
+   */
+  deferred(pending: (() => void)[]): OplogSink {
+    return new OplogSink({ enqueue: (target, events) => pending.push(() => this.oplog.enqueue(target, events)) }, this.target);
+  }
 
   inserted(ids: unknown[]): void {
     this.publish(ids.filter((id) => id !== undefined && id !== null).map((id) => ({ e: 'i', id })));
@@ -229,33 +242,34 @@ export class OplogSink {
   }
 
   /** Updates of `ids` by `update`; when its fields aren't known, those of the documents as they are now. */
-  async updatedBy(coll: Collection, ids: unknown[], update: unknown): Promise<void> {
+  async updatedBy(coll: Collection, ids: unknown[], update: unknown, session?: ClientSession): Promise<void> {
     if (!ids.length) return;
     const fields = updatedFields(update);
     if (fields) return this.updated(ids, fields);
     for (let i = 0; i < ids.length; i += BATCH) {
-      const docs = await coll.find({ _id: { $in: ids.slice(i, i + BATCH) } } as Document).toArray();
+      const docs = await coll.find({ _id: { $in: ids.slice(i, i + BATCH) } } as Document, { session }).toArray();
       this.publish(docs.map((doc) => ({ e: 'u', id: doc._id, fields: documentFields(doc) })));
     }
   }
 
   /**
    * Removals of `ids`, which a delete matched before running. When it deleted fewer (some changed in
-   * the meantime) only those gone are announced: a removal makes the app drop the document.
+   * the meantime) only those gone are announced: a removal makes the app drop the document. In a
+   * transaction, `session` reads its own uncommitted state.
    */
-  async removedOf(coll: Collection, ids: unknown[], deleted: number): Promise<void> {
+  async removedOf(coll: Collection, ids: unknown[], deleted: number, session?: ClientSession): Promise<void> {
     if (!deleted) return;
     if (deleted >= ids.length) return this.removed(ids);
     const left = new Set<string>();
     for (let i = 0; i < ids.length; i += BATCH) {
-      const docs = await coll.find({ _id: { $in: ids.slice(i, i + BATCH) } } as Document, { projection: { _id: 1 } }).toArray();
+      const docs = await coll.find({ _id: { $in: ids.slice(i, i + BATCH) } } as Document, { projection: { _id: 1 }, session }).toArray();
       for (const doc of docs) left.add(JSON.stringify(doc._id));
     }
     this.removed(ids.filter((id) => !left.has(JSON.stringify(id))));
   }
 }
 
-export class RedisOplog implements vscode.Disposable {
+export class RedisOplog implements vscode.Disposable, OplogQueue {
   private static current: RedisOplog | undefined;
   private readonly redis = new Map<string, { url: string; conn: Promise<RedisConnection> }>();
   private readonly queues = new Map<string, Promise<void>>();
