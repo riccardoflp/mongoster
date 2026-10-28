@@ -98,6 +98,17 @@ export interface BulkRequest {
   update?: string;
 }
 
+/** A column action on the documents matching `filter`: Rename field, Remove field, Convert type. */
+export interface FieldActionRequest {
+  type: 'fieldAction';
+  action: 'rename' | 'remove' | 'convert';
+  /** The column's dotted key. */
+  field: string;
+  /** The array whose elements have the field (`items` for `items[].sku`). */
+  array?: string;
+  filter: string;
+}
+
 export type WebviewMessage =
   | { type: 'ready' }
   | QueryRequest
@@ -138,6 +149,7 @@ export type WebviewMessage =
   /** Saves the chart image (a PNG data URL). */
   | { type: 'savePng'; dataUrl: string; name: string }
   | BulkRequest
+  | FieldActionRequest
   /** Without `page`, everything the source finds is exported (e.g. the selected rows). */
   | { type: 'export'; source: QuerySource; expanded: string[]; layout: ColumnLayout; page?: { skip: number; limit: number }; count: number | null };
 
@@ -185,6 +197,8 @@ export type HostMessage =
   | { type: 'insertResult'; requestId: number; ok: boolean; message?: string }
   /** Opens the insert dialog (e.g. Insert Document in the tree). */
   | { type: 'showInsert' }
+  /** A field was renamed to `to` (or removed, without it): the column layout follows. */
+  | { type: 'fieldChanged'; from: string; to?: string }
   /** A query to show (from the server monitor), then run or explain. */
   | { type: 'loadQuery'; query: QueryText; explain: boolean };
 

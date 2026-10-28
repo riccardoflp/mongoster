@@ -78,7 +78,11 @@ export function updatedFields(update: unknown): string[] | undefined {
   }
   for (const [op, body] of Object.entries((update ?? {}) as Record<string, unknown>)) {
     if (!op.startsWith('$')) fields.add(op);
-    else if (body && typeof body === 'object') Object.keys(body).forEach(path);
+    else if (body && typeof body === 'object') {
+      Object.keys(body).forEach(path);
+      // $rename changes the new name too.
+      if (op === '$rename') Object.values(body).forEach((to) => typeof to === 'string' && path(to));
+    }
   }
   fields.delete('_id');
   return [...fields];

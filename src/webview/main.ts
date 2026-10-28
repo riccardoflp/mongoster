@@ -1,6 +1,6 @@
 import './tokenColors';
 import { isEjsonWrapper, isPlainObject, mergeCondition, mergeProjection, mergeSort, parseQuery, prettyShell, toShell } from '../shared/query';
-import type { HostMessage, QuerySource, QueryText, WebviewMessage } from '../shared/messages';
+import type { FieldActionRequest, HostMessage, QuerySource, QueryText, WebviewMessage } from '../shared/messages';
 import type { PipelineStage } from '../shared/pipeline';
 import { HistoryPopover } from './history';
 import { PipelineEditor } from './pipeline';
@@ -23,6 +23,8 @@ import {
   MAX_ELEMENTS,
   applyLayout,
   pinnedLeafCount,
+  renameInLayout,
+  renamedKey,
   MISSING,
   buildColumns,
   expandableBelow,
@@ -34,7 +36,7 @@ import {
   valueAtPath,
 } from '../shared/columns';
 import { CellEditor } from './cellEditor';
-import { ColumnMenu, ColumnsPanel, LayoutActions } from './columnsUi';
+import { ColumnMenu, ColumnMenuItem, ColumnsPanel, LayoutActions } from './columnsUi';
 import { Completer } from './autocomplete';
 import { highlight } from './highlight';
 import { FilterBuilder } from './builder';
@@ -354,6 +356,9 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
     case 'insertResult':
       insertDialog.onResult(m);
       break;
+    case 'fieldChanged':
+      fieldChanged(m.from, m.to);
+      break;
     case 'showInsert':
       if (!readOnly) {
         closeDocument();
@@ -646,7 +651,45 @@ function saveLayout(next: ColumnLayout): void {
 
 const layoutActions = new LayoutActions({ columns: () => allColumns, layout: () => layout, change: saveLayout });
 const columnsPanel = new ColumnsPanel({ columns: () => allColumns, layout: () => layout, change: saveLayout }, layoutActions);
-const columnMenu = new ColumnMenu({ columns: () => allColumns, layout: () => layout, change: saveLayout }, layoutActions, () => columnsPanel.open());
+const columnMenu = new ColumnMenu({ columns: () => allColumns, layout: () => layout, change: saveLayout }, layoutActions, () => columnsPanel.open(), fieldItems);
+
+/** Rename, remove or convert the column's field in the documents matching the filter: in Find, on a collection that can be changed. */
+function fieldItems(key: string): ColumnMenuItem[] {
+  if (readOnly || state.mode !== 'find' || key === '_id' || key.startsWith('_id.')) return [];
+  const node = columnsByKey.get(key);
+  // A field of the elements of an expanded array (items[].sku).
+  const array = node?.arrayDepth !== undefined ? node.path.slice(0, node.arrayDepth).join('.') : undefined;
+  const act = (action: FieldActionRequest['action']) => () => fieldAction(action, key, array);
+  return [
+    ['Rename field…', act('rename'), '$rename in the documents matching the filter'],
+    ['Remove field…', act('remove'), '$unset in the documents matching the filter'],
+    ['Convert type…', act('convert'), 'Convert the values ($convert) in the documents matching the filter'],
+  ];
+}
+
+function fieldAction(action: FieldActionRequest['action'], field: string, array: string | undefined): void {
+  if (!isValidObject(filterInput.value)) {
+    filterInput.classList.add('invalid');
+    showError('Invalid query syntax — check the highlighted field.');
+    return;
+  }
+  // The table shows the documents the action is about.
+  if (filterInput.value !== state.filter) run(true);
+  vscode.postMessage({ type: 'fieldAction', action, field, array, filter: filterInput.value });
+}
+
+/** A renamed or removed field: its columns keep their place, width and visibility under the new name. */
+function fieldChanged(from: string, to?: string): void {
+  const next = [...expanded].map((k) => renamedKey(k, from, to)).filter((k): k is string => k !== undefined);
+  if (next.join('\n') !== [...expanded].join('\n')) {
+    expanded = new Set(next);
+    state.expanded = next;
+    vscode.setState(state);
+    vscode.postMessage({ type: 'saveExpanded', expanded: next });
+  }
+  const moved = renameInLayout(layout, from, to);
+  if (JSON.stringify(moved) !== JSON.stringify(layout)) saveLayout(moved);
+}
 
 grid.addEventListener('contextmenu', (e) => {
   const th = (e.target as HTMLElement).closest<HTMLElement>('th[data-key]');

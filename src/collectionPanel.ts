@@ -14,7 +14,8 @@ import { exportDocuments } from './transfer';
 import { UndoHistory } from './history';
 import { RedisOplog } from './redisOplog';
 import { updatedFields } from './shared/oplog';
-import type { AggregateRequest, BulkRequest, HistoryEntry, HostMessage, QueryRequest, QuerySource, QueryText, UpdateFieldRequest, WebviewMessage } from './shared/messages';
+import { CONVERT_TYPES, convertField, fieldPathError, removeField, renameError, renameField, typeCounts } from './fieldActions';
+import type { AggregateRequest, BulkRequest, FieldActionRequest, HistoryEntry, HostMessage, QueryRequest, QuerySource, QueryText, UpdateFieldRequest, WebviewMessage } from './shared/messages';
 import { suggestIndex, summarizeExplain } from './shared/explain';
 import { analyzeSchema } from './shared/schema';
 import { ChartSpec, chartStages, normalizeSpec, specError } from './shared/chart';
@@ -263,6 +264,9 @@ export class CollectionPanel {
         break;
       case 'bulkApply':
         await this.bulkApply(m);
+        break;
+      case 'fieldAction':
+        await this.fieldAction(m);
         break;
       case 'analyzeSchema':
         await this.analyzeSchema(m.requestId, m.filter, m.size);
@@ -624,6 +628,125 @@ export class CollectionPanel {
       await sink?.removedOf(coll, ids, res.deletedCount);
     }
     return { ...done, entry: await rec?.commit(coll) };
+  }
+
+  /**
+   * Rename field, Remove field or Convert type on a column: asks for the details, counts and confirms,
+   * then writes like Update many (undo history, redis-oplog) on the documents matching the filter.
+   */
+  private async fieldAction(m: FieldActionRequest): Promise<void> {
+    if (this.refuseWrite()) return;
+    const field = m.field;
+    const shown = m.array ? `${m.array}[].${field.slice(m.array.length + 1)}` : field;
+    const invalid = fieldPathError(field);
+    if (invalid) {
+      void vscode.window.showErrorMessage(`${field}: ${invalid}.`);
+      return;
+    }
+    if (m.array && m.action !== 'remove') {
+      void vscode.window.showErrorMessage(
+        `${shown} is a field of the elements of the array ${m.array}: ${m.action === 'rename' ? '$rename' : 'Convert type'} can't change fields inside arrays.`,
+        { modal: true, detail: `Use Update many with a pipeline that rewrites the array, e.g. [ { $set: { ${m.array}: { $map: { input: "$${m.array}", in: … } } } } ].` },
+      );
+      return;
+    }
+    try {
+      const userFilter = toBson(m.filter, 'Filter') ?? {};
+      const everything = !Object.keys(userFilter).length;
+      const scope = everything ? `of ${this.target.collection}` : 'matching the filter';
+      const where = everything ? '' : ` where ${m.filter.replace(/\s+/g, ' ').trim()}`;
+      const coll = await this.coll();
+      const count = (filter: Document) => coll.countDocuments(filter, { maxTimeMS: 60_000 });
+      const docs = (n: number) => `${n.toLocaleString('en-US')} document${n === 1 ? '' : 's'}`;
+      const confirm = async (question: string, button: string, details: string[], n: number, all: string) => {
+        const detail = [...details, UndoHistory.note(this.target.connectionId, n)].filter(Boolean).join('\n');
+        if ((await vscode.window.showWarningMessage(question, { modal: true, detail }, button)) !== button) return false;
+        return !everything || confirmEmptyFilter(all, `${button} in All`);
+      };
+      const finish = (message: string, entry: HistoryEntry | undefined) => {
+        UndoHistory.notify(message, entry);
+        this.post({ type: 'refresh' });
+      };
+
+      if (m.action === 'rename') {
+        const to = (
+          await vscode.window.showInputBox({
+            title: `Rename ${field}`,
+            prompt: `New name of ${field} in the documents ${scope} (a dotted path moves it into a sub-document)`,
+            value: field,
+            valueSelection: [field.lastIndexOf('.') + 1, field.length],
+            validateInput: (v) => renameError(field, v.trim()),
+          })
+        )?.trim();
+        if (!to) return;
+        const op = renameField(userFilter, field, to);
+        const [n, reached, overwrites] = await Promise.all([count(op.filter), count(op.reached), count(op.overwrites)]);
+        const skipped = reached > n ? `${docs(reached - n)} with ${field} or ${to} inside an array ${reached - n === 1 ? 'is' : 'are'} left out: $rename can't go through arrays.` : '';
+        if (!n) {
+          void vscode.window.showInformationMessage(`No document ${scope} has ${field}.${skipped ? ` ${skipped}` : ''}`);
+          return;
+        }
+        const replaced = overwrites ? `${docs(overwrites)} already ${overwrites === 1 ? 'has' : 'have'} ${to}: its value is replaced by that of ${field}.` : '';
+        if (!(await confirm(`Rename ${field} to ${to} in ${docs(n)} ${scope}?`, 'Rename', [replaced, skipped], n, `Rename ${field} to ${to} in the whole collection ${this.target.collection}?`))) return;
+        const done = await this.writeMany(coll, op.filter, op.update, `Rename field ${field} to ${to}${where}`);
+        if (!done) return;
+        this.post({ type: 'fieldChanged', from: field, to });
+        finish(`Renamed ${field} to ${to} in ${docs(done.modified)} of ${this.target.collection}.`, done.entry);
+      } else if (m.action === 'remove') {
+        const op = removeField(userFilter, field, m.array);
+        const [n, reached] = await Promise.all([count(op.filter), count(op.reached)]);
+        const skipped =
+          reached <= n
+            ? ''
+            : m.array
+              ? `${docs(reached - n)} where ${m.array} isn't an array ${reached - n === 1 ? 'is' : 'are'} left out.`
+              : `${docs(reached - n)} where ${field} is inside an array ${reached - n === 1 ? 'is' : 'are'} left out: remove it from the elements with Update many and $[].`;
+        if (!n) {
+          void vscode.window.showInformationMessage(`No document ${scope} has ${shown}.${skipped ? ` ${skipped}` : ''}`);
+          return;
+        }
+        const what = m.array ? `${shown} from the elements of ${m.array} in` : `${field} from`;
+        if (!(await confirm(`Remove ${what} ${docs(n)} ${scope}?`, 'Remove', [skipped], n, `Remove ${shown} from the whole collection ${this.target.collection}?`))) return;
+        const done = await this.writeMany(coll, op.filter, op.update, `Remove field ${shown}${where}`);
+        if (!done) return;
+        this.post({ type: 'fieldChanged', from: field });
+        finish(`Removed ${shown} from ${docs(done.modified)} of ${this.target.collection}.`, done.entry);
+      } else {
+        let now = '';
+        try {
+          const types = await coll.aggregate(typeCounts(userFilter, field), { maxTimeMS: 30_000 }).toArray();
+          now = types.map((t) => `${t._id} ${Number(t.n).toLocaleString('en-US')}`).join(' · ');
+        } catch {
+          // Only a hint.
+        }
+        const pick = await vscode.window.showQuickPick(
+          CONVERT_TYPES.map((t) => ({ label: t.type, description: t.description })),
+          { title: `Convert ${field}`, placeHolder: `Type to convert the values to${now ? ` · now: ${now}` : ''}` },
+        );
+        if (!pick) return;
+        const type = pick.label;
+        const op = convertField(userFilter, field, type);
+        const [n, reached] = await Promise.all([count(op.filter), count(op.reached)]);
+        const skipped = reached > n ? `${docs(reached - n)} where ${field} is inside an array ${reached - n === 1 ? 'is' : 'are'} left out.` : '';
+        if (!n) {
+          void vscode.window.showInformationMessage(`No value of ${field} ${scope} needs converting to ${type}: null, missing values and arrays are left as they are.`);
+          return;
+        }
+        const keep = "Values that can't be converted keep their value and type; null and arrays are left as they are.";
+        if (!(await confirm(`Convert ${field} to ${type} in ${docs(n)} ${scope}?`, 'Convert', [keep, skipped], n, `Convert ${field} to ${type} in the whole collection ${this.target.collection}?`))) return;
+        const done = await this.writeMany(coll, op.filter, op.update, `Convert field ${field} to ${type}${where}`);
+        if (!done) return;
+        const failed = await count(op.filter);
+        const values = (k: number) => `${k.toLocaleString('en-US')} value${k === 1 ? '' : 's'}`;
+        finish(
+          `Converted ${field} to ${type} in ${docs(done.modified)} of ${this.target.collection}.${failed ? ` ${values(failed)} couldn't be converted and kept ${failed === 1 ? 'its' : 'their'} type.` : ''}`,
+          done.entry,
+        );
+      }
+    } catch (err) {
+      void vscode.window.showErrorMessage(errorMessage(err));
+      this.post({ type: 'refresh' });
+    }
   }
 
   /** Deletes the rows selected in the table, after a confirmation. */
