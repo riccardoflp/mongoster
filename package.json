@@ -929,6 +929,9 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.standalone.json",
+    "test": "vitest run --project unit",
+    "test:watch": "vitest --project unit",
+    "test:integration": "vitest run --project integration",
     "package": "node esbuild.mjs --production && vsce package --no-dependencies",
     "build:app": "node esbuild.mjs --app",
     "watch:app": "node esbuild.mjs --app --watch",
@@ -952,6 +955,8 @@
     "electron-builder": "^26.15.3",
     "esbuild": "^0.24.0",
     "monaco-editor": "^0.57.0",
-    "typescript": "^5.6.0"
+    "mongodb-memory-server-core": "^11.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.7"
   }
 }

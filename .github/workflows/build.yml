@@ -31,6 +31,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm test
+      # Against a mongod that mongodb-memory-server downloads.
+      - run: npm run test:integration
       # Only packaged: publishing to the Marketplace is done by hand.
       - run: npm run package
       - uses: actions/upload-artifact@v4

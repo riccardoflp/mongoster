@@ -1,6 +1,6 @@
 // Query → code: a find (filter, projection, sort) or an aggregation pipeline, written for mongosh and
 // for the official drivers of Node.js, Python, Java, C# and Go, either as a snippet or as a whole program.
-import { formatKey, isEjsonWrapper, isPlainObject, prettyShell } from './query';
+import { escapeSlashes, formatKey, isEjsonWrapper, isPlainObject, prettyShell } from './query';
 
 export type CodeLanguage = 'shell' | 'javascript' | 'python' | 'java' | 'csharp' | 'go';
 
@@ -139,7 +139,7 @@ class JsPrinter extends Printer {
       case '$regularExpression': {
         const pattern = String(val?.pattern ?? '');
         const options = String(val?.options ?? '');
-        if (/^[imsu]*$/.test(options) && pattern) return `/${pattern.replace(/(^|[^\\])\//g, '$1\\/')}/${options}`;
+        if (/^[imsu]*$/.test(options) && pattern) return `/${escapeSlashes(pattern)}/${options}`;
         return this.use('BSONRegExp', `new BSONRegExp(${q(pattern)}, ${q(options)})`);
       }
       case '$uuid':
