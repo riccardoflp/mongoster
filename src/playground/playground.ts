@@ -31,6 +31,7 @@ const DB_METHODS: [string, string][] = [
   ['getCollectionInfos', 'getCollectionInfos($0)'],
   ['getName', 'getName()'],
   ['getSiblingDB', 'getSiblingDB("$0")'],
+  ['getMongo', 'getMongo()'],
   ['aggregate', 'aggregate([$0])'],
   ['runCommand', 'runCommand({ $0 })'],
   ['adminCommand', 'adminCommand({ $0 })'],
@@ -67,6 +68,28 @@ const COLLECTION_METHODS: [string, string][] = [
   ['stats', 'stats()'],
   ['drop', 'drop()'],
   ['renameCollection', 'renameCollection("$0")'],
+];
+
+const MONGO_METHODS: [string, string][] = [
+  ['startSession', 'startSession()'],
+  ['getDB', 'getDB("$0")'],
+  ['getDBNames', 'getDBNames()'],
+  ['getDBs', 'getDBs()'],
+];
+
+const SESSION_METHODS: [string, string][] = [
+  ['getDatabase', 'getDatabase("$0")'],
+  ['startTransaction', 'startTransaction()'],
+  ['commitTransaction', 'commitTransaction()'],
+  ['abortTransaction', 'abortTransaction()'],
+  ['withTransaction', 'withTransaction(() => {\n\t$0\n})'],
+  ['endSession', 'endSession()'],
+  ['inTransaction', 'inTransaction()'],
+  ['hasEnded', 'hasEnded()'],
+  ['getSessionId', 'getSessionId()'],
+  ['getClusterTime', 'getClusterTime()'],
+  ['getOperationTime', 'getOperationTime()'],
+  ['getMongo', 'getMongo()'],
 ];
 
 const CURSOR_METHODS: [string, string][] = [
@@ -320,6 +343,9 @@ export class Playgrounds implements vscode.Disposable {
         { location: vscode.ProgressLocation.Notification, title: `Running ${title}…`, cancellable: true },
         async (_progress, token) => {
           const client = await this.connections.getClient(info.id);
+          // Cancelling also aborts the script's open transactions and ends its sessions.
+          const abort = new AbortController();
+          token.onCancellationRequested(() => abort.abort());
           const run = runPlayground(code, {
             client,
             database,
@@ -329,6 +355,7 @@ export class Playgrounds implements vscode.Disposable {
               output.push(line);
               this.output.appendLine(line);
             },
+            signal: abort.signal,
           });
           const cancelled = new Promise<'cancelled'>((resolve) => token.onCancellationRequested(() => resolve('cancelled')));
           return Promise.race([run, cancelled]);
@@ -408,7 +435,11 @@ export class Playgrounds implements vscode.Disposable {
         });
       if (member.kind === 'cursor') return new vscode.CompletionList(methods(CURSOR_METHODS, 'cursor'));
       if (member.kind === 'collection') return new vscode.CompletionList(methods(COLLECTION_METHODS, 'collection'));
-      const names = target && database ? await this.collections(target.connectionId, database) : [];
+      if (member.kind === 'mongo') return new vscode.CompletionList(methods(MONGO_METHODS, 'Mongo'));
+      if (member.kind === 'session') return new vscode.CompletionList(methods(SESSION_METHODS, 'session'));
+      // session.getDatabase("x"), db.getSiblingDB("x"): the collections of that database.
+      const memberDb = member.database ?? database;
+      const names = target && memberDb ? await this.collections(target.connectionId, memberDb) : [];
       const collections = names.map((name, i) => {
         const item = new vscode.CompletionItem({ label: name, description: 'collection' }, vscode.CompletionItemKind.Field);
         item.insertText = /^[A-Za-z_$][\w$]*$/.test(name) ? name : `getCollection(${JSON.stringify(name)})`;
@@ -424,7 +455,8 @@ export class Playgrounds implements vscode.Disposable {
     if (!call) return undefined;
     const kind = argumentKind(call, text.slice(call.argStart, offset));
     if (!kind) return undefined;
-    const hints = target && database && call.collection !== undefined ? await this.fields(target.connectionId, database, call.collection) : [];
+    const callDb = call.database ?? database;
+    const hints = target && callDb && call.collection !== undefined ? await this.fields(target.connectionId, callDb, call.collection) : [];
     const result = complete(text.slice(call.argStart), offset - call.argStart, kind, hints);
     if (!result || !result.items.length) return undefined;
     const range = new vscode.Range(doc.positionAt(call.argStart + result.from), doc.positionAt(call.argStart + result.to));
