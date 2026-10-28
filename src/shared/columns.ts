@@ -159,6 +159,30 @@ export interface ColumnLayout {
   widths?: Record<string, number>;
 }
 
+/** `key` after the field `from` was renamed to `to`: the field itself and the columns below it follow; undefined when removed (no `to`). */
+export function renamedKey(key: string, from: string, to?: string): string | undefined {
+  if (key !== from && !key.startsWith(`${from}.`)) return key;
+  return to === undefined ? undefined : to + key.slice(from.length);
+}
+
+/** The layout after the field `from` was renamed to `to`, or removed without `to`. */
+export function renameInLayout(layout: ColumnLayout, from: string, to?: string): ColumnLayout {
+  const keys = (list: string[]) => [...new Set(list.map((k) => renamedKey(k, from, to)).filter((k): k is string => k !== undefined))];
+  const out: ColumnLayout = { ...layout };
+  if (layout.hidden) out.hidden = keys(layout.hidden);
+  if (layout.order) out.order = keys(layout.order);
+  // Only top-level columns are pinned.
+  if (layout.pinned) out.pinned = keys(layout.pinned).filter((k) => !k.includes('.'));
+  if (layout.widths) {
+    out.widths = {};
+    for (const [k, width] of Object.entries(layout.widths)) {
+      const next = renamedKey(k, from, to);
+      if (next !== undefined) out.widths[next] = width;
+    }
+  }
+  return out;
+}
+
 /** The columns without the hidden ones, siblings in the user's order, pinned top-level columns first. */
 export function applyLayout(nodes: ColumnNode[], layout: ColumnLayout, top = true): ColumnNode[] {
   const hidden = new Set(layout.hidden ?? []);

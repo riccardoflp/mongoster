@@ -2145,6 +2145,36 @@ body.resizing * {
   background: linear-gradient(var(--vscode-list-inactiveSelectionBackground), var(--vscode-list-inactiveSelectionBackground)), var(--vscode-editor-background);
 }
 
+/* Rows selected with Ctrl/Cmd+click or Shift+click (one tbody per document). */
+.grid tbody.row-selected td {
+  background: var(--vscode-list-inactiveSelectionBackground);
+}
+
+.grid tbody.row-selected td.pinned,
+.grid tbody.row-selected td.rownum {
+  background: linear-gradient(var(--vscode-list-inactiveSelectionBackground), var(--vscode-list-inactiveSelectionBackground)), var(--vscode-editor-background);
+}
+
+.grid tbody.row-selected td.rownum {
+  color: var(--vscode-list-inactiveSelectionForeground, var(--vscode-foreground));
+  box-shadow: inset 3px 0 0 var(--vscode-list-focusOutline, var(--accent));
+}
+
+.grid tbody.row-selected:hover td {
+  background: linear-gradient(var(--vscode-list-hoverBackground), var(--vscode-list-hoverBackground)), var(--vscode-list-inactiveSelectionBackground);
+}
+
+.grid tbody.row-selected:hover td.pinned,
+.grid tbody.row-selected:hover td.rownum {
+  background: linear-gradient(var(--vscode-list-hoverBackground), var(--vscode-list-hoverBackground)),
+    linear-gradient(var(--vscode-list-inactiveSelectionBackground), var(--vscode-list-inactiveSelectionBackground)), var(--vscode-editor-background);
+}
+
+.selection-info {
+  gap: 6px;
+  color: var(--vscode-foreground);
+}
+
 .columns-btn {
   margin-right: 8px;
 }
@@ -2258,6 +2288,16 @@ body.resizing * {
   color: inherit;
   padding: 3px 14px;
   border-radius: 0;
+}
+
+.context-menu .menu-heading {
+  padding: 4px 14px 2px;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.context-menu button.menu-sub {
+  padding-left: 24px;
 }
 
 .context-menu hr {

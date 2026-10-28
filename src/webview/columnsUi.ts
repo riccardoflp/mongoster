@@ -175,6 +175,9 @@ export class ColumnsPanel {
   }
 }
 
+/** An entry of the header menu: label, action and tooltip. */
+export type ColumnMenuItem = [string, () => void, string?];
+
 /** Right-click menu of a column header. */
 export class ColumnMenu {
   private readonly menu = document.getElementById('columnMenu')!;
@@ -183,6 +186,8 @@ export class ColumnMenu {
     private readonly opts: ColumnsUiOptions,
     private readonly actions: LayoutActions,
     private readonly openPanel: () => void,
+    /** Actions on the field's values in the documents (Rename, Remove, Convert), after the layout ones. */
+    private readonly fieldItems: (key: string) => ColumnMenuItem[] = () => [],
   ) {
     document.addEventListener('mousedown', (e) => {
       if (this.isOpen && !this.menu.contains(e.target as Node)) this.close();
@@ -198,17 +203,22 @@ export class ColumnMenu {
     const layout = this.opts.layout();
     const top = key.split('.')[0];
     const pinned = layout.pinned?.includes(top) ?? false;
-    const items: [string, () => void][] = [[`Hide ${key}`, () => this.actions.setHidden(key, true)]];
+    const items: (ColumnMenuItem | 'separator')[] = [[`Hide ${key}`, () => this.actions.setHidden(key, true)]];
     items.push([pinned ? `Unpin ${top}` : `Pin ${top} to the left`, () => this.actions.setPinned(top, !pinned)]);
     if (layout.widths?.[key]) items.push(['Reset width', () => this.actions.resetWidth(key)]);
     items.push(['Columns…', this.openPanel]);
     if (layout.hidden?.length || layout.order?.length || layout.pinned?.length || Object.keys(layout.widths ?? {}).length) {
       items.push(['Reset all columns', () => this.actions.reset()]);
     }
+    const fieldItems = this.fieldItems(key);
+    if (fieldItems.length) items.push('separator', ...fieldItems);
     this.menu.replaceChildren(
-      ...items.map(([label, action]) => {
+      ...items.map((item) => {
+        if (item === 'separator') return document.createElement('hr');
+        const [label, action, title] = item;
         const b = document.createElement('button');
         b.textContent = label;
+        if (title) b.title = title;
         b.addEventListener('click', () => {
           this.close();
           action();

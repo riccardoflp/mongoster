@@ -1,6 +1,6 @@
 import './tokenColors';
 import { isEjsonWrapper, isPlainObject, mergeCondition, mergeProjection, mergeSort, parseQuery, prettyShell, toShell } from '../shared/query';
-import type { HostMessage, QuerySource, QueryText, WebviewMessage } from '../shared/messages';
+import type { FieldActionRequest, HostMessage, QuerySource, QueryText, WebviewMessage } from '../shared/messages';
 import type { PipelineStage } from '../shared/pipeline';
 import { HistoryPopover } from './history';
 import { PipelineEditor } from './pipeline';
@@ -10,7 +10,8 @@ import { ExplainView } from './explainView';
 import { BulkDialog, BulkOp } from './bulk';
 import { InsertDialog } from './insertDialog';
 import { MenuItem, PopupMenu } from './popupMenu';
-import { COPY_FORMATS, formatDocument } from '../shared/formats';
+import { COPY_FORMATS, COPY_MANY_FORMATS, formatDocument, formatDocuments } from '../shared/formats';
+import { csvTable, toCsv } from '../shared/csv';
 import { CodeDialog, toCodeQuery } from './codeDialog';
 import { ChartView } from './chartView';
 import { ChartSpec, chartStages } from '../shared/chart';
@@ -22,6 +23,8 @@ import {
   MAX_ELEMENTS,
   applyLayout,
   pinnedLeafCount,
+  renameInLayout,
+  renamedKey,
   MISSING,
   buildColumns,
   expandableBelow,
@@ -33,7 +36,7 @@ import {
   valueAtPath,
 } from '../shared/columns';
 import { CellEditor } from './cellEditor';
-import { ColumnMenu, ColumnsPanel, LayoutActions } from './columnsUi';
+import { ColumnMenu, ColumnMenuItem, ColumnsPanel, LayoutActions } from './columnsUi';
 import { Completer } from './autocomplete';
 import { highlight } from './highlight';
 import { FilterBuilder } from './builder';
@@ -110,6 +113,9 @@ let databaseName = '';
 /** Stage whose output the grid shows (aggregate mode), or -1 for documents of the collection. */
 let docsUpto = -1;
 let requestedUpto = -1;
+/** The query (with its page) of the last request and of the documents shown: the row selection ends when it changes. */
+let requestedQuery = '';
+let shownQuery = '';
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const filterInput = el<HTMLTextAreaElement>('filter');
@@ -164,6 +170,7 @@ function run(resetSkip = false): void {
   vscode.setState(state);
   currentRequest++;
   requestedUpto = -1;
+  requestedQuery = JSON.stringify(['find', state.filter, state.sort, state.projection, state.skip, state.limit]);
   setLoading(true);
   vscode.postMessage({
     type: 'query',
@@ -199,6 +206,7 @@ function runAggregate(): void {
   savePipelineState();
   currentRequest++;
   requestedUpto = pipeline.upto;
+  requestedQuery = JSON.stringify(['aggregate', pipeline.stages, pipeline.upto, state.skip, state.limit]);
   setLoading(true);
   vscode.postMessage({
     type: 'aggregate',
@@ -348,6 +356,9 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
     case 'insertResult':
       insertDialog.onResult(m);
       break;
+    case 'fieldChanged':
+      fieldChanged(m.from, m.to);
+      break;
     case 'showInsert':
       if (!readOnly) {
         closeDocument();
@@ -368,6 +379,12 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       docs = m.docs as Record<string, unknown>[];
       docsUpto = requestedUpto;
       count = m.count;
+      // Another query or page drops the selection; the same one run again (a refresh) keeps it.
+      if (requestedQuery !== shownQuery) {
+        selection.clear();
+        anchorRow = -1;
+      }
+      shownQuery = requestedQuery;
       el('empty').textContent =
         m.note ?? (state.mode === 'aggregate' ? 'The pipeline returned no documents.' : 'No documents match this query.');
       renderGrid();
@@ -444,7 +461,10 @@ function renderGrid(): void {
   cellEditor.close();
   grid.replaceChildren();
   el('empty').classList.toggle('hidden', docs.length > 0);
-  if (!docs.length) return;
+  if (!docs.length) {
+    renderSelection();
+    return;
+  }
 
   const thead = grid.createTHead();
   const headRow = thead.insertRow();
@@ -583,6 +603,7 @@ function renderGrid(): void {
   });
   pinColumns(pinnedLeafCount(columns, layout));
   columnsPanel.update();
+  renderSelection();
 
   if (reselect) {
     const { row, path, elem } = reselect;
@@ -630,7 +651,45 @@ function saveLayout(next: ColumnLayout): void {
 
 const layoutActions = new LayoutActions({ columns: () => allColumns, layout: () => layout, change: saveLayout });
 const columnsPanel = new ColumnsPanel({ columns: () => allColumns, layout: () => layout, change: saveLayout }, layoutActions);
-const columnMenu = new ColumnMenu({ columns: () => allColumns, layout: () => layout, change: saveLayout }, layoutActions, () => columnsPanel.open());
+const columnMenu = new ColumnMenu({ columns: () => allColumns, layout: () => layout, change: saveLayout }, layoutActions, () => columnsPanel.open(), fieldItems);
+
+/** Rename, remove or convert the column's field in the documents matching the filter: in Find, on a collection that can be changed. */
+function fieldItems(key: string): ColumnMenuItem[] {
+  if (readOnly || state.mode !== 'find' || key === '_id' || key.startsWith('_id.')) return [];
+  const node = columnsByKey.get(key);
+  // A field of the elements of an expanded array (items[].sku).
+  const array = node?.arrayDepth !== undefined ? node.path.slice(0, node.arrayDepth).join('.') : undefined;
+  const act = (action: FieldActionRequest['action']) => () => fieldAction(action, key, array);
+  return [
+    ['Rename field…', act('rename'), '$rename in the documents matching the filter'],
+    ['Remove field…', act('remove'), '$unset in the documents matching the filter'],
+    ['Convert type…', act('convert'), 'Convert the values ($convert) in the documents matching the filter'],
+  ];
+}
+
+function fieldAction(action: FieldActionRequest['action'], field: string, array: string | undefined): void {
+  if (!isValidObject(filterInput.value)) {
+    filterInput.classList.add('invalid');
+    showError('Invalid query syntax — check the highlighted field.');
+    return;
+  }
+  // The table shows the documents the action is about.
+  if (filterInput.value !== state.filter) run(true);
+  vscode.postMessage({ type: 'fieldAction', action, field, array, filter: filterInput.value });
+}
+
+/** A renamed or removed field: its columns keep their place, width and visibility under the new name. */
+function fieldChanged(from: string, to?: string): void {
+  const next = [...expanded].map((k) => renamedKey(k, from, to)).filter((k): k is string => k !== undefined);
+  if (next.join('\n') !== [...expanded].join('\n')) {
+    expanded = new Set(next);
+    state.expanded = next;
+    vscode.setState(state);
+    vscode.postMessage({ type: 'saveExpanded', expanded: next });
+  }
+  const moved = renameInLayout(layout, from, to);
+  if (JSON.stringify(moved) !== JSON.stringify(layout)) saveLayout(moved);
+}
 
 grid.addEventListener('contextmenu', (e) => {
   const th = (e.target as HTMLElement).closest<HTMLElement>('th[data-key]');
@@ -644,6 +703,12 @@ grid.addEventListener('contextmenu', (e) => {
   const doc = docs[row];
   if (!td || !doc) return;
   e.preventDefault();
+  // On a selected row the menu acts on the selection; another row drops it.
+  if (selection.has(rowKey(row)) && selectedDocs().length > 1) {
+    docMenu.open(e.clientX, e.clientY, selectionItems(selectedDocs()));
+    return;
+  }
+  if (selection.size) clearSelection();
   if (!td.classList.contains('rownum')) selectCell(td);
   const cell = cellValue(td);
   const canWrite = !readOnly && state.mode === 'find';
@@ -667,6 +732,150 @@ function copyItems(doc: Record<string, unknown>): MenuItem[] {
     action: () => vscode.postMessage({ type: 'copy', text: formatDocument(doc, f.id, collectionName) }),
   }));
 }
+
+// ---------------------------------------------------------------------------
+// Row selection: Ctrl/Cmd+click and Shift+click select documents of the page, by _id
+
+/** Keys of the selected documents: the canonical text of their _id, `#row` for rows without one. */
+const selection = new Set<string>();
+/** Row a Shift+click selects from: the last one clicked. */
+let anchorRow = -1;
+
+function rowKey(row: number): string {
+  const doc = docs[row];
+  return doc && '_id' in doc ? JSON.stringify(doc._id) : `#${row}`;
+}
+
+/** The selected documents, in the order of the page. */
+function selectedDocs(): Record<string, unknown>[] {
+  return docs.filter((_, i) => selection.has(rowKey(i)));
+}
+
+/** Highlights the selected rows and drops the keys no longer on the page. */
+function renderSelection(): void {
+  const keys = new Set(docs.map((_, i) => rowKey(i)));
+  for (const key of [...selection]) if (!keys.has(key)) selection.delete(key);
+  [...grid.tBodies].forEach((tbody, i) => tbody.classList.toggle('row-selected', selection.has(rowKey(i))));
+  const n = selectedDocs().length;
+  el('selectionInfo').classList.toggle('hidden', !n);
+  el('selectionCount').textContent = `${n.toLocaleString()} selected`;
+}
+
+function clearSelection(): void {
+  if (!selection.size) return;
+  selection.clear();
+  renderSelection();
+}
+
+/** Ctrl/Cmd+click (`add`) toggles a row; Shift+click selects the rows from the last one clicked. */
+function selectRows(row: number, range: boolean, add: boolean): void {
+  if (range && anchorRow >= 0 && anchorRow < docs.length) {
+    if (!add) selection.clear();
+    const [from, to] = anchorRow < row ? [anchorRow, row] : [row, anchorRow];
+    for (let i = from; i <= to; i++) selection.add(rowKey(i));
+  } else {
+    // The row clicked before (its cell is selected) joins the first Ctrl+click.
+    if (!selection.size && anchorRow >= 0 && anchorRow < docs.length && anchorRow !== row) selection.add(rowKey(anchorRow));
+    const key = rowKey(row);
+    if (selection.has(key)) selection.delete(key);
+    else selection.add(key);
+    anchorRow = row;
+  }
+  renderSelection();
+}
+
+/** Writes on the selected documents: in Find, on a collection that can be changed, all with an _id. */
+function canWriteRows(list: Record<string, unknown>[]): boolean {
+  return !readOnly && state.mode === 'find' && list.every((d) => '_id' in d);
+}
+
+/** `{ _id: { $in: [...] } }` of the documents, in mongosh syntax. */
+function idFilter(list: Record<string, unknown>[]): string {
+  return toShell({ _id: { $in: list.map((d) => d._id) } });
+}
+
+function deleteRows(list: Record<string, unknown>[]): void {
+  if (list.length === 1) vscode.postMessage({ type: 'deleteDocument', id: list[0]._id });
+  else vscode.postMessage({ type: 'deleteDocuments', ids: list.map((d) => d._id) });
+}
+
+/** Exports the selected documents: the query's (or the pipeline's) results with these _ids. */
+function exportRows(list: Record<string, unknown>[]): void {
+  const match = idFilter(list);
+  let source: QuerySource;
+  if (state.mode === 'aggregate') {
+    if (!pipeline.prepare()) return;
+    const stages = [...pipeline.stages.slice(0, pipeline.upto + 1), { op: '$match', body: match, enabled: true }];
+    source = { kind: 'aggregate', stages, upto: stages.length - 1 };
+  } else {
+    source = { kind: 'find', filter: match, sort: state.sort, projection: state.projection };
+  }
+  vscode.postMessage({ type: 'export', source, expanded: [...expanded], layout, count: list.length });
+}
+
+/** The visible columns of the documents as CSV, as Export writes them. */
+function rowsCsv(list: Record<string, unknown>[]): string {
+  return toCsv(csvTable(list, applyLayout(buildColumns(list, expanded), layout)));
+}
+
+/** The menu of a selected row: copy, export, update or delete the selection. */
+function selectionItems(list: Record<string, unknown>[]): MenuItem[] {
+  const what = `${list.length.toLocaleString()} documents`;
+  const copy = (text: string) => vscode.postMessage({ type: 'copy', text });
+  const items: MenuItem[] = [
+    { heading: `Copy ${what} as` },
+    ...COPY_MANY_FORMATS.map((f) => ({ label: f.label, title: f.title, action: () => copy(formatDocuments(list, f.id, collectionName)) })),
+    { label: 'CSV', title: 'The visible columns, as Export writes them', action: () => copy(rowsCsv(list)) },
+  ];
+  if (list.every((d) => '_id' in d)) {
+    items.push('separator', { label: `Export ${what}…`, title: 'JSON, JSON Lines or CSV, like Export', action: () => exportRows(list) });
+  }
+  if (canWriteRows(list)) {
+    items.push(
+      { label: `Update ${what}…`, title: 'Update many, with the filter on their _id', action: () => bulk.open('update', idFilter(list), collectionName) },
+      { label: `Delete ${what}…`, title: 'After a confirmation (Delete)', action: () => deleteRows(list) },
+    );
+  }
+  items.push('separator', {
+    label: 'Clear selection',
+    title: 'Esc',
+    action: () => {
+      clearSelection();
+      anchorRow = -1;
+    },
+  });
+  return items;
+}
+
+/** Keys acting on the selection; true when handled. */
+function selectionKey(e: KeyboardEvent): boolean {
+  if (state.mode !== 'find' && state.mode !== 'aggregate') return false;
+  if (e.key === 'Escape' && selection.size) {
+    clearSelection();
+    anchorRow = -1;
+    return true;
+  }
+  if (e.key.toLowerCase() === 'a' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && docs.length) {
+    docs.forEach((_, i) => selection.add(rowKey(i)));
+    renderSelection();
+    return true;
+  }
+  if (e.key === 'Delete' && selection.size) {
+    const list = selectedDocs();
+    if (canWriteRows(list)) deleteRows(list);
+    return true;
+  }
+  return false;
+}
+
+el('selectionClear').addEventListener('click', () => {
+  clearSelection();
+  anchorRow = -1;
+});
+// Shift+click selects rows, not the text between two clicks.
+grid.addEventListener('mousedown', (e) => {
+  if (e.shiftKey && (e.target as HTMLElement).closest('tbody')) e.preventDefault();
+});
 
 /** Opens the insert dialog with the document without its _id. */
 function duplicate(doc: Record<string, unknown>): void {
@@ -824,9 +1033,17 @@ grid.addEventListener('click', (e) => {
     return;
   }
   const td = target.closest('td');
-  if (!td) return;
+  const row = Number(td?.closest('tr')?.dataset.row);
+  if (!td || !docs[row]) return;
+  // Sub-rows of expanded arrays select their document.
+  if (e.ctrlKey || e.metaKey || e.shiftKey) {
+    selectRows(row, e.shiftKey, e.ctrlKey || e.metaKey);
+    return;
+  }
+  clearSelection();
+  anchorRow = row;
   if (td.classList.contains('rownum')) {
-    openDocument(Number(td.closest('tr')!.dataset.row));
+    openDocument(row);
     return;
   }
   selectCell(td);
@@ -1260,7 +1477,12 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   const inField = (e.target as HTMLElement).closest('input, textarea, select');
-  if (inField || !selectedCell) return;
+  if (inField) return;
+  if (selectionKey(e)) {
+    e.preventDefault();
+    return;
+  }
+  if (!selectedCell) return;
   if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
     const cell = cellValue(selectedCell);
     if (cell) vscode.postMessage({ type: 'copy', text: toShell(cell.value) });

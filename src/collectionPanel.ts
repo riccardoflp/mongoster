@@ -14,7 +14,8 @@ import { exportDocuments } from './transfer';
 import { UndoHistory } from './history';
 import { RedisOplog } from './redisOplog';
 import { updatedFields } from './shared/oplog';
-import type { AggregateRequest, BulkRequest, HostMessage, QueryRequest, QuerySource, QueryText, UpdateFieldRequest, WebviewMessage } from './shared/messages';
+import { CONVERT_TYPES, convertField, fieldPathError, removeField, renameError, renameField, typeCounts } from './fieldActions';
+import type { AggregateRequest, BulkRequest, FieldActionRequest, HistoryEntry, HostMessage, QueryRequest, QuerySource, QueryText, UpdateFieldRequest, WebviewMessage } from './shared/messages';
 import { suggestIndex, summarizeExplain } from './shared/explain';
 import { analyzeSchema } from './shared/schema';
 import { ChartSpec, chartStages, normalizeSpec, specError } from './shared/chart';
@@ -264,6 +265,9 @@ export class CollectionPanel {
       case 'bulkApply':
         await this.bulkApply(m);
         break;
+      case 'fieldAction':
+        await this.fieldAction(m);
+        break;
       case 'analyzeSchema':
         await this.analyzeSchema(m.requestId, m.filter, m.size);
         break;
@@ -298,6 +302,9 @@ export class CollectionPanel {
         break;
       case 'deleteDocument':
         await this.deleteDocument(m.id);
+        break;
+      case 'deleteDocuments':
+        await this.deleteDocuments(m.ids);
         break;
       case 'export':
         await exportDocuments(this.connections, this.target, m.source, { expanded: m.expanded, layout: m.layout, page: m.page, count: m.count });
@@ -562,49 +569,212 @@ export class CollectionPanel {
       const filter = toBson(m.filter, 'Filter') ?? {};
       const update = m.op === 'update' ? toUpdate(m.update ?? '') : undefined;
       const coll = await this.coll();
+      const verb = update ? 'Update' : 'Delete';
       if (!Object.keys(filter).length) {
-        const verb = m.op === 'update' ? 'Update' : 'Delete';
         const total = await coll.countDocuments();
-        const answer = await vscode.window.showWarningMessage(
-          `${verb} all ${total.toLocaleString('en-US')} documents of ${this.target.collection}?`,
-          { modal: true, detail: 'The filter is empty, so every document of the collection is affected.' },
-          `${verb} All`,
-        );
-        if (answer !== `${verb} All`) return reply(false);
+        if (!(await confirmEmptyFilter(`${verb} all ${total.toLocaleString('en-US')} documents of ${this.target.collection}?`, `${verb} All`))) {
+          return reply(false);
+        }
       }
       const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
-      const label = `${update ? 'Update' : 'Delete'} many ${oneLine(m.filter) || '{}'}${update ? ` with ${oneLine(m.update ?? '')}` : ''}`;
-      const rec = UndoHistory.start(this.target, label.length > 300 ? `${label.slice(0, 299)}…` : label);
-      if (rec && !(await rec.snapshot(coll, filter))) {
-        const verb = m.op === 'update' ? 'Update' : 'Delete';
-        const answer = await vscode.window.showWarningMessage(
-          `${verb} without the possibility to undo?`,
-          { modal: true, detail: `The documents matching the filter are ${rec.overflow}: too many for the undo history (settings mongoster.history).` },
-          `${verb} Without Undo`,
-        );
-        if (answer !== `${verb} Without Undo`) return reply(false);
-      }
-      // redis-oplog announces each document: their _ids, before the write.
-      const sink = RedisOplog.sink(this.target);
-      const ids = !sink ? [] : rec && !rec.overflow ? rec.ids() : (await coll.find(filter, { projection: { _id: 1 } }).toArray()).map((d) => d._id);
-      let message: string;
-      if (update) {
-        const res = await coll.updateMany(filter, update);
-        message = `Updated ${this.target.collection}: ${res.matchedCount.toLocaleString('en-US')} matched, ${res.modifiedCount.toLocaleString('en-US')} modified.`;
-        if (res.modifiedCount) await sink?.updatedBy(coll, ids, update);
-      } else {
-        const res = await coll.deleteMany(filter);
-        message = `Deleted ${res.deletedCount.toLocaleString('en-US')} document${res.deletedCount === 1 ? '' : 's'} from ${this.target.collection}.`;
-        await sink?.removedOf(coll, ids, res.deletedCount);
-      }
-      const entry = await rec?.commit(coll);
+      const label = `${verb} many ${oneLine(m.filter) || '{}'}${update ? ` with ${oneLine(m.update ?? '')}` : ''}`;
+      const done = await this.writeMany(coll, filter, update, label);
+      if (!done) return reply(false);
+      const message = update
+        ? `Updated ${this.target.collection}: ${done.matched.toLocaleString('en-US')} matched, ${done.modified.toLocaleString('en-US')} modified.`
+        : `Deleted ${done.deleted.toLocaleString('en-US')} document${done.deleted === 1 ? '' : 's'} from ${this.target.collection}.`;
       reply(true, message);
-      UndoHistory.notify(message, entry);
+      UndoHistory.notify(message, done.entry);
       this.post({ type: 'refresh' });
       void vscode.commands.executeCommand('mongoster.refresh');
     } catch (err) {
       reply(false, errorMessage(err));
     }
+  }
+
+  /**
+   * Updates (with `update`) or deletes the documents matching `filter`, keeping them in the undo history
+   * and announcing them to redis-oplog: the path of Update many / Delete many, the selected rows and the
+   * column actions. Undefined when the user cancels (too many documents to undo).
+   */
+  private async writeMany(
+    coll: Collection,
+    filter: Document,
+    update: Document | Document[] | undefined,
+    label: string,
+  ): Promise<{ matched: number; modified: number; deleted: number; entry?: HistoryEntry } | undefined> {
+    const verb = update ? 'Update' : 'Delete';
+    const rec = UndoHistory.start(this.target, label.length > 300 ? `${label.slice(0, 299)}…` : label);
+    if (rec && !(await rec.snapshot(coll, filter))) {
+      const answer = await vscode.window.showWarningMessage(
+        `${verb} without the possibility to undo?`,
+        { modal: true, detail: `The documents matching the filter are ${rec.overflow}: too many for the undo history (settings mongoster.history).` },
+        `${verb} Without Undo`,
+      );
+      if (answer !== `${verb} Without Undo`) return undefined;
+    }
+    // redis-oplog announces each document: their _ids, before the write.
+    const sink = RedisOplog.sink(this.target);
+    const ids = !sink ? [] : rec && !rec.overflow ? rec.ids() : (await coll.find(filter, { projection: { _id: 1 } }).toArray()).map((d) => d._id);
+    const done = { matched: 0, modified: 0, deleted: 0 };
+    if (update) {
+      const res = await coll.updateMany(filter, update);
+      done.matched = res.matchedCount;
+      done.modified = res.modifiedCount;
+      if (res.modifiedCount) await sink?.updatedBy(coll, ids, update);
+    } else {
+      const res = await coll.deleteMany(filter);
+      done.deleted = res.deletedCount;
+      await sink?.removedOf(coll, ids, res.deletedCount);
+    }
+    return { ...done, entry: await rec?.commit(coll) };
+  }
+
+  /**
+   * Rename field, Remove field or Convert type on a column: asks for the details, counts and confirms,
+   * then writes like Update many (undo history, redis-oplog) on the documents matching the filter.
+   */
+  private async fieldAction(m: FieldActionRequest): Promise<void> {
+    if (this.refuseWrite()) return;
+    const field = m.field;
+    const shown = m.array ? `${m.array}[].${field.slice(m.array.length + 1)}` : field;
+    const invalid = fieldPathError(field);
+    if (invalid) {
+      void vscode.window.showErrorMessage(`${field}: ${invalid}.`);
+      return;
+    }
+    if (m.array && m.action !== 'remove') {
+      void vscode.window.showErrorMessage(
+        `${shown} is a field of the elements of the array ${m.array}: ${m.action === 'rename' ? '$rename' : 'Convert type'} can't change fields inside arrays.`,
+        { modal: true, detail: `Use Update many with a pipeline that rewrites the array, e.g. [ { $set: { ${m.array}: { $map: { input: "$${m.array}", in: … } } } } ].` },
+      );
+      return;
+    }
+    try {
+      const userFilter = toBson(m.filter, 'Filter') ?? {};
+      const everything = !Object.keys(userFilter).length;
+      const scope = everything ? `of ${this.target.collection}` : 'matching the filter';
+      const where = everything ? '' : ` where ${m.filter.replace(/\s+/g, ' ').trim()}`;
+      const coll = await this.coll();
+      const count = (filter: Document) => coll.countDocuments(filter, { maxTimeMS: 60_000 });
+      const docs = (n: number) => `${n.toLocaleString('en-US')} document${n === 1 ? '' : 's'}`;
+      const confirm = async (question: string, button: string, details: string[], n: number, all: string) => {
+        const detail = [...details, UndoHistory.note(this.target.connectionId, n)].filter(Boolean).join('\n');
+        if ((await vscode.window.showWarningMessage(question, { modal: true, detail }, button)) !== button) return false;
+        return !everything || confirmEmptyFilter(all, `${button} in All`);
+      };
+      const finish = (message: string, entry: HistoryEntry | undefined) => {
+        UndoHistory.notify(message, entry);
+        this.post({ type: 'refresh' });
+      };
+
+      if (m.action === 'rename') {
+        const to = (
+          await vscode.window.showInputBox({
+            title: `Rename ${field}`,
+            prompt: `New name of ${field} in the documents ${scope} (a dotted path moves it into a sub-document)`,
+            value: field,
+            valueSelection: [field.lastIndexOf('.') + 1, field.length],
+            validateInput: (v) => renameError(field, v.trim()),
+          })
+        )?.trim();
+        if (!to) return;
+        const op = renameField(userFilter, field, to);
+        const [n, reached, overwrites] = await Promise.all([count(op.filter), count(op.reached), count(op.overwrites)]);
+        const skipped = reached > n ? `${docs(reached - n)} with ${field} or ${to} inside an array ${reached - n === 1 ? 'is' : 'are'} left out: $rename can't go through arrays.` : '';
+        if (!n) {
+          void vscode.window.showInformationMessage(`No document ${scope} has ${field}.${skipped ? ` ${skipped}` : ''}`);
+          return;
+        }
+        const replaced = overwrites ? `${docs(overwrites)} already ${overwrites === 1 ? 'has' : 'have'} ${to}: its value is replaced by that of ${field}.` : '';
+        if (!(await confirm(`Rename ${field} to ${to} in ${docs(n)} ${scope}?`, 'Rename', [replaced, skipped], n, `Rename ${field} to ${to} in the whole collection ${this.target.collection}?`))) return;
+        const done = await this.writeMany(coll, op.filter, op.update, `Rename field ${field} to ${to}${where}`);
+        if (!done) return;
+        this.post({ type: 'fieldChanged', from: field, to });
+        finish(`Renamed ${field} to ${to} in ${docs(done.modified)} of ${this.target.collection}.`, done.entry);
+      } else if (m.action === 'remove') {
+        const op = removeField(userFilter, field, m.array);
+        const [n, reached] = await Promise.all([count(op.filter), count(op.reached)]);
+        const skipped =
+          reached <= n
+            ? ''
+            : m.array
+              ? `${docs(reached - n)} where ${m.array} isn't an array ${reached - n === 1 ? 'is' : 'are'} left out.`
+              : `${docs(reached - n)} where ${field} is inside an array ${reached - n === 1 ? 'is' : 'are'} left out: remove it from the elements with Update many and $[].`;
+        if (!n) {
+          void vscode.window.showInformationMessage(`No document ${scope} has ${shown}.${skipped ? ` ${skipped}` : ''}`);
+          return;
+        }
+        const what = m.array ? `${shown} from the elements of ${m.array} in` : `${field} from`;
+        if (!(await confirm(`Remove ${what} ${docs(n)} ${scope}?`, 'Remove', [skipped], n, `Remove ${shown} from the whole collection ${this.target.collection}?`))) return;
+        const done = await this.writeMany(coll, op.filter, op.update, `Remove field ${shown}${where}`);
+        if (!done) return;
+        this.post({ type: 'fieldChanged', from: field });
+        finish(`Removed ${shown} from ${docs(done.modified)} of ${this.target.collection}.`, done.entry);
+      } else {
+        let now = '';
+        try {
+          const types = await coll.aggregate(typeCounts(userFilter, field), { maxTimeMS: 30_000 }).toArray();
+          now = types.map((t) => `${t._id} ${Number(t.n).toLocaleString('en-US')}`).join(' · ');
+        } catch {
+          // Only a hint.
+        }
+        const pick = await vscode.window.showQuickPick(
+          CONVERT_TYPES.map((t) => ({ label: t.type, description: t.description })),
+          { title: `Convert ${field}`, placeHolder: `Type to convert the values to${now ? ` · now: ${now}` : ''}` },
+        );
+        if (!pick) return;
+        const type = pick.label;
+        const op = convertField(userFilter, field, type);
+        const [n, reached] = await Promise.all([count(op.filter), count(op.reached)]);
+        const skipped = reached > n ? `${docs(reached - n)} where ${field} is inside an array ${reached - n === 1 ? 'is' : 'are'} left out.` : '';
+        if (!n) {
+          void vscode.window.showInformationMessage(`No value of ${field} ${scope} needs converting to ${type}: null, missing values and arrays are left as they are.`);
+          return;
+        }
+        const keep = "Values that can't be converted keep their value and type; null and arrays are left as they are.";
+        if (!(await confirm(`Convert ${field} to ${type} in ${docs(n)} ${scope}?`, 'Convert', [keep, skipped], n, `Convert ${field} to ${type} in the whole collection ${this.target.collection}?`))) return;
+        const done = await this.writeMany(coll, op.filter, op.update, `Convert field ${field} to ${type}${where}`);
+        if (!done) return;
+        const failed = await count(op.filter);
+        const values = (k: number) => `${k.toLocaleString('en-US')} value${k === 1 ? '' : 's'}`;
+        finish(
+          `Converted ${field} to ${type} in ${docs(done.modified)} of ${this.target.collection}.${failed ? ` ${values(failed)} couldn't be converted and kept ${failed === 1 ? 'its' : 'their'} type.` : ''}`,
+          done.entry,
+        );
+      }
+    } catch (err) {
+      void vscode.window.showErrorMessage(errorMessage(err));
+      this.post({ type: 'refresh' });
+    }
+  }
+
+  /** Deletes the rows selected in the table, after a confirmation. */
+  private async deleteDocuments(ids: unknown[]): Promise<void> {
+    if (this.refuseWrite() || !ids.length) return;
+    const n = ids.length;
+    const answer = await vscode.window.showWarningMessage(
+      `Delete ${n.toLocaleString('en-US')} documents from ${this.target.collection}?`,
+      { modal: true, detail: `The ${n.toLocaleString('en-US')} documents selected in the table. ${UndoHistory.note(this.target.connectionId, n)}` },
+      'Delete',
+    );
+    if (answer !== 'Delete') return;
+    try {
+      const coll = await this.coll();
+      const label = `Delete ${n.toLocaleString('en-US')} documents ${ids.map((id) => toShell(id)).join(', ')}`;
+      const done = await this.writeMany(coll, { _id: { $in: ids.map(fromRelaxed) } }, undefined, label);
+      if (done) {
+        const message =
+          done.deleted < n
+            ? `Deleted ${done.deleted.toLocaleString('en-US')} of ${n.toLocaleString('en-US')} documents from ${this.target.collection}: the others were already gone.`
+            : `Deleted ${n.toLocaleString('en-US')} documents from ${this.target.collection}.`;
+        UndoHistory.notify(message, done.entry);
+        void vscode.commands.executeCommand('mongoster.refresh');
+      }
+    } catch (err) {
+      void vscode.window.showErrorMessage(`Delete failed: ${errorMessage(err)}`);
+    }
+    this.post({ type: 'refresh' });
   }
 
   private async coll() {
@@ -943,6 +1113,9 @@ export class CollectionPanel {
   <div class="statusbar">
     <span id="status"></span>
     <span class="spacer"></span>
+    <span id="selectionInfo" class="status-group selection-info hidden" aria-live="polite">
+      <span id="selectionCount"></span><span aria-hidden="true">·</span><button id="selectionClear" class="link" title="Clear the selection (Esc)">Clear</button>
+    </span>
     <button id="columnsBtn" class="secondary columns-btn" title="Show, hide, pin and reorder the columns" aria-haspopup="true" aria-expanded="false">Columns</button>
     <span class="status-group">
     <label for="limit">Page size</label>
@@ -1130,6 +1303,16 @@ export class CollectionPanel {
 </body>
 </html>`;
   }
+}
+
+/** The extra confirmation of a write on every document of the collection (an empty filter). */
+async function confirmEmptyFilter(question: string, button: string): Promise<boolean> {
+  const answer = await vscode.window.showWarningMessage(
+    question,
+    { modal: true, detail: 'The filter is empty, so every document of the collection is affected.' },
+    button,
+  );
+  return answer === button;
 }
 
 const MISSING = Symbol('missing');

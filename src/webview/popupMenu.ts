@@ -1,5 +1,6 @@
 // A small menu at the pointer or under a button: the actions on a document of the grid, the copy formats.
-export type MenuItem = { label: string; title?: string; action: () => void } | 'separator';
+/** `heading`: a caption over the items that follow it (e.g. "Copy 3 documents as"). */
+export type MenuItem = { label: string; title?: string; action: () => void } | { heading: string } | 'separator';
 
 export class PopupMenu {
   constructor(private readonly menu: HTMLElement) {
@@ -25,10 +26,23 @@ export class PopupMenu {
   }
 
   open(x: number, y: number, items: MenuItem[]): void {
+    // Items under a heading are indented, up to the next separator.
+    let sub = false;
     this.menu.replaceChildren(
       ...items.map((item) => {
-        if (item === 'separator') return document.createElement('hr');
+        if (item === 'separator') {
+          sub = false;
+          return document.createElement('hr');
+        }
+        if ('heading' in item) {
+          sub = true;
+          const h = document.createElement('div');
+          h.className = 'menu-heading';
+          h.textContent = item.heading;
+          return h;
+        }
         const b = document.createElement('button');
+        if (sub) b.className = 'menu-sub';
         b.textContent = item.label;
         b.setAttribute('role', 'menuitem');
         if (item.title) b.title = item.title;
