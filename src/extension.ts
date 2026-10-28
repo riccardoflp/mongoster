@@ -13,6 +13,7 @@ import { ComparePanel } from './compare';
 import { UsersPanel } from './users';
 import { GridFSPanel, dropBucket, uploadFiles } from './gridfs';
 import { Copier } from './copy';
+import { GenerateSource, Generator } from './generate';
 import { HistoryPanel, UndoHistory } from './history';
 import { Backups } from './backup';
 import { WatchPanel, WatchScope } from './watch';
@@ -524,6 +525,30 @@ export function activate(context: vscode.ExtensionContext): void {
         CollectionPanel.refresh(target);
         tree.refresh();
       }
+    }),
+
+    /** From the tree (a sample of 1,000 is analyzed) or from the Schema tab (with its analysis). */
+    vscode.commands.registerCommand('mongoster.generateDocuments', (arg?: CollectionNode | GenerateSource) => {
+      if (!arg) return;
+      const source: GenerateSource =
+        arg instanceof CollectionNode
+          ? { connectionId: arg.connection.id, database: arg.database, collection: arg.collection, view: arg.isView }
+          : arg;
+      const generator = new Generator(
+        connections,
+        (ref) => {
+          const info = connections.get(ref.connectionId);
+          if (!info) return;
+          // The destination is never a view (they are read-only).
+          const locked = !!info.readOnly;
+          CollectionPanel.show(context, connections, documents, { ...ref, connectionName: info.name, readOnly: locked, view: false, locked, color: info.color });
+        },
+        (ref) => {
+          CollectionPanel.refresh(ref);
+          tree.refresh();
+        },
+      );
+      return generator.start(source);
     }),
   );
 }

@@ -53,6 +53,29 @@ export interface TypeSchema {
   /** Arrays: their lengths, and their elements described as a field. */
   lengths?: { min: number; max: number; avg: number };
   elements?: FieldSchema;
+  /** Only with `analyzeSchema(docs, { details: true })`: what generating similar values needs. */
+  details?: TypeDetails;
+}
+
+/** Statistics of a type beyond what the Schema tab shows, for generating documents that look alike. */
+export interface TypeDetails {
+  /** Every distinct value with its count, most frequent first, when there are at most `POOL_CAP` (and they're short). */
+  values?: ValueCount[];
+  /** Strings: their length in characters. */
+  chars?: { min: number; max: number; avg: number };
+  /** Doubles and decimals: the most digits seen after the decimal point (`MAX_DECIMALS` means any). */
+  decimals?: number;
+  /** Dates: all at midnight UTC. */
+  dateOnly?: boolean;
+  /** Arrays: how many have each length, most frequent first (at most `TOP_LENGTHS`). */
+  lengths?: ValueCount[];
+  /** Other types (binary, regex, timestamp…): the first value seen, as it was (canonical EJSON). */
+  example?: unknown;
+}
+
+export interface AnalyzeOptions {
+  /** Adds `details` to each type. */
+  details?: boolean;
 }
 
 export interface FieldSchema {
@@ -79,6 +102,13 @@ export interface SchemaSummary {
 }
 
 export const DISTINCT_CAP = 1000;
+export const POOL_CAP = 200;
+/** Characters of JSON the values of a pool may take. */
+const POOL_CHARS = 50_000;
+export const MAX_DECIMALS = 15;
+const TOP_LENGTHS = 20;
+/** Base64 characters kept of an example binary (a multiple of 4). */
+const EXAMPLE_CAP = 256;
 const FIELD_CAP = 500;
 const TOP = 10;
 /** With at most this many distinct values a number or date shows them instead of a histogram. */
@@ -139,6 +169,10 @@ class TypeAcc {
   max?: { n: number; value: unknown };
   readonly lengths: number[] = [];
   elements?: FieldAcc;
+  chars?: { min: number; max: number; sum: number };
+  decimals = 0;
+  dateOnly = true;
+  example?: unknown;
 
   constructor(readonly type: BsonType) {}
 }
@@ -175,7 +209,17 @@ class FieldAcc {
         t.numbers.push(n);
         if (!t.min || n < t.min.n) t.min = { n, value: v };
         if (!t.max || n > t.max.n) t.max = { n, value: v };
+        if (type === 'date' && n % 86_400_000 !== 0) t.dateOnly = false;
+        if (type === 'double' || type === 'decimal') t.decimals = Math.max(t.decimals, decimalsOf(v, n));
       }
+      if (typeof v === 'string') {
+        const c = (t.chars ??= { min: v.length, max: v.length, sum: 0 });
+        c.min = Math.min(c.min, v.length);
+        c.max = Math.max(c.max, v.length);
+        c.sum += v.length;
+      }
+    } else if (t.example === undefined && type !== 'null') {
+      t.example = v;
     }
   }
 
@@ -195,34 +239,44 @@ class FieldAcc {
   }
 }
 
-export function analyzeSchema(docs: unknown[]): SchemaSummary {
-  const root = new FieldAcc();
-  for (const doc of docs) if (isPlainObject(doc)) root.addObject(doc);
-  return { sampled: root.objects, fields: children(root, '', ''), ...(root.moreFields && { moreFields: true }) };
+/** Digits after the decimal point of a double or decimal (`MAX_DECIMALS` for exponents and long fractions). */
+function decimalsOf(v: unknown, n: number): number {
+  const text = isPlainObject(v) && typeof v.$numberDecimal === 'string' ? v.$numberDecimal : String(n);
+  if (/e/i.test(text)) return MAX_DECIMALS;
+  const dot = text.indexOf('.');
+  return dot < 0 ? 0 : Math.min(MAX_DECIMALS, text.length - dot - 1);
 }
 
-function children(acc: FieldAcc, path: string, label: string): FieldSchema[] {
+export function analyzeSchema(docs: unknown[], options: AnalyzeOptions = {}): SchemaSummary {
+  const root = new FieldAcc();
+  for (const doc of docs) if (isPlainObject(doc)) root.addObject(doc);
+  const details = !!options.details;
+  return { sampled: root.objects, fields: children(root, '', '', details), ...(root.moreFields && { moreFields: true }) };
+}
+
+function children(acc: FieldAcc, path: string, label: string, details: boolean): FieldSchema[] {
   return [...acc.fields].map(([name, f]) =>
-    field(f, name, path ? `${path}.${name}` : name, label ? `${label}.${name}` : name, acc.objects),
+    field(f, name, path ? `${path}.${name}` : name, label ? `${label}.${name}` : name, acc.objects, details),
   );
 }
 
-function field(acc: FieldAcc, name: string, path: string, label: string, of: number): FieldSchema {
+function field(acc: FieldAcc, name: string, path: string, label: string, of: number, details: boolean): FieldSchema {
   const result: FieldSchema = {
     name,
     path,
     label,
     count: acc.count,
     of,
-    types: [...acc.types.values()].sort((a, b) => b.count - a.count).map((t) => typeSchema(t, path, label)),
+    types: [...acc.types.values()].sort((a, b) => b.count - a.count).map((t) => typeSchema(t, path, label, details)),
   };
-  if (acc.fields.size) result.fields = children(acc, path, label);
+  if (acc.fields.size) result.fields = children(acc, path, label, details);
   if (acc.moreFields) result.moreFields = true;
   return result;
 }
 
-function typeSchema(t: TypeAcc, path: string, label: string): TypeSchema {
+function typeSchema(t: TypeAcc, path: string, label: string, details: boolean): TypeSchema {
   const s: TypeSchema = { type: t.type, count: t.count };
+  if (details) s.details = typeDetails(t);
   if (t.type === 'array') {
     const lengths = t.lengths;
     s.lengths = {
@@ -230,7 +284,7 @@ function typeSchema(t: TypeAcc, path: string, label: string): TypeSchema {
       max: Math.max(...lengths),
       avg: Math.round((lengths.reduce((a, b) => a + b, 0) / lengths.length) * 10) / 10,
     };
-    if (t.elements?.count) s.elements = field(t.elements, '[]', path, `${label}[]`, t.count);
+    if (t.elements?.count) s.elements = field(t.elements, '[]', path, `${label}[]`, t.count, details);
     return s;
   }
   if (!VALUE_TYPES.has(t.type)) return s;
@@ -250,6 +304,35 @@ function typeSchema(t: TypeAcc, path: string, label: string): TypeSchema {
       .map((v) => ({ value: relaxEjson(v.value), count: v.count }));
   }
   return s;
+}
+
+function typeDetails(t: TypeAcc): TypeDetails {
+  const d: TypeDetails = {};
+  if (t.type === 'array') {
+    const counts = new Map<number, number>();
+    for (const n of t.lengths) counts.set(n, (counts.get(n) ?? 0) + 1);
+    d.lengths = [...counts]
+      .sort((a, b) => b[1] - a[1] || a[0] - b[0])
+      .slice(0, TOP_LENGTHS)
+      .map(([value, count]) => ({ value, count }));
+    return d;
+  }
+  if (!VALUE_TYPES.has(t.type)) {
+    // Large binaries are cut (their bytes are only an example); other large values are left out.
+    const ex = t.example;
+    const bin = isPlainObject(ex) && isPlainObject(ex.$binary) ? ex.$binary : undefined;
+    if (bin && typeof bin.base64 === 'string' && bin.base64.length > EXAMPLE_CAP) d.example = { $binary: { ...bin, base64: bin.base64.slice(0, EXAMPLE_CAP) } };
+    else if (ex !== undefined && JSON.stringify(ex).length <= 4 * EXAMPLE_CAP) d.example = ex;
+    return d;
+  }
+  if (!t.capped && t.values.size <= POOL_CAP) {
+    const values = [...t.values.values()].sort((a, b) => b.count - a.count).map((v) => ({ value: relaxEjson(v.value), count: v.count }));
+    if (JSON.stringify(values).length <= POOL_CHARS) d.values = values;
+  }
+  if (t.chars) d.chars = { min: t.chars.min, max: t.chars.max, avg: Math.round((t.chars.sum / t.count) * 10) / 10 };
+  if (t.type === 'double' || t.type === 'decimal') d.decimals = t.decimals;
+  if (t.type === 'date' && t.numbers.length) d.dateOnly = t.dateOnly;
+  return d;
 }
 
 // ---------------------------------------------------------------------------

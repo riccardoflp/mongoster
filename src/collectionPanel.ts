@@ -287,6 +287,18 @@ export class CollectionPanel {
       case 'editValidation':
         await vscode.commands.executeCommand('mongoster.editValidation', { ...this.target, readOnly: this.target.locked });
         break;
+      case 'generateDocuments': {
+        const t = this.target;
+        await vscode.commands.executeCommand('mongoster.generateDocuments', {
+          connectionId: t.connectionId,
+          database: t.database,
+          collection: t.collection,
+          view: t.view,
+          schema: m.schema,
+          filter: m.filter,
+        });
+        break;
+      }
       case 'loadIndexes':
         await this.postIndexes();
         break;
@@ -523,7 +535,8 @@ export class CollectionPanel {
       pipeline.push(total > size ? { $sample: { size } } : { $limit: size });
       // promoteValues: false keeps Int32 and Double apart, so the types are reported exactly.
       const docs = await coll.aggregate(pipeline, { promoteValues: false, maxTimeMS: 120_000, allowDiskUse: true }).toArray();
-      const schema = analyzeSchema(docs.map((d) => EJSON.serialize(d, { relaxed: false })));
+      // The details are for `Generate…`.
+      const schema = analyzeSchema(docs.map((d) => EJSON.serialize(d, { relaxed: false })), { details: true });
       this.post({ type: 'schema', requestId, schema, total: Math.max(total, schema.sampled), durationMs: Date.now() - started });
     } catch (err) {
       this.post({ type: 'schema', requestId, error: errorMessage(err) });
@@ -1113,6 +1126,7 @@ export class CollectionPanel {
         <option>100</option><option selected>1000</option><option>10000</option>
       </select>
       <button id="editValidation" class="secondary not-view" title="Validation rules ($jsonSchema) of the collection; without rules, a schema generated from the documents is proposed">Validation rules…</button>
+      <button id="schemaGenerate" class="secondary" title="Generate fake documents that look like the ones analyzed, into this collection or another one">Generate…</button>
       <button id="schemaExpand" class="icon" title="Expand all">⊞</button>
       <button id="schemaCollapse" class="icon" title="Collapse all">⊟</button>
     </div>

@@ -200,7 +200,7 @@ function runSchema(): void {
   vscode.setState(state);
   schemaRequest++;
   setLoading(true);
-  schemaView.loading();
+  schemaView.loading(state.filter);
   vscode.postMessage({ type: 'analyzeSchema', requestId: schemaRequest, filter: state.filter, size: state.schemaSize });
 }
 
@@ -1639,7 +1639,10 @@ let schemaRequest = 0;
 const schemaSize = el<HTMLSelectElement>('schemaSize');
 if (state.schemaSize) schemaSize.value = String(state.schemaSize);
 schemaSize.addEventListener('change', () => run());
-const schemaView = new SchemaView({ filter: (path, condition) => addCondition(path, condition) });
+const schemaView = new SchemaView({
+  filter: (path, condition) => addCondition(path, condition),
+  generate: (schema, filter) => vscode.postMessage({ type: 'generateDocuments', schema, filter }),
+});
 
 // ---------------------------------------------------------------------------
 // Chart
