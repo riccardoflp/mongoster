@@ -11,5 +11,5 @@
     "noEmit": true,
     "types": ["node", "vscode"]
   },
-  "include": ["src"]
+  "include": ["src", "test", "vitest.config.ts"]
 }

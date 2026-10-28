@@ -259,6 +259,16 @@ An installer is built on the system it is for (a macOS disk image can only be ma
 
 `npm run typecheck` checks the code twice: against VS Code's API and against the app's implementation of it.
 
+The tests use [Vitest](https://vitest.dev) and are in `test/`:
+
+```bash
+npm test                    # unit tests (test/unit): the modules of src/shared, the archive format, the playground's rewriting
+npm run test:watch          # the same, run again on changes
+npm run test:integration    # against a real mongod (test/integration): the playground's runtime and redis-oplog events, backup and restore of an .agz
+```
+
+The integration tests start their own mongod on the first free port from 27110 to 27119 with `mongodb-memory-server`, which downloads MongoDB the first time. An installed one is used instead when `MONGOMS_SYSTEM_BINARY` points to its `mongod`, and on Windows when there is one in `C:\Program Files\MongoDB\Server`. Modules that import `vscode` get the stub in `test/stubs/vscode.ts`. The `Build` workflow runs both after the type check.
+
 ## Structure
 
 - `src/extension.ts` – activation and commands

@@ -158,7 +158,7 @@ async function dumpCollection(db: Db, info: CollectionInfo, dir: string, gzip: b
 }
 
 /** An archive of the collections (to gzip): the prelude with their metadata, then their documents one collection after the other. */
-async function* archiveOf(
+export async function* archiveOf(
   client: MongoClient,
   plan: { database: string; collections: CollectionInfo[] }[],
   stats: DumpStats,
@@ -264,7 +264,7 @@ export async function scanArchive(file: string): Promise<BackupDatabase[]> {
 const typeOf = (files: BackupFiles) => (files.meta?.type as string | undefined) ?? 'collection';
 
 /** Restores one collection: creates it (with its options) if needed, inserts the documents it's given, then creates the indexes. */
-class CollectionRestore {
+export class CollectionRestore {
   readonly result: RestoreResult = { inserted: 0, skipped: 0, failed: 0, indexes: 0, indexErrors: [], cancelled: false };
   private batch: Document[] = [];
   private batchBytes = 0;
