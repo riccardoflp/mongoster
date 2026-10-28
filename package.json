@@ -351,6 +351,18 @@
         "command": "mongoster.mcp.changePort",
         "title": "Change MCP Server Port…",
         "category": "Mongoster"
+      },
+      {
+        "command": "mongoster.importConnections",
+        "title": "Import Connections…",
+        "category": "Mongoster",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "mongoster.exportConnections",
+        "title": "Export Connections…",
+        "category": "Mongoster",
+        "icon": "$(export)"
       }
     ],
     "menus": {
@@ -394,6 +406,16 @@
           "command": "mongoster.undoLast",
           "when": "view == mongoster.connections",
           "group": "2_history@1"
+        },
+        {
+          "command": "mongoster.importConnections",
+          "when": "view == mongoster.connections",
+          "group": "3_transfer@1"
+        },
+        {
+          "command": "mongoster.exportConnections",
+          "when": "view == mongoster.connections",
+          "group": "3_transfer@2"
         }
       ],
       "view/item/context": [
@@ -636,6 +658,16 @@
           "command": "mongoster.restore",
           "when": "view == mongoster.connections && viewItem == collection",
           "group": "2_transfer@7"
+        },
+        {
+          "command": "mongoster.importConnections",
+          "when": "view == mongoster.connections && viewItem == folder",
+          "group": "1_folder@3"
+        },
+        {
+          "command": "mongoster.exportConnections",
+          "when": "view == mongoster.connections && viewItem == folder",
+          "group": "1_folder@4"
         }
       ],
       "commandPalette": [
