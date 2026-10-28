@@ -1,4 +1,4 @@
-// Server monitor tab: running operations, profiler entries, statistics and replication, refreshed on demand or periodically.
+// Server monitor tab: running operations, profiler entries, statistics, replication and sharding, refreshed on demand or periodically.
 import './tokenColors';
 import type {
   CollectionStats,
@@ -11,11 +11,14 @@ import type {
   ReplMember,
   ReplStatus,
   ServerStats,
+  ShardedCollectionInfo,
+  ShardingEvent,
+  ShardingStatus,
 } from '../shared/messages';
 import { prettyShell, toShell } from '../shared/query';
 import { SlowOp, SlowOpGroup, SlowOpSource, canOpen, groupOps, splitNs } from '../shared/profile';
 
-type Tab = 'ops' | 'profile' | 'stats' | 'repl';
+type Tab = 'ops' | 'profile' | 'stats' | 'repl' | 'shard';
 
 interface State {
   tab: Tab;
@@ -39,6 +42,10 @@ interface State {
   oplogNs: string;
   oplogOp: OplogOp;
   oplogLimit: number;
+  shardCollFilter: string;
+  shardCollSort?: SortState;
+  shardEventsNs: string;
+  shardEventsScope: 'balancer' | 'all';
 }
 
 interface SortState {
@@ -67,6 +74,9 @@ const state: State = {
   oplogNs: '',
   oplogOp: '',
   oplogLimit: 50,
+  shardCollFilter: '',
+  shardEventsNs: '',
+  shardEventsScope: 'balancer',
   ...vscode.getState(),
 };
 const save = () => vscode.setState(state);
@@ -90,6 +100,15 @@ const expandedOplog = new Set<string>();
 const expandedOps = new Set<string>();
 const expandedProfile = new Set<string>();
 const killing = new Set<string>();
+let sharding: ShardingStatus | undefined;
+/** Whether the pending sharding request reads the per-collection values too. */
+let shardingFull = true;
+let shardEvents: ShardingEvent[] = [];
+const expandedShards = new Set<string>();
+const expandedShardColls = new Set<string>();
+const expandedEvents = new Set<string>();
+/** Recent sharding events shown. */
+const SHARD_EVENTS = 100;
 let requestId = 0;
 const latest: Record<string, number> = {};
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -183,6 +202,7 @@ function setTab(tab: Tab): void {
     ['profile', 'profileView', 'tabProfile'],
     ['stats', 'statsView', 'tabStats'],
     ['repl', 'replView', 'tabRepl'],
+    ['shard', 'shardView', 'tabShard'],
   ] as const) {
     el(view).classList.toggle('hidden', t !== tab);
     el(button).setAttribute('aria-selected', String(t === tab));
@@ -197,6 +217,9 @@ function refresh(full: boolean): void {
   else if (state.tab === 'repl') {
     vscode.postMessage({ type: 'loadReplication', requestId: request('repl') });
     oplogRequest();
+  } else if (state.tab === 'shard') {
+    shardingRequest(full);
+    shardEventsRequest();
   } else {
     vscode.postMessage({ type: 'loadServer', requestId: request('server') });
     if (full) {
@@ -760,7 +783,7 @@ function renderRepl(): void {
   if (!isSet) {
     replMessage(
       r.kind === 'mongos'
-        ? 'Connected to a mongos (sharded cluster): add a connection to a shard to see its replica set and oplog.'
+        ? 'Connected to a mongos (sharded cluster): add a connection to a shard to see its replica set and oplog. The Sharding tab shows the cluster.'
         : `${r.me ?? 'This server'} is a standalone server: it is not part of a replica set, so there is no replication and no oplog.`,
     );
     return;
@@ -879,6 +902,459 @@ function renderOplog(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Sharding
+
+function shardingRequest(full: boolean): void {
+  shardingFull = full;
+  vscode.postMessage({ type: 'loadSharding', requestId: request('sharding'), full });
+}
+
+function shardEventsRequest(): void {
+  vscode.postMessage({ type: 'loadShardingEvents', requestId: request('shardEvents'), scope: state.shardEventsScope, ns: state.shardEventsNs.trim(), limit: SHARD_EVENTS });
+}
+
+/** Per-collection values (balancer status, data per shard) are only read on a full refresh: an automatic one keeps the previous ones. */
+function mergeSharding(next: ShardingStatus, full: boolean): ShardingStatus {
+  const prev = sharding;
+  if (full || !prev?.collections || !next.collections) return next;
+  const before = new Map(prev.collections.map((c) => [c.ns, c]));
+  for (const c of next.collections) {
+    const p = before.get(c.ns);
+    if (!p) continue;
+    if (c.balancerCompliant === undefined) {
+      c.balancerCompliant = p.balancerCompliant;
+      c.violation = p.violation;
+    }
+    c.data ??= p.data;
+  }
+  for (const s of next.shards ?? []) {
+    const p = prev.shards?.find((x) => x.name === s.name);
+    if (s.dataSize === undefined && p) {
+      s.dataSize = p.dataSize;
+      s.documents = p.documents;
+    }
+  }
+  next.errors = [...next.errors, ...prev.errors.filter((e) => /^(balancer status of the collections|data per shard)/.test(e))];
+  next.dataLimited ??= prev.dataLimited;
+  return next;
+}
+
+/** A stable color per shard, in the order of the shards table. */
+function shardColor(name: string): string {
+  const i = Math.max(0, sharding?.shards?.findIndex((s) => s.name === name) ?? 0);
+  return `var(--shard-${i % 6})`;
+}
+
+function swatch(name: string): HTMLSpanElement {
+  const s = document.createElement('span');
+  s.className = 'swatch';
+  s.style.background = shardColor(name);
+  return s;
+}
+
+const VIOLATIONS: Record<string, string> = {
+  chunksImbalance: 'uneven chunks',
+  zoneViolation: 'zone violation',
+  draining: 'draining',
+  defragmentingChunks: 'defragmenting',
+};
+
+const totalSize = (c: ShardedCollectionInfo) => (c.data ? Object.values(c.data).reduce((a, d) => a + d.size, 0) : undefined);
+const totalDocs = (c: ShardedCollectionInfo) => (c.data ? Object.values(c.data).reduce((a, d) => a + d.count, 0) : undefined);
+
+/**
+ * Whether the data is unevenly spread: the balancer's own verdict when it could be read, otherwise when
+ * the most loaded shard has 1.5 times its even share and the gap exceeds the balancer's threshold (3 chunks).
+ */
+function balanceOf(c: ShardedCollectionInfo): { text: string; className: string; title: string } {
+  if (c.balancerCompliant) return { text: 'balanced', className: 'ok', title: 'balancerCollectionStatus: compliant' };
+  if (c.balancerCompliant === false) {
+    return { text: VIOLATIONS[c.violation ?? ''] ?? c.violation ?? 'not balanced', className: 'slow', title: `balancerCollectionStatus: ${c.violation ?? 'not compliant'}: the balancer has chunks of this collection to move or merge` };
+  }
+  const shards = (sharding?.shards ?? []).filter((s) => !s.draining).map((s) => s.name);
+  if (!c.data || shards.length < 2) return { text: '', className: '', title: '' };
+  const sizes = shards.map((s) => c.data?.[s]?.size ?? 0);
+  const total = sizes.reduce((a, n) => a + n, 0);
+  const max = Math.max(...sizes);
+  const threshold = 3 * (sharding?.balancer?.chunkSize ?? 128) * 1024 * 1024;
+  const uneven = total > 0 && max >= (1.5 * total) / shards.length && max - Math.min(...sizes) > threshold;
+  return uneven ? { text: 'uneven', className: 'slow', title: `The largest shard holds ${Math.round((max / total) * 100)}% of the data` } : { text: '', className: '', title: '' };
+}
+
+function distributionBar(values: Record<string, number>, format: (n: number) => string): HTMLElement {
+  const bar = document.createElement('div');
+  bar.className = 'dist';
+  const total = Object.values(values).reduce((a, n) => a + n, 0);
+  const lines: string[] = [];
+  for (const s of sharding?.shards ?? []) {
+    const v = values[s.name] ?? 0;
+    lines.push(`${s.name}: ${format(v)} (${total ? Math.round((v / total) * 100) : 0}%)`);
+    if (!v) continue;
+    const seg = document.createElement('span');
+    seg.style.width = `${(v / total) * 100}%`;
+    seg.style.background = shardColor(s.name);
+    bar.append(seg);
+  }
+  // Shards no longer listed (removed) still own chunks in the counts.
+  for (const [name, v] of Object.entries(values)) if (!sharding?.shards?.some((s) => s.name === name)) lines.push(`${name}: ${format(v)}`);
+  bar.title = lines.join('\n');
+  return bar;
+}
+
+function shardMessage(text: string, failed = false): void {
+  const box = el('shardMessage');
+  box.textContent = text;
+  box.classList.toggle('hidden', !text);
+  box.classList.toggle('failed', failed);
+}
+
+function renderSharding(): void {
+  const cards = el('shardCards');
+  cards.replaceChildren();
+  const s = sharding;
+  const mongos = s?.kind === 'mongos';
+  el('shardBody').classList.toggle('hidden', !mongos);
+  if (!s) return;
+  if (!mongos) {
+    const me = s.me ?? 'This server';
+    shardMessage(
+      s.kind === 'shardMember'
+        ? s.shardName === 'config'
+          ? `${me} is a config server of a sharded cluster: connect to a mongos to see the shards, the sharded collections and the balancer.`
+          : `${me} is a member of the shard ${s.shardName ?? ''} of a sharded cluster${s.configServer ? ` (config servers ${s.configServer})` : ''}: connect to a mongos to see the whole cluster.`
+        : s.kind === 'replicaSet'
+          ? `${me} is a replica set member, not a mongos: it is not part of a sharded cluster.`
+          : `${me} is a standalone server: it is not part of a sharded cluster.`,
+    );
+    return;
+  }
+  const shards = s.shards ?? [];
+  const colls = s.collections ?? [];
+  if (s.shards) {
+    const draining = shards.filter((x) => x.draining).length;
+    const inactive = shards.filter((x) => x.state !== undefined && x.state !== 1).length;
+    card(
+      cards,
+      'Shards',
+      count(shards.length),
+      [draining ? `${draining} draining` : '', inactive ? `${inactive} not active` : '', s.zones?.length ? `zones: ${s.zones.join(', ')}` : 'no zones'].filter(Boolean).join(' · '),
+      draining || inactive ? 'slow' : '',
+    );
+  }
+  if (s.collections) {
+    const off = colls.filter((c) => !c.balancing).length;
+    const unbalanced = colls.filter((c) => c.balancerCompliant === false).length;
+    card(cards, 'Sharded collections', count(colls.length), [off ? `${off} with balancing off` : '', unbalanced ? `${unbalanced} not balanced` : ''].filter(Boolean).join(' · ') || undefined);
+    const chunks = colls.reduce((a, c) => a + c.totalChunks, 0);
+    const jumbo = colls.reduce((a, c) => a + c.jumbo, 0);
+    card(
+      cards,
+      'Chunks',
+      count(chunks),
+      [jumbo ? `${count(jumbo)} jumbo` : 'no jumbo chunks', s.balancer?.chunkSize ? `chunk size ${s.balancer.chunkSize} MB` : ''].filter(Boolean).join(' · '),
+      jumbo ? 'slow' : '',
+    );
+  }
+  const b = s.balancer;
+  if (b) {
+    const enabled = b.mode !== 'off';
+    card(
+      cards,
+      'Balancer',
+      b.mode === undefined ? '?' : enabled ? (b.mode === 'full' ? 'enabled' : b.mode) : 'disabled',
+      [
+        b.running === undefined ? '' : b.running ? 'round in progress' : 'idle',
+        b.rounds !== undefined ? `${count(b.rounds)} rounds` : '',
+        b.window ? `window ${b.window.start}–${b.window.stop} (config server time)` : '',
+        b.secondaryThrottle === false ? 'no secondary throttle' : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      enabled ? (b.running ? 'ok' : '') : 'slow',
+    );
+  }
+  if (s.migrations) {
+    const m = s.migrations;
+    card(
+      cards,
+      'Migrations (24 h)',
+      `${count(m.done)} done${m.failed ? ` · ${count(m.failed)} failed` : ''}`,
+      m.failedRounds ? `${count(m.failedRounds)} balancer round${m.failedRounds === 1 ? '' : 's'} with errors` : m.failed ? 'see the recent events' : undefined,
+      m.failed || m.failedRounds ? 'very-slow' : '',
+    );
+  }
+  if (s.configServer) {
+    const { replSet, members } = splitHost(s.configServer);
+    card(
+      cards,
+      'Config servers',
+      replSet ?? members[0] ?? '',
+      [
+        `${members.length} member${members.length === 1 ? '' : 's'}`,
+        s.routers ? `${s.routers.active} of ${s.routers.total} mongos active` : '',
+        s.version ? `mongos ${s.version}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    );
+  }
+  shardMessage(s.errors.length ? `Not everything could be read (the cluster's state needs the clusterMonitor role, the balancer status of each collection clusterManager):\n${s.errors.join('\n')}` : '', true);
+  el('shardInfo').textContent = `as of ${clock(new Date(s.at).toISOString())}`;
+  const toggle = el<HTMLButtonElement>('balancerToggle');
+  toggle.classList.toggle('hidden', !b?.mode);
+  toggle.textContent = b?.mode === 'off' ? 'Start Balancer…' : 'Stop Balancer…';
+  toggle.title = b?.mode === 'off' ? 'Let the balancer move chunks between the shards again (balancerStart)' : 'Stop moving chunks between the shards (balancerStop)';
+  renderShards();
+  renderShardCollections();
+}
+
+function splitHost(host: string): { replSet?: string; members: string[] } {
+  const slash = host.indexOf('/');
+  return { replSet: slash >= 0 ? host.slice(0, slash) : undefined, members: (slash >= 0 ? host.slice(slash + 1) : host).split(',').filter(Boolean) };
+}
+
+function renderShards(): void {
+  const table = el<HTMLTableElement>('shardTable');
+  table.replaceChildren();
+  const shards = sharding?.shards ?? [];
+  const columns = ['shard', 'replica set', 'members', 'state', 'draining', 'zones', 'chunks', 'data', 'documents', 'primary of'];
+  header(table, columns);
+  for (const [i, label] of columns.entries()) {
+    const th = table.tHead!.rows[0].cells[i];
+    if (['chunks', 'data', 'documents'].includes(label)) th.className = 'num';
+    if (label === 'data' || label === 'documents') th.title = 'Of the sharded collections (unsharded collections are on the primary shard of their database)';
+  }
+  const body = table.createTBody();
+  const totalData = shards.reduce((a, s) => a + (s.dataSize ?? 0), 0);
+  for (const s of shards) {
+    const row = body.insertRow();
+    row.className = 'clickable';
+    row.classList.toggle('expanded', expandedShards.has(s.name));
+    const name = cell(row, s.name, 'self');
+    name.prepend(swatch(s.name));
+    cell(row, s.replSet ?? '(standalone)', s.replSet ? '' : 'slow');
+    cell(row, s.members.join(', '), 'muted', s.host);
+    cell(row, s.state === undefined || s.state === 1 ? 'active' : `state ${s.state}`, s.state === undefined || s.state === 1 ? 'ok' : 'slow');
+    cell(row, s.draining ? 'draining' : '', s.draining ? 'slow' : '', s.draining ? 'Being removed: its chunks are moved to the other shards' : undefined);
+    cell(row, s.tags.join(', '));
+    cell(row, count(s.chunks), 'num');
+    cell(row, bytes(s.dataSize), 'num', s.dataSize !== undefined && totalData ? `${Math.round((s.dataSize / totalData) * 100)}% of the sharded data` : undefined);
+    cell(row, count(s.documents), 'num');
+    cell(row, s.primaryOf.join(', '), 'muted', s.primaryOf.length ? `Primary shard of ${s.primaryOf.join(', ')}: their unsharded collections are here` : undefined);
+    row.addEventListener('click', () => {
+      if (expandedShards.has(s.name)) expandedShards.delete(s.name);
+      else expandedShards.add(s.name);
+      renderShards();
+    });
+    if (expandedShards.has(s.name)) detailRow(table, columns.length, s.raw);
+  }
+  if (!shards.length) {
+    const c = body.insertRow().insertCell();
+    c.colSpan = columns.length;
+    c.className = 'empty';
+    c.textContent = sharding?.shards ? 'The cluster has no shards yet (addShard).' : 'The shards could not be read.';
+  }
+}
+
+type ShardCollSortKey = 'ns' | 'key' | 'unique' | 'balancing' | 'totalChunks' | 'size' | 'docs' | 'balance' | 'jumbo';
+
+function renderShardCollections(): void {
+  const table = el<HTMLTableElement>('shardCollTable');
+  table.replaceChildren();
+  const all = sharding?.collections ?? [];
+  const needle = state.shardCollFilter.trim().toLowerCase();
+  const shown = all.filter((c) => !needle || c.ns.toLowerCase().includes(needle) || c.key.toLowerCase().includes(needle));
+  const sort = state.shardCollSort ?? { key: 'ns', desc: false };
+  const value = (c: ShardedCollectionInfo, key: ShardCollSortKey): number | string =>
+    key === 'size' ? totalSize(c) ?? -1 : key === 'docs' ? totalDocs(c) ?? -1 : key === 'balance' ? balanceOf(c).text : key === 'unique' || key === 'balancing' ? Number(c[key]) : c[key];
+  shown.sort((a, b) => {
+    const x = value(a, sort.key as ShardCollSortKey);
+    const y = value(b, sort.key as ShardCollSortKey);
+    const cmp = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y));
+    return sort.desc ? -cmp : cmp;
+  });
+  const columns: [string, ShardCollSortKey | null, string, boolean?][] = [
+    ['namespace', 'ns', ''],
+    ['shard key', 'key', ''],
+    ['unique', 'unique', 'The shard key index is unique'],
+    ['balancing', 'balancing', 'Whether the balancer may move the chunks of this collection'],
+    ['chunks', 'totalChunks', '', true],
+    ['chunks per shard', null, ''],
+    ['data', 'size', 'Data size (uncompressed) on all the shards', true],
+    ['documents', 'docs', '', true],
+    ['distribution', null, 'Share of the data on each shard'],
+    ['balance', 'balance', 'From balancerCollectionStatus: whether the balancer considers the collection balanced'],
+    ['jumbo', 'jumbo', 'Chunks too large to be moved by the balancer', true],
+  ];
+  const head = table.createTHead().insertRow();
+  for (const [label, key, title, num] of columns) {
+    const th = document.createElement('th');
+    th.textContent = label + (key && sort.key === key ? (sort.desc ? ' ▼' : ' ▲') : '');
+    th.title = title || (key ? 'Sort' : '');
+    if (num) th.className = 'num';
+    if (key) {
+      th.addEventListener('click', () => {
+        state.shardCollSort = { key, desc: sort.key === key ? !sort.desc : !!num };
+        save();
+        renderShardCollections();
+      });
+    } else th.style.cursor = 'default';
+    head.append(th);
+  }
+  const body = table.createTBody();
+  for (const c of shown) {
+    const row = body.insertRow();
+    row.className = 'clickable';
+    row.classList.toggle('expanded', expandedShardColls.has(c.ns));
+    cell(row, c.ns);
+    cell(row, c.key, 'shard-key', c.key);
+    cell(row, c.unique ? 'unique' : '');
+    cell(row, c.balancing ? 'on' : 'off', c.balancing ? '' : 'slow', c.balancing ? undefined : 'Balancing is disabled for this collection (noBalance)');
+    cell(row, count(c.totalChunks), 'num');
+    const perShard = Object.entries(c.chunks).sort(([a], [b]) => a.localeCompare(b));
+    cell(row, perShard.map(([s, n]) => `${s} ${count(n)}`).join(' · '), 'muted');
+    const size = totalSize(c);
+    cell(row, bytes(size), 'num', c.data ? undefined : 'Not read');
+    cell(row, count(totalDocs(c)), 'num');
+    const dist = row.insertCell();
+    if (c.data) dist.append(distributionBar(Object.fromEntries(Object.entries(c.data).map(([k, d]) => [k, d.size])), bytes));
+    else if (c.totalChunks) dist.append(distributionBar(c.chunks, (n) => `${count(n)} chunk${n === 1 ? '' : 's'}`));
+    const balance = balanceOf(c);
+    cell(row, balance.text, balance.className, balance.title || undefined);
+    cell(row, c.jumbo ? count(c.jumbo) : '', `num ${c.jumbo ? 'slow' : ''}`);
+    row.addEventListener('click', () => {
+      if (expandedShardColls.has(c.ns)) expandedShardColls.delete(c.ns);
+      else expandedShardColls.add(c.ns);
+      renderShardCollections();
+    });
+    if (expandedShardColls.has(c.ns)) shardCollectionDetail(table, columns.length, c);
+  }
+  if (!shown.length) {
+    const cellOf = body.insertRow().insertCell();
+    cellOf.colSpan = columns.length;
+    cellOf.className = 'empty';
+    cellOf.textContent = all.length ? 'No collection matches the filter.' : sharding?.collections ? 'No collection is sharded yet.' : 'The sharded collections could not be read.';
+  }
+  const limited = sharding?.dataLimited ? ` · data per shard of the first ${count(sharding.dataLimited)} only` : '';
+  el('shardCollInfo').textContent = all.length ? `${shown.length === all.length ? '' : `${count(shown.length)} of `}${count(all.length)} collection${all.length === 1 ? '' : 's'}${limited}` : '';
+}
+
+function shardCollectionDetail(table: HTMLTableElement, colspan: number, c: ShardedCollectionInfo): void {
+  const row = table.tBodies[0].insertRow();
+  row.className = 'detail';
+  const cellOf = row.insertCell();
+  cellOf.colSpan = colspan;
+  const box = document.createElement('div');
+  box.className = 'detail-box';
+  cellOf.append(box);
+
+  const actions = document.createElement('div');
+  actions.className = 'detail-actions';
+  actions.append(
+    button(
+      c.balancing ? 'Disable Balancing…' : 'Enable Balancing…',
+      c.balancing ? `Stop the balancer from moving the chunks of ${c.ns}` : `Let the balancer move the chunks of ${c.ns} again`,
+      () => vscode.postMessage({ type: 'setCollectionBalancing', ns: c.ns, enabled: !c.balancing }),
+      'secondary small not-locked',
+    ),
+    button('Copy Shard Key', 'Copy the shard key (mongosh syntax)', () => vscode.postMessage({ type: 'copy', text: c.key })),
+  );
+  if (c.violation) {
+    const facts = document.createElement('span');
+    facts.className = 'info';
+    facts.textContent = `balancer: ${VIOLATIONS[c.violation] ?? c.violation}`;
+    actions.append(facts);
+  }
+  box.append(actions);
+
+  // Chunks and data per shard
+  const per = document.createElement('table');
+  per.className = 'mini';
+  header(per, ['shard', 'chunks', 'data', 'documents', 'share']);
+  for (const i of [1, 2, 3, 4]) per.tHead!.rows[0].cells[i].className = 'num';
+  const pbody = per.createTBody();
+  const names = [...new Set([...(sharding?.shards ?? []).map((s) => s.name), ...Object.keys(c.chunks), ...Object.keys(c.data ?? {})])];
+  const total = totalSize(c) ?? 0;
+  for (const name of names) {
+    const chunks = c.chunks[name] ?? 0;
+    const d = c.data?.[name];
+    if (!chunks && !d?.count) continue;
+    const r = pbody.insertRow();
+    cell(r, name).prepend(swatch(name));
+    cell(r, count(chunks), 'num');
+    cell(r, bytes(d?.size), 'num');
+    cell(r, count(d?.count), 'num');
+    cell(r, d && total ? `${Math.round((d.size / total) * 100)}%` : '', 'num');
+  }
+  box.append(per);
+
+  const zones = document.createElement('div');
+  zones.className = 'zones';
+  const title = document.createElement('div');
+  title.className = 'info';
+  title.textContent = c.zones.length ? 'Zones' : 'No zone ranges for this collection.';
+  zones.append(title);
+  for (const z of c.zones) {
+    const line = document.createElement('div');
+    const shardsOf = (sharding?.shards ?? []).filter((s) => s.tags.includes(z.zone)).map((s) => s.name);
+    const name = document.createElement('b');
+    name.textContent = z.zone;
+    const range = document.createElement('code');
+    range.textContent = `${z.min} → ${z.max}`;
+    const where = document.createElement('span');
+    where.className = shardsOf.length ? 'info' : 'slow';
+    where.textContent = shardsOf.length ? ` on ${shardsOf.join(', ')}` : ' no shard in this zone';
+    line.append(name, ' ', range, where);
+    zones.append(line);
+  }
+  box.append(zones);
+
+  const raw = document.createElement('details');
+  const summary = document.createElement('summary');
+  summary.textContent = 'config.collections document';
+  const pre = document.createElement('pre');
+  raw.addEventListener('toggle', () => {
+    if (raw.open && !pre.textContent) pre.textContent = prettyShell(c.raw, 0, 110);
+  });
+  raw.append(summary, pre);
+  box.append(raw);
+}
+
+const eventClass = (e: ShardingEvent) =>
+  e.error ? 'event-error' : e.what.startsWith('moveChunk') || e.what.startsWith('moveRange') ? 'op-update' : /^(split|multi-split|merge)/.test(e.what) ? 'op-insert' : e.what.startsWith('balancer') ? 'op-other' : '';
+
+function renderShardEvents(): void {
+  const table = el<HTMLTableElement>('shardEventsTable');
+  table.replaceChildren();
+  header(table, ['time', 'event', 'namespace', 'shard', 'details']);
+  const body = table.createTBody();
+  for (const e of shardEvents) {
+    const row = body.insertRow();
+    row.className = `clickable ${eventClass(e)}`;
+    if (expandedEvents.has(e.key)) row.classList.add('expanded');
+    cell(row, e.time ? clock(e.time, true) : '', 'time', e.time);
+    cell(row, e.what + (e.error ? ' ⚠' : ''), 'op', e.action ? 'config.actionlog' : 'config.changelog');
+    cell(row, e.ns, 'ns');
+    cell(row, e.shard ?? '', 'ns');
+    cell(row, e.summary, 'command', e.summary);
+    row.addEventListener('click', () => {
+      if (expandedEvents.has(e.key)) expandedEvents.delete(e.key);
+      else expandedEvents.add(e.key);
+      renderShardEvents();
+    });
+    if (expandedEvents.has(e.key)) detailRow(table, 5, e.raw);
+  }
+  if (!shardEvents.length) {
+    const c = body.insertRow().insertCell();
+    c.colSpan = 5;
+    c.className = 'empty';
+    c.textContent = state.shardEventsNs.trim() ? 'No event for this namespace.' : 'No events recorded.';
+  }
+  const errors = shardEvents.filter((e) => e.error).length;
+  el('shardEventsInfo').textContent = shardEvents.length ? `the ${count(shardEvents.length)} most recent, newest first${errors ? ` · ${errors} with errors` : ''}` : '';
+}
+
+// ---------------------------------------------------------------------------
 // Messages
 
 window.addEventListener('message', (e: MessageEvent<MonitorHostMessage>) => {
@@ -976,6 +1452,30 @@ window.addEventListener('message', (e: MessageEvent<MonitorHostMessage>) => {
       if (m.message) replMessage(m.message, !m.ok);
       if (m.ok) setTimeout(() => refresh(false), 1500);
       break;
+    case 'sharding':
+      if (m.requestId !== latest.sharding) return;
+      showError('shardError', m.error);
+      if (m.status) sharding = mergeSharding(m.status, shardingFull);
+      for (const name of [...expandedShards]) if (!sharding?.shards?.some((x) => x.name === name)) expandedShards.delete(name);
+      for (const ns of [...expandedShardColls]) if (!sharding?.collections?.some((x) => x.ns === ns)) expandedShardColls.delete(ns);
+      renderSharding();
+      break;
+    case 'shardingEvents':
+      if (m.requestId !== latest.shardEvents) return;
+      showError('shardEventsError', m.error);
+      shardEvents = m.events ?? [];
+      for (const key of [...expandedEvents]) if (!shardEvents.some((x) => x.key === key)) expandedEvents.delete(key);
+      renderShardEvents();
+      break;
+    case 'shardingAction': {
+      el<HTMLButtonElement>('balancerToggle').disabled = false;
+      const box = el('shardAction');
+      box.textContent = m.message ?? '';
+      box.classList.toggle('hidden', !m.message);
+      box.classList.toggle('failed', !m.ok);
+      if (m.ok) setTimeout(() => refresh(true), 1000);
+      break;
+    }
   }
 });
 
@@ -983,6 +1483,7 @@ el('tabOps').addEventListener('click', () => setTab('ops'));
 el('tabProfile').addEventListener('click', () => setTab('profile'));
 el('tabStats').addEventListener('click', () => setTab('stats'));
 el('tabRepl').addEventListener('click', () => setTab('repl'));
+el('tabShard').addEventListener('click', () => setTab('shard'));
 el('refresh').addEventListener('click', () => refresh(true));
 const auto = el<HTMLSelectElement>('auto');
 auto.value = String(state.auto);
@@ -1096,6 +1597,36 @@ for (const [id, key] of [
 el('stepDown').addEventListener('click', () => {
   el<HTMLButtonElement>('stepDown').disabled = true;
   vscode.postMessage({ type: 'stepDown' });
+});
+
+const shardCollFilter = el<HTMLInputElement>('shardCollFilter');
+shardCollFilter.value = state.shardCollFilter;
+shardCollFilter.addEventListener('input', () => {
+  state.shardCollFilter = shardCollFilter.value;
+  save();
+  renderShardCollections();
+});
+const shardEventsNs = el<HTMLInputElement>('shardEventsNs');
+shardEventsNs.value = state.shardEventsNs;
+let shardEventsTimer: ReturnType<typeof setTimeout> | undefined;
+shardEventsNs.addEventListener('input', () => {
+  state.shardEventsNs = shardEventsNs.value;
+  save();
+  clearTimeout(shardEventsTimer);
+  shardEventsTimer = setTimeout(shardEventsRequest, 300);
+});
+const shardEventsScope = el<HTMLSelectElement>('shardEventsScope');
+shardEventsScope.value = state.shardEventsScope;
+shardEventsScope.addEventListener('change', () => {
+  state.shardEventsScope = shardEventsScope.value as 'balancer' | 'all';
+  save();
+  expandedEvents.clear();
+  shardEventsRequest();
+});
+el('balancerToggle').addEventListener('click', () => {
+  if (!sharding?.balancer?.mode) return;
+  el<HTMLButtonElement>('balancerToggle').disabled = true;
+  vscode.postMessage({ type: 'setBalancer', enabled: sharding.balancer.mode === 'off' });
 });
 
 setAuto(state.auto);

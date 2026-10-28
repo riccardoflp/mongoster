@@ -350,6 +350,107 @@ export interface OplogEntry {
 /** Oplog operation filter: '' every operation except no-ops; '*' everything. */
 export type OplogOp = '' | '*' | 'i' | 'u' | 'd' | 'c' | 'n';
 
+export interface ShardInfo {
+  name: string;
+  /** "rs/host1,host2" as in config.shards. */
+  host: string;
+  replSet?: string;
+  members: string[];
+  /** 1: active. */
+  state?: number;
+  draining?: boolean;
+  /** Zones of the shard. */
+  tags: string[];
+  chunks?: number;
+  /** Bytes and documents owned by the sharded collections (unsharded ones are on their database's primary shard). */
+  dataSize?: number;
+  documents?: number;
+  /** Databases whose primary shard this is. */
+  primaryOf: string[];
+  raw: unknown;
+}
+
+export interface ShardZoneRange {
+  zone: string;
+  /** Bounds in mongosh syntax. */
+  min: string;
+  max: string;
+}
+
+export interface ShardedCollectionInfo {
+  ns: string;
+  /** Shard key in mongosh syntax, e.g. { customerId: 1, _id: "hashed" }. */
+  key: string;
+  unique: boolean;
+  /** False when balancing is disabled for the collection (noBalance). */
+  balancing: boolean;
+  /** Chunks per shard. */
+  chunks: Record<string, number>;
+  totalChunks: number;
+  jumbo: number;
+  /** Bytes and documents per shard, when known. */
+  data?: Record<string, { size: number; count: number }>;
+  /** balancerCollectionStatus: compliant, or the first violation (chunksImbalance, zoneViolation, draining, defragmentingChunks…). */
+  balancerCompliant?: boolean;
+  violation?: string;
+  zones: ShardZoneRange[];
+  /** The config.collections document. */
+  raw: unknown;
+}
+
+export interface ShardingEvent {
+  /** Unique: the changelog / actionlog _id. */
+  key: string;
+  /** ISO time. */
+  time: string;
+  what: string;
+  ns: string;
+  /** Shard (or server) that logged it. */
+  shard?: string;
+  summary: string;
+  error?: boolean;
+  /** From config.actionlog (balancer rounds) rather than config.changelog. */
+  action?: boolean;
+  raw: unknown;
+}
+
+export interface ShardingStatus {
+  /** shardMember: a shard or config server of a cluster reached directly. */
+  kind: 'mongos' | 'replicaSet' | 'standalone' | 'shardMember';
+  /** The connected server, host:port (not on a mongos). */
+  me?: string;
+  /** For a shard member: its shard name ("config" for the config servers) and the config server string. */
+  shardName?: string;
+  configServer?: string;
+  version?: string;
+  balancer?: {
+    /** full or off. */
+    mode?: string;
+    /** A balancer round is in progress. */
+    running?: boolean;
+    rounds?: number;
+    window?: { start: string; stop: string };
+    /** MB. */
+    chunkSize?: number;
+    secondaryThrottle?: boolean;
+    waitForDelete?: boolean;
+    settings?: unknown;
+  };
+  /** Migrations in the last 24 hours. */
+  migrations?: { done: number; failed: number; failedRounds: number };
+  /** Active mongos routers (pinged in the last minute) out of those known. */
+  routers?: { active: number; total: number };
+  shards?: ShardInfo[];
+  collections?: ShardedCollectionInfo[];
+  /** Zones defined on the shards. */
+  zones?: string[];
+  /** Parts that could not be read: "balancer: not authorized…". */
+  errors: string[];
+  /** Data per shard read with $collStats (no $shardedDataDistribution) for the first N collections only. */
+  dataLimited?: number;
+  at: number;
+}
+
 export type MonitorHostMessage =
   | { type: 'init'; connectionName: string; readOnly: boolean; color?: string; databases: string[] }
   | { type: 'ops'; requestId: number; ops?: MonitorOp[]; error?: string; at: number }
@@ -373,7 +474,10 @@ export type MonitorHostMessage =
   | { type: 'collections'; requestId: number; database: string; collections?: CollectionStats[]; error?: string }
   | { type: 'replication'; requestId: number; status?: ReplStatus; error?: string }
   | { type: 'oplog'; requestId: number; entries?: OplogEntry[]; limited?: boolean; error?: string }
-  | { type: 'replAction'; ok: boolean; message?: string };
+  | { type: 'replAction'; ok: boolean; message?: string }
+  | { type: 'sharding'; requestId: number; status?: ShardingStatus; error?: string }
+  | { type: 'shardingEvents'; requestId: number; events?: ShardingEvent[]; error?: string }
+  | { type: 'shardingAction'; ok: boolean; message?: string };
 
 export type MonitorViewMessage =
   | { type: 'ready' }
@@ -395,6 +499,12 @@ export type MonitorViewMessage =
   /** `ns`: a database or a collection ('' for all). */
   | { type: 'loadOplog'; requestId: number; ns: string; op: OplogOp; limit: number }
   | { type: 'stepDown' }
+  /** `full`: also the commands run once per sharded collection (balancer status, data per shard before 6.0.3). */
+  | { type: 'loadSharding'; requestId: number; full: boolean }
+  /** `scope`: migrations, splits and balancer rounds, or every event; `ns`: a database or collection ('' for all). */
+  | { type: 'loadShardingEvents'; requestId: number; scope: 'balancer' | 'all'; ns: string; limit: number }
+  | { type: 'setBalancer'; enabled: boolean }
+  | { type: 'setCollectionBalancing'; ns: string; enabled: boolean }
   | { type: 'copy'; text: string };
 
 // ---- change streams
