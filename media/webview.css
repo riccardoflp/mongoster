@@ -204,8 +204,10 @@ select:focus {
   caret-color: var(--vscode-editorCursor-foreground, var(--vscode-input-foreground));
 }
 
+/* A ::selection rule drops the default highlight: its background has to be given. */
 .hl-field::selection {
   color: transparent;
+  background: var(--vscode-editor-selectionBackground, Highlight);
 }
 
 .hl-field::placeholder {
