@@ -4,6 +4,7 @@ import {
   PipelineStage,
   STAGE_TEMPLATES,
   WRITE_STAGES,
+  misplacedFirstStages,
   parseStageBody,
   pipelineToText,
   textToPipeline,
@@ -256,12 +257,22 @@ export class PipelineEditor {
       );
     }
     if (this.errorStage !== null) this.markError(this.errorStage);
+    this.markMisplaced();
     if (this.focusAfterRender !== null) {
       const card = this.strip.querySelectorAll<HTMLElement>('.stage')[this.focusAfterRender];
       card?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
       card?.classList.add('flash');
       this.focusAfterRender = null;
     }
+  }
+
+  /** $search, $searchMeta and $vectorSearch anywhere but first: the server refuses the pipeline. */
+  private markMisplaced(): void {
+    const misplaced = new Set(misplacedFirstStages(this.stages));
+    this.strip.querySelectorAll('.stage').forEach((card, i) => {
+      card.classList.toggle('misplaced', misplaced.has(i));
+      card.querySelector('.stage-first')?.classList.toggle('hidden', !misplaced.has(i));
+    });
   }
 
   private renderInfo(): void {
@@ -319,6 +330,7 @@ export class PipelineEditor {
       op.dataset.before = op.value;
       op.classList.toggle('invalid', !isValidOp(op.value));
       card.classList.toggle('write', WRITE_STAGES.has(stage.op.trim()));
+      this.markMisplaced();
       this.renderInfo();
       this.cb.changed();
     });
@@ -330,12 +342,16 @@ export class PipelineEditor {
     enabled.addEventListener('change', () => {
       stage.enabled = enabled.checked;
       card.classList.toggle('disabled', !stage.enabled);
+      this.markMisplaced();
       this.renderInfo();
       this.cb.changed();
     });
 
     head.append(num, op, enabled, span('spacer', ''));
     if (WRITE_STAGES.has(stage.op.trim())) head.append(span('stage-badge', 'writes'));
+    const first = span('stage-badge stage-first hidden', 'must be first');
+    first.title = 'Atlas Search stages ($search, $searchMeta, $vectorSearch) only work as the first stage of the pipeline';
+    head.append(first);
     const move = (label: string, title: string, to: number) => {
       const b = document.createElement('button');
       b.className = 'icon';

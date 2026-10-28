@@ -65,6 +65,22 @@ export interface IndexInfo {
   progress?: { done: number; total: number; phase?: string };
 }
 
+/** An Atlas Search or Vector Search index, as $listSearchIndexes reports it. */
+export interface SearchIndexInfo {
+  name: string;
+  /** "search" or "vectorSearch" (servers that don't say are "search"). */
+  type: string;
+  /** READY, PENDING, BUILDING, FAILED, STALE, DELETING, DOES_NOT_EXIST… */
+  status?: string;
+  queryable?: boolean;
+  /** latestDefinition, relaxed EJSON. */
+  definition: Record<string, unknown>;
+  /** Why the build failed or is stale, when the server says. */
+  message?: string;
+  /** Status on each host (statusDetail). */
+  hosts?: { host: string; status?: string; queryable?: boolean; message?: string; staged?: string }[];
+}
+
 /** Sizes of the collection, to compare its indexes with. */
 export interface IndexTotals {
   documents?: number;
@@ -134,6 +150,10 @@ export type WebviewMessage =
   | { type: 'saveIndex'; requestId: number; original?: string; keys: string; options: string }
   | { type: 'dropIndex'; name: string }
   | { type: 'hideIndex'; name: string; hidden: boolean }
+  /** Atlas Search and Vector Search indexes; the definition in mongosh syntax. */
+  | { type: 'loadSearchIndexes' }
+  | { type: 'saveSearchIndex'; requestId: number; original?: string; name: string; searchType: string; definition: string }
+  | { type: 'dropSearchIndex'; name: string }
   | { type: 'bulkCount'; requestId: number; filter: string }
   | { type: 'analyzeSchema'; requestId: number; filter: string; size: number }
   /** Field names and frequent values for autocompletion. */
@@ -187,6 +207,9 @@ export type HostMessage =
   | { type: 'indexes'; indexes: IndexInfo[]; totals?: IndexTotals; error?: string }
   /** `ok: false` without a message: the confirmation was cancelled. */
   | { type: 'indexResult'; requestId: number; ok: boolean; message?: string }
+  /** `unsupported`: the server has no search (its message), rather than an error. */
+  | { type: 'searchIndexes'; indexes: SearchIndexInfo[]; unsupported?: string; error?: string }
+  | { type: 'searchIndexResult'; requestId: number; ok: boolean; message?: string }
   | { type: 'bulkCount'; requestId: number; count?: number; error?: string }
   | { type: 'fields'; fields: FieldHint[] }
   | { type: 'schema'; requestId: number; schema?: SchemaSummary; total?: number; durationMs?: number; error?: string }

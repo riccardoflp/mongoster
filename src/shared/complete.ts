@@ -10,6 +10,15 @@ export interface FieldHint {
   /** Share of the documents (or parent objects) that have the field, 0–1. */
   ratio: number;
   values: ValueCount[];
+  /** Arrays of numbers only: their lengths (a field a vector search index can take). */
+  vector?: { min: number; max: number };
+}
+
+/** A search index of the collection, suggested in the `index` of $search and $vectorSearch. */
+export interface SearchIndexHint {
+  name: string;
+  type: string;
+  status?: string;
 }
 
 /** What the text is: decides which keys and values make sense where. */
@@ -26,6 +35,9 @@ export type CompletionKind =
   | 'field'
   /** Documents to insert: one, or an array of them. */
   | 'document'
+  /** The definition of an Atlas Search or a Vector Search index. */
+  | 'searchDefinition'
+  | 'vectorDefinition'
   | { stage: string };
 
 export interface CompletionItem {
@@ -48,6 +60,7 @@ export interface CompletionResult {
 }
 
 const MAX_VALUES = 10;
+const NUMERIC: BsonType[] = ['int', 'long', 'double', 'decimal'];
 
 /** Flattens a schema summary into one hint per dotted path (array elements merged into their array's path). */
 export function fieldHints(summary: SchemaSummary): FieldHint[] {
@@ -58,6 +71,10 @@ export function fieldHints(summary: SchemaSummary): FieldHint[] {
     hint.ratio = Math.max(hint.ratio, ratio ?? (f.of ? f.count / f.of : 0));
     for (const t of f.types) {
       if (!hint.types.includes(t.type)) hint.types.push(t.type);
+      const numbers = t.elements?.types.length && t.elements.types.every((e) => NUMERIC.includes(e.type));
+      if (t.type === 'array' && numbers && t.lengths && t.lengths.max > 0) {
+        hint.vector = { min: Math.min(hint.vector?.min ?? Infinity, t.lengths.min), max: Math.max(hint.vector?.max ?? 0, t.lengths.max) };
+      }
       for (const v of t.top ?? []) {
         const same = hint.values.find((x) => JSON.stringify(x.value) === JSON.stringify(v.value));
         if (same) same.count += v.count;
@@ -152,6 +169,9 @@ const STAGES: Op[] = [
   ['$graphLookup', 'recursive lookup', '{ | }'],
   ['$setWindowFields', 'window functions', '{ | }'],
   ['$redact', 'restrict content', '{ | }'],
+  ['$search', 'Atlas Search (first stage)', '{ index: "|", text: { query: "", path: "" } }'],
+  ['$searchMeta', 'Atlas Search counts and facets (first stage)', '{ index: "|", exists: { path: "" }, count: { type: "total" } }'],
+  ['$vectorSearch', 'Vector Search (first stage)', '{ index: "|", path: "", queryVector: [], numCandidates: 100, limit: 10 }'],
   ['$out', 'write to a collection', '"|"'],
   ['$merge', 'merge into a collection', '{ into: "|" }'],
 ];
@@ -237,6 +257,7 @@ const EXPR_OPS: Op[] = [
   ['$arrayToObject', 'k/v array to object', ONE],
   ['$getField', 'field by name', '{ field: "|", input: "$$ROOT" }'],
   ['$literal', 'value as is', OBJ],
+  ['$meta', 'search score, text score…', '"searchScore|"'],
   ['$sum', 'sum'],
   ['$avg', 'average'],
   ['$min', 'minimum'],
@@ -246,6 +267,101 @@ const EXPR_OPS: Op[] = [
 const VARIABLES = ['$$ROOT', '$$NOW', '$$CURRENT', '$$REMOVE'];
 
 const BSON_TYPES = ['string', 'int', 'double', 'long', 'decimal', 'bool', 'date', 'objectId', 'object', 'array', 'null', 'number'];
+
+// Atlas Search: the operators of $search and $searchMeta (also inside compound and embeddedDocument),
+// the options of the stages and of $vectorSearch, and the definitions of the indexes.
+
+const SEARCH_OPS: Op[] = [
+  ['text', 'full-text search', '{ query: "|", path: "" }'],
+  ['compound', 'combine operators', '{ must: [{ text: { query: "|", path: "" } }], should: [], filter: [] }'],
+  ['autocomplete', 'search as you type', '{ query: "|", path: "" }'],
+  ['phrase', 'words in this order', '{ query: "|", path: "" }'],
+  ['equals', 'equal value', '{ path: "|", value:  }'],
+  ['range', 'numbers or dates in a range', '{ path: "|", gte: , lte:  }'],
+  ['in', 'any of the values', '{ path: "|", value: [] }'],
+  ['exists', 'field present', '{ path: "|" }'],
+  ['wildcard', 'pattern with * and ?', '{ query: "|", path: "", allowAnalyzedField: true }'],
+  ['regex', 'regular expression', '{ query: "|", path: "", allowAnalyzedField: true }'],
+  ['queryString', 'Lucene query syntax', '{ defaultPath: "|", query: "" }'],
+  ['near', 'close to a number, date or point', '{ path: "|", origin: , pivot:  }'],
+  ['moreLikeThis', 'documents like these', '{ like: { | } }'],
+  ['embeddedDocument', 'inside arrays of documents', '{ path: "|", operator: {} }'],
+];
+
+const SEARCH_STAGE_OPTS: Op[] = [
+  ['index', 'search index ("default" when left out)', '"|"'],
+  ['highlight', 'matching passages ($meta: "searchHighlights")', '{ path: "|" }'],
+  ['count', 'number of matches ($$SEARCH_META)', '{ type: "total|" }'],
+  ['sort', 'sort by indexed fields', '{ |: -1 }'],
+  ['returnStoredSource', 'only the stored fields', 'true|'],
+  ['scoreDetails', 'how the score is computed', 'true|'],
+  ['concurrent', 'parallel search on search nodes', 'true|'],
+];
+
+const SEARCH_META_OPTS: Op[] = [
+  SEARCH_STAGE_OPTS[0],
+  ['facet', 'counts by value or range', '{ operator: { | }, facets: { byField: { type: "string", path: "" } } }'],
+  ['count', 'number of matches', '{ type: "total|" }'],
+];
+
+const VECTOR_SEARCH_OPTS: Op[] = [
+  ['index', 'vector search index', '"|"'],
+  ['path', 'field with the vectors', '"|"'],
+  ['queryVector', 'the vector to compare', '[|]'],
+  ['numCandidates', 'nearest neighbors examined (10–20 × limit)', '|100'],
+  ['limit', 'documents returned', '|10'],
+  ['filter', 'pre-filter on the filter fields of the index', '{ | }'],
+  ['exact', 'exact search (ENN) instead of approximate', 'true|'],
+];
+
+const META_VALUES = ['"searchScore"', '"vectorSearchScore"', '"searchHighlights"', '"searchScoreDetails"', '"textScore"', '"indexKey"'];
+const META_ITEMS: [string, string][] = [
+  ['{ $meta: "searchScore" }', 'score of $search'],
+  ['{ $meta: "vectorSearchScore" }', 'score of $vectorSearch'],
+];
+
+const quoted = (values: string[]) => values.map((v) => JSON.stringify(v));
+const ANALYZERS = quoted(['lucene.standard', 'lucene.simple', 'lucene.whitespace', 'lucene.keyword', 'lucene.english', 'lucene.italian', 'lucene.french', 'lucene.german', 'lucene.spanish']);
+const SEARCH_FIELD_TYPES = quoted(['string', 'autocomplete', 'token', 'number', 'date', 'boolean', 'objectId', 'uuid', 'document', 'embeddedDocuments', 'geo']);
+
+const SEARCH_DEFINITION_OPTS: Op[] = [
+  ['mappings', 'which fields are indexed', '{ dynamic: true| }'],
+  ['analyzer', 'analyzer of the indexed strings', '"lucene.standard|"'],
+  ['searchAnalyzer', 'analyzer of the query text', '"lucene.standard|"'],
+  ['analyzers', 'custom analyzers', '[|]'],
+  ['storedSource', 'fields kept in the index for returnStoredSource', 'true|'],
+  ['synonyms', 'synonym mappings', '[{ name: "|", analyzer: "lucene.standard", source: { collection: "" } }]'],
+];
+
+const MAPPING_OPTS: Op[] = [
+  ['dynamic', 'index every field (of supported types)', 'true|'],
+  ['fields', 'fields indexed one by one', '{ | }'],
+];
+
+const FIELD_MAPPING_OPTS: Op[] = [
+  ['type', 'how the field is indexed', '"|"'],
+  ['analyzer', 'analyzer of the field', '"lucene.standard|"'],
+  ['searchAnalyzer', 'analyzer of the query text', '"lucene.standard|"'],
+  ['dynamic', 'index every field of the document', 'true|'],
+  ['fields', 'fields of the document', '{ | }'],
+  ['multi', 'the same field with other analyzers', '{ |: { type: "string", analyzer: "" } }'],
+  ['tokenization', 'autocomplete: how words are split', '"edgeGram|"'],
+  ['minGrams', 'autocomplete: shortest token', '|2'],
+  ['maxGrams', 'autocomplete: longest token', '|15'],
+  ['foldDiacritics', 'autocomplete: ignore accents', 'true|'],
+  ['store', 'stored for highlighting', 'false|'],
+];
+
+const VECTOR_DEFINITION_OPTS: Op[] = [['fields', 'vector and filter fields', '[{ type: "vector", path: "|", numDimensions: 1536, similarity: "cosine" }]']];
+
+const VECTOR_FIELD_OPTS: Op[] = [
+  ['type', '"vector" or "filter"', '"|"'],
+  ['path', 'field', '"|"'],
+  ['numDimensions', 'length of the vectors', '|1536'],
+  ['similarity', 'cosine, euclidean or dotProduct', '"cosine|"'],
+  ['quantization', 'none, scalar or binary', '"scalar|"'],
+  ['hnswOptions', 'graph options', '{ maxEdges: 16, numEdgeCandidates: 100 }|'],
+];
 
 // ---------------------------------------------------------------------------
 // Contexts: what a value (or the keys of an object) at some place in the text can be
@@ -266,17 +382,117 @@ type Ctx =
   | { k: 'group' }
   | { k: 'accumulators' }
   | { k: 'outputs'; of: Ctx }
-  | { k: 'opts'; keys: string[]; children: Record<string, Ctx>; value?: Ctx }
-  | { k: 'fieldName' }
+  /** `info`: descriptions and templates of the keys; `each`: an array of such objects is fine too. */
+  | { k: 'opts'; keys: string[]; children: Record<string, Ctx>; value?: Ctx; info?: Op[]; each?: boolean }
+  /** `vector`: the arrays of numbers first. */
+  | { k: 'fieldName'; vector?: boolean }
   /** Keys of a document (or sub-document at `prefix`); `field`: the field the value belongs to. */
   | { k: 'doc'; prefix: string; field?: string }
+  /** Operators of $search (with the stage's options when `stage` is set). */
+  | { k: 'searchOps'; stage?: string }
+  /** Names of the collection's search indexes of a type. */
+  | { k: 'searchIndex'; type: string }
+  /** Fields directly below `prefix` in the mappings of a search index. */
+  | { k: 'searchFields'; prefix: string }
   | { k: 'none' };
 
 const NONE: Ctx = { k: 'none' };
 const EXPR: Ctx = { k: 'expr' };
 const BOOL: Ctx = { k: 'enum', values: ['true', 'false'] };
+const PATH: Ctx = { k: 'fieldName' };
 /** An options object; `value`: what the stage can be instead of the object (e.g. $unwind: "$path"). */
 const opts = (children: Record<string, Ctx>, value?: Ctx): Ctx => ({ k: 'opts', keys: Object.keys(children), children, value });
+/** An options object whose keys are those of `info`, with their descriptions and templates. */
+const described = (info: Op[], children: Record<string, Ctx>, each = false): Ctx => ({ k: 'opts', keys: info.map(([k]) => k), children, info, each });
+const oneOf = (values: string[]): Ctx => ({ k: 'enum', values: quoted(values) });
+
+/** What the value of a $search operator (or, with `stage`, of an option of the stage) can be. */
+function searchChild(key: string, stage?: string): Ctx {
+  if (stage) {
+    if (key === 'index') return { k: 'searchIndex', type: 'search' };
+    if (key === 'highlight') return opts({ path: PATH, maxCharsToExamine: NONE, maxNumPassages: NONE });
+    if (key === 'count') return opts({ type: oneOf(['total', 'lowerBound']), threshold: NONE });
+    if (key === 'sort') return { k: 'sort' };
+    if (key === 'returnStoredSource' || key === 'scoreDetails' || key === 'concurrent') return BOOL;
+    if (key === 'facet') {
+      const facet = opts({ type: oneOf(['string', 'number', 'date']), path: PATH, numBuckets: NONE, boundaries: NONE, default: NONE });
+      return opts({ operator: { k: 'searchOps' }, facets: { k: 'outputs', of: facet } });
+    }
+  }
+  const score = opts({ boost: opts({ value: NONE, path: PATH }), constant: opts({ value: NONE }) });
+  const fuzzy = opts({ maxEdits: NONE, prefixLength: NONE, maxExpansions: NONE });
+  const common = { path: PATH, score };
+  const operators: Ctx = { k: 'list', of: { k: 'searchOps' } };
+  switch (key) {
+    case 'text':
+      return opts({ query: NONE, ...common, fuzzy, matchCriteria: oneOf(['any', 'all']), synonyms: NONE });
+    case 'phrase':
+      return opts({ query: NONE, ...common, slop: NONE, synonyms: NONE });
+    case 'autocomplete':
+      return opts({ query: NONE, ...common, tokenOrder: oneOf(['any', 'sequential']), fuzzy });
+    case 'compound':
+      return opts({ must: operators, should: operators, filter: operators, mustNot: operators, minimumShouldMatch: NONE, score });
+    case 'equals':
+    case 'in':
+      return opts({ ...common, value: NONE });
+    case 'range':
+      return opts({ ...common, gt: NONE, gte: NONE, lt: NONE, lte: NONE });
+    case 'exists':
+      return opts(common);
+    case 'wildcard':
+    case 'regex':
+      return opts({ query: NONE, ...common, allowAnalyzedField: BOOL });
+    case 'queryString':
+      return opts({ defaultPath: PATH, query: NONE, score });
+    case 'near':
+      return opts({ ...common, origin: NONE, pivot: NONE });
+    case 'moreLikeThis':
+      return opts({ like: NONE, score });
+    case 'embeddedDocument':
+      return opts({ path: PATH, operator: { k: 'searchOps' }, score });
+    default:
+      return NONE;
+  }
+}
+
+/** The mapping of a field of a search index; the fields of a document mapping are below `prefix`. */
+function fieldMapping(prefix: string): Ctx {
+  const analyzer: Ctx = { k: 'enum', values: ANALYZERS };
+  return described(
+    FIELD_MAPPING_OPTS,
+    {
+      type: { k: 'enum', values: SEARCH_FIELD_TYPES },
+      analyzer,
+      searchAnalyzer: analyzer,
+      dynamic: BOOL,
+      fields: { k: 'searchFields', prefix },
+      tokenization: oneOf(['edgeGram', 'rightEdgeGram', 'nGram']),
+      foldDiacritics: BOOL,
+      store: BOOL,
+    },
+    true,
+  );
+}
+
+function searchDefinitionContext(): Ctx {
+  const analyzer: Ctx = { k: 'enum', values: ANALYZERS };
+  return described(SEARCH_DEFINITION_OPTS, {
+    mappings: described(MAPPING_OPTS, { dynamic: BOOL, fields: { k: 'searchFields', prefix: '' } }),
+    analyzer,
+    searchAnalyzer: analyzer,
+    storedSource: BOOL,
+  });
+}
+
+function vectorDefinitionContext(): Ctx {
+  const field = described(VECTOR_FIELD_OPTS, {
+    type: oneOf(['vector', 'filter']),
+    path: PATH,
+    similarity: oneOf(['cosine', 'euclidean', 'dotProduct']),
+    quantization: oneOf(['none', 'scalar', 'binary']),
+  });
+  return described(VECTOR_DEFINITION_OPTS, { fields: { k: 'list', of: field } });
+}
 
 function rootContext(kind: CompletionKind): Ctx {
   if (typeof kind === 'object') return stageContext(kind.stage.trim());
@@ -299,6 +515,10 @@ function rootContext(kind: CompletionKind): Ctx {
       return { k: 'fieldName' };
     case 'document':
       return { k: 'doc', prefix: '' };
+    case 'searchDefinition':
+      return searchDefinitionContext();
+    case 'vectorDefinition':
+      return vectorDefinitionContext();
   }
 }
 
@@ -346,6 +566,16 @@ function stageContext(op: string): Ctx {
         whenMatched: { k: 'enum', values: ['"replace"', '"keepExisting"', '"merge"', '"fail"'] },
         whenNotMatched: { k: 'enum', values: ['"insert"', '"discard"', '"fail"'] },
       });
+    case '$search':
+    case '$searchMeta':
+      return { k: 'searchOps', stage: op };
+    case '$vectorSearch':
+      return described(VECTOR_SEARCH_OPTS, {
+        index: { k: 'searchIndex', type: 'vectorSearch' },
+        path: { k: 'fieldName', vector: true },
+        filter: { k: 'query', prefix: '' },
+        exact: BOOL,
+      });
     case '$limit':
     case '$skip':
     case '$count':
@@ -386,7 +616,7 @@ function child(ctx: Ctx, key: string | null): Ctx {
       if (key === null) return NONE;
       return ctx.agg ? { k: 'expr', include: true } : { k: 'enum', values: ['1', '0'] };
     case 'expr':
-      return EXPR;
+      return key === '$meta' ? { k: 'enum', values: META_VALUES } : EXPR;
     case 'update':
       return key === null ? { k: 'stageObj' } : { k: 'updateFields', op: key };
     case 'updateFields':
@@ -409,13 +639,17 @@ function child(ctx: Ctx, key: string | null): Ctx {
     case 'outputs':
       return key === null ? NONE : ctx.of;
     case 'opts':
-      return key === null ? NONE : ctx.children[key] ?? NONE;
+      return key === null ? (ctx.each ? ctx : NONE) : ctx.children[key] ?? NONE;
     case 'fieldName':
       return key === null ? ctx : NONE;
     case 'doc':
       // An array element: a document of the array (insertMany), or an element of an array field.
       if (key === null) return ctx;
       return { k: 'doc', prefix: `${ctx.prefix}${key}.`, field: ctx.prefix + key };
+    case 'searchOps':
+      return key === null ? NONE : searchChild(key, ctx.stage);
+    case 'searchFields':
+      return key === null ? NONE : fieldMapping(`${ctx.prefix}${key}.`);
     default:
       return NONE;
   }
@@ -538,7 +772,13 @@ function scan(text: string, offset: number): Scan {
 // ---------------------------------------------------------------------------
 
 /** Suggestions at `offset` in `text`, or null where nothing applies (inside a comment, after a value, …). */
-export function complete(text: string, offset: number, kind: CompletionKind, fields: FieldHint[]): CompletionResult | null {
+export function complete(
+  text: string,
+  offset: number,
+  kind: CompletionKind,
+  fields: FieldHint[],
+  searchIndexes: SearchIndexHint[] = [],
+): CompletionResult | null {
   const s = scan(text, offset);
   if (s.quote && !/^["'`]$/.test(s.quote)) return null;
   const quote = s.quote;
@@ -553,7 +793,7 @@ export function complete(text: string, offset: number, kind: CompletionKind, fie
   const frames = s.frames;
   if (!frames.length) {
     if (s.done) return null;
-    return finish(s.tokenStart, to, prefix, 'value', valueItems(ctx, fields, quote), text);
+    return finish(s.tokenStart, to, prefix, 'value', valueItems(ctx, fields, quote, searchIndexes), text);
   }
   for (let i = 1; i < frames.length; i++) {
     const parent = frames[i - 1];
@@ -562,10 +802,10 @@ export function complete(text: string, offset: number, kind: CompletionKind, fie
   }
   const f = frames[frames.length - 1];
   if (f.type === '(') return null;
-  if (f.type === '[') return finish(s.tokenStart, to, prefix, 'value', valueItems(child(ctx, null), fields, quote), text);
+  if (f.type === '[') return finish(s.tokenStart, to, prefix, 'value', valueItems(child(ctx, null), fields, quote, searchIndexes), text);
   if (f.state === 'key') return finish(s.tokenStart, to, prefix, 'key', keyItems(ctx, fields, quote), text);
   if (f.state === 'value') {
-    return finish(s.tokenStart, to, prefix, 'value', valueItems(child(ctx, f.currentKey ?? null), fields, quote), text);
+    return finish(s.tokenStart, to, prefix, 'value', valueItems(child(ctx, f.currentKey ?? null), fields, quote, searchIndexes), text);
   }
   return null;
 }
@@ -660,15 +900,21 @@ function keyItems(ctx: Ctx, fields: FieldHint[], quote: string | undefined): Com
     case 'accumulators':
       return opKeys(ACCUMULATORS, quote);
     case 'opts':
-      return ctx.keys.map((k) => keyItem(k, 'operator', quote, 'option'));
+      return ctx.info ? opKeys(ctx.info, quote) : ctx.keys.map((k) => keyItem(k, 'operator', quote, 'option'));
     case 'doc':
       return fieldKeys(fields, ctx.prefix, quote).filter((item) => !item.label.includes('.'));
+    case 'searchOps':
+      return [...opKeys(SEARCH_OPS, quote), ...(ctx.stage ? opKeys(ctx.stage === '$searchMeta' ? SEARCH_META_OPTS : SEARCH_STAGE_OPTS, quote) : [])];
+    case 'searchFields':
+      return fields
+        .filter((h) => h.path.startsWith(ctx.prefix) && h.path.length > ctx.prefix.length && !h.path.slice(ctx.prefix.length).includes('.'))
+        .map((h) => keyItem(h.path.slice(ctx.prefix.length), 'field', quote, fieldDetail(h), '{ type: "|" }'));
     default:
       return [];
   }
 }
 
-function valueItems(ctx: Ctx, fields: FieldHint[], quote: string | undefined): CompletionItem[] {
+function valueItems(ctx: Ctx, fields: FieldHint[], quote: string | undefined, searchIndexes: SearchIndexHint[] = []): CompletionItem[] {
   switch (ctx.k) {
     case 'field':
     case 'value':
@@ -698,13 +944,25 @@ function valueItems(ctx: Ctx, fields: FieldHint[], quote: string | undefined): C
         kind: 'field',
         insert: quote ? escapeIn(ref, quote) + quote : JSON.stringify(ref),
       }));
-      if (ctx.include && !quote) items.push(...['1', '0'].map((v) => ({ label: v, kind: 'value' as const, insert: v })));
+      if (ctx.include && !quote) {
+        items.push(...['1', '0'].map((v) => ({ label: v, kind: 'value' as const, insert: v })));
+        items.push(...META_ITEMS.map(([v, detail]) => ({ label: v, detail, kind: 'value' as const, insert: v })));
+      }
       return items;
     }
     case 'opts':
-      return ctx.value ? valueItems(ctx.value, fields, quote) : [];
+      return ctx.value ? valueItems(ctx.value, fields, quote, searchIndexes) : [];
+    case 'searchIndex':
+      return searchIndexes
+        .filter((ix) => (ix.type || 'search') === ctx.type)
+        .map((ix) => ({
+          label: JSON.stringify(ix.name),
+          detail: ix.status ? `${ix.type} · ${ix.status}` : ix.type,
+          kind: 'value' as const,
+          insert: quote ? escapeIn(ix.name, quote) + quote : JSON.stringify(ix.name),
+        }));
     case 'fieldName':
-      return fields.map((h) => ({
+      return (ctx.vector ? [...fields.filter((h) => h.vector), ...fields.filter((h) => !h.vector)] : fields).map((h) => ({
         label: h.path,
         detail: fieldDetail(h),
         kind: 'field' as const,

@@ -22,6 +22,7 @@ import { ChartSpec, chartStages, normalizeSpec, specError } from './shared/chart
 import { fieldHints } from './shared/complete';
 import { collectionNameError } from './manage';
 import { loadIndexes, saveIndex } from './indexes';
+import { dropSearchIndex, loadSearchIndexes, saveSearchIndex } from './searchIndexes';
 import type { ColumnLayout } from './shared/columns';
 
 const { EJSON } = BSON;
@@ -299,6 +300,16 @@ export class CollectionPanel {
       case 'hideIndex':
         if (this.refuseWrite()) return;
         await this.indexCommand(async () => (await this.db()).command({ collMod: this.target.collection, index: { name: m.name, hidden: m.hidden } }));
+        break;
+      // ---- Atlas Search and Vector Search indexes
+      case 'loadSearchIndexes':
+        await this.postSearchIndexes();
+        break;
+      case 'saveSearchIndex':
+        await this.saveSearchIndex(m.requestId, m.original, m.name, m.searchType, m.definition);
+        break;
+      case 'dropSearchIndex':
+        await this.dropSearchIndex(m.name);
         break;
       case 'deleteDocument':
         await this.deleteDocument(m.id);
@@ -862,6 +873,49 @@ export class CollectionPanel {
     await this.postIndexes();
   }
 
+  // ---- Atlas Search and Vector Search indexes
+
+  private async postSearchIndexes(): Promise<void> {
+    try {
+      this.post({ type: 'searchIndexes', ...(await loadSearchIndexes(await this.coll())) });
+    } catch (err) {
+      this.post({ type: 'searchIndexes', indexes: [], error: errorMessage(err) });
+    }
+  }
+
+  /** Why the search indexes can't be changed from here, if they can't. */
+  private searchIndexRefusal(): string | undefined {
+    if (this.target.view) return 'Views have no indexes of their own: manage the search indexes from the Indexes tab of the source collection.';
+    if (this.target.locked) return readOnlyMessage(this.target);
+    return undefined;
+  }
+
+  private async saveSearchIndex(requestId: number, original: string | undefined, name: string, type: string, definition: string): Promise<void> {
+    try {
+      const refusal = this.searchIndexRefusal();
+      if (refusal) throw new Error(refusal);
+      const message = await saveSearchIndex(await this.coll(), original, name, type, definition);
+      this.post({ type: 'searchIndexResult', requestId, ok: true, message });
+    } catch (err) {
+      this.post({ type: 'searchIndexResult', requestId, ok: false, message: errorMessage(err) });
+    }
+    await this.postSearchIndexes();
+  }
+
+  private async dropSearchIndex(name: string): Promise<void> {
+    const refusal = this.searchIndexRefusal();
+    if (refusal) {
+      void vscode.window.showErrorMessage(refusal);
+      return;
+    }
+    try {
+      if (!(await dropSearchIndex(await this.coll(), name))) return;
+    } catch (err) {
+      void vscode.window.showErrorMessage(errorMessage(err));
+    }
+    await this.postSearchIndexes();
+  }
+
   private async runQuery(m: QueryRequest): Promise<void> {
     const started = Date.now();
     try {
@@ -1109,6 +1163,17 @@ export class CollectionPanel {
     </div>
     <div id="indexMessage" class="hidden"></div>
     <table id="indexTable" class="grid index-table"></table>
+    <!-- Atlas Search and Vector Search indexes -->
+    <div id="searchIndexes" class="search-indexes">
+      <div class="row index-head">
+        <span class="search-indexes-title" title="Atlas Search and Atlas Vector Search indexes, queried with $search, $searchMeta and $vectorSearch">Search indexes</span>
+        <button id="newSearchIndex" class="primary editable" title="Create an Atlas Search or Vector Search index">Create search index…</button>
+        <button id="refreshSearchIndexes" class="secondary" title="Read the search indexes and their status again">Refresh</button>
+        <span id="searchIndexSummary" class="index-summary"></span>
+      </div>
+      <div id="searchIndexMessage" class="hidden"></div>
+      <table id="searchIndexTable" class="grid index-table search-index-table"></table>
+    </div>
   </section>
   <div class="statusbar">
     <span id="status"></span>
@@ -1285,6 +1350,56 @@ export class CollectionPanel {
         <span class="spacer"></span>
         <button id="indexCancel" class="secondary">Cancel</button>
         <button id="indexSave" class="primary" title="Ctrl+Enter">Create index</button>
+      </div>
+    </div>
+  </div>
+  <div id="searchIndexModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-box index-box">
+      <div class="modal-head">
+        <span id="searchIndexTitle" class="doc-title">Create search index</span>
+        <span class="spacer"></span>
+        <button id="searchIndexClose" class="icon" title="Close (Esc)">✕</button>
+      </div>
+      <div class="index-body">
+        <div class="index-options">
+          <label for="searchIndexName">Name</label>
+          <input id="searchIndexName" spellcheck="false">
+          <label>Type</label>
+          <div class="mode search-type" role="tablist" aria-label="Type of the search index">
+            <button id="searchTypeSearch" role="tab" aria-selected="true" title="Full-text search with $search and $searchMeta">Search</button>
+            <button id="searchTypeVector" role="tab" aria-selected="false" title="Nearest neighbors of a vector (embeddings) with $vectorSearch">Vector Search</button>
+          </div>
+          <label class="search-only">Template</label>
+          <span class="index-inline search-only">
+            <button id="searchTplDynamic" class="secondary" title="Index every field of a supported type">Dynamic mapping</button>
+            <button id="searchTplStatic" class="secondary" title="Index the fields of the documents one by one, with the types seen in them">Static mappings</button>
+          </span>
+          <label for="searchVectorPath" class="vector-only">Path</label>
+          <input id="searchVectorPath" class="vector-only" spellcheck="false" list="searchVectorPaths" placeholder="field with the vectors, e.g. embedding">
+          <datalist id="searchVectorPaths"></datalist>
+          <label for="searchVectorDims" class="vector-only">Dimensions</label>
+          <span class="index-inline vector-only">
+            <input id="searchVectorDims" type="number" min="1" max="8192" title="numDimensions: how many numbers each vector has">
+            <label for="searchVectorSimilarity" class="index-hint">Similarity</label>
+            <select id="searchVectorSimilarity"></select>
+            <label for="searchVectorQuantization" class="index-hint">Quantization</label>
+            <select id="searchVectorQuantization" title="scalar or binary: smaller index, faster, a little less precise"></select>
+          </span>
+          <label id="searchFieldsLabel" title="">Fields</label>
+          <div id="searchFieldList" class="search-field-list"></div>
+        </div>
+        <div class="index-section">Definition</div>
+        <textarea id="searchIndexDefinition" class="search-definition" rows="12" spellcheck="false"></textarea>
+        <div class="index-section">Command</div>
+        <pre id="searchIndexPreview" class="index-preview"></pre>
+        <div id="searchIndexPlan" class="index-plan hidden"></div>
+        <div id="searchIndexError" class="error hidden"></div>
+      </div>
+      <div class="bulk-actions">
+        <button id="searchIndexCopy" class="secondary" title="Copy the mongosh command">Copy command</button>
+        <span class="spacer"></span>
+        <button id="searchIndexCancel" class="secondary">Cancel</button>
+        <button id="searchIndexSave" class="primary" title="Ctrl+Enter">Create search index</button>
       </div>
     </div>
   </div>

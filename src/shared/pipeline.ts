@@ -28,6 +28,9 @@ export const STAGE_TEMPLATES: Record<string, string> = {
   $sample: '{\n  size: 10\n}',
   $facet: '{\n  facetName: [\n    { $count: "count" }\n  ]\n}',
   $bucket: '{\n  groupBy: "$field",\n  boundaries: [0, 10, 100],\n  default: "other"\n}',
+  $search: '{\n  index: "default",\n  text: {\n    query: "word",\n    path: "field"\n  }\n}',
+  $searchMeta: '{\n  index: "default",\n  exists: { path: "field" },\n  count: { type: "total" }\n}',
+  $vectorSearch: '{\n  index: "vector_index",\n  path: "embedding",\n  queryVector: [0.1, 0.2, 0.3],\n  numCandidates: 100,\n  limit: 10\n}',
   $out: '"outputCollection"',
   $merge: '{\n  into: "outputCollection"\n}',
 };
@@ -37,6 +40,15 @@ export const WRITE_STAGES = new Set(['$out', '$merge']);
 
 export function isWriteStage(stage: PipelineStage): boolean {
   return stage.enabled && WRITE_STAGES.has(stage.op.trim());
+}
+
+/** Atlas Search stages: the server only takes them as the first stage of a pipeline. */
+export const FIRST_STAGES = new Set(['$search', '$searchMeta', '$vectorSearch']);
+
+/** Indexes of the enabled stages that must be first and aren't. */
+export function misplacedFirstStages(stages: PipelineStage[]): number[] {
+  const first = stages.findIndex((s) => s.enabled);
+  return stages.flatMap((s, i) => (s.enabled && i !== first && FIRST_STAGES.has(s.op.trim()) ? [i] : []));
 }
 
 /** Parses a stage body; throws with a readable message. */

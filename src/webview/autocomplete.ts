@@ -1,12 +1,14 @@
 // Suggestion popup for the query inputs: field names, operators and frequent values while typing.
 // Tab or Enter inserts, arrows move, Escape closes, Ctrl+Space opens it on demand.
-import { CompletionItem, CompletionKind, CompletionResult, FieldHint, complete } from '../shared/complete';
+import { CompletionItem, CompletionKind, CompletionResult, FieldHint, SearchIndexHint, complete } from '../shared/complete';
 
 type TextField = HTMLTextAreaElement | HTMLInputElement;
 
 export interface CompletionSource {
   kind(): CompletionKind;
   fields(): FieldHint[];
+  /** Search indexes of the collection, for the `index` of $search and $vectorSearch. */
+  searchIndexes?(): SearchIndexHint[];
 }
 
 const MAX_ITEMS = 50;
@@ -105,7 +107,7 @@ export class Completer {
   private update(field: TextField, source: CompletionSource, force: boolean): void {
     const caret = field.selectionStart ?? field.value.length;
     if (field.selectionEnd !== caret) return this.close();
-    const result = complete(field.value, caret, source.kind(), source.fields());
+    const result = complete(field.value, caret, source.kind(), source.fields(), source.searchIndexes?.());
     if (!result || !result.items.length) return this.close();
     // Unasked, a list of everything only makes sense right after {, [, : or , (where a key or value starts).
     if (!force && !this.isOpen && !result.prefix && !/[{:[,]\s*$/.test(field.value.slice(0, caret))) return this.close();
