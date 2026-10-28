@@ -103,9 +103,11 @@ export type WebviewMessage =
   | QueryRequest
   | AggregateRequest
   | { type: 'editDocument'; id: unknown }
-  | { type: 'duplicateDocument'; doc: Record<string, unknown> }
   | { type: 'deleteDocument'; id: unknown }
-  | { type: 'insertDocument' }
+  /** Inserts the documents of the insert dialog (one, or an array; mongosh syntax). */
+  | { type: 'insertDocuments'; requestId: number; text: string }
+  /** Opens the text of the insert dialog in an editor tab, inserted on save. */
+  | { type: 'insertInEditor'; text: string }
   | { type: 'saveExpanded'; expanded: string[] }
   | { type: 'saveLayout'; layout: ColumnLayout }
   | { type: 'saveQuery'; query: QueryText }
@@ -177,6 +179,9 @@ export type HostMessage =
   | { type: 'chartData'; requestId: number; rows?: unknown[]; durationMs?: number; error?: string }
   /** `ok: false` without a message: the confirmation was cancelled. */
   | { type: 'bulkResult'; requestId: number; ok: boolean; message?: string }
+  | { type: 'insertResult'; requestId: number; ok: boolean; message?: string }
+  /** Opens the insert dialog (e.g. Insert Document in the tree). */
+  | { type: 'showInsert' }
   /** A query to show (from the server monitor), then run or explain. */
   | { type: 'loadQuery'; query: QueryText; explain: boolean };
 

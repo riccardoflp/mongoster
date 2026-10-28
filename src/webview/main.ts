@@ -8,6 +8,9 @@ import { IndexesView } from './indexes';
 import { IndexDialog } from './indexDialog';
 import { ExplainView } from './explainView';
 import { BulkDialog, BulkOp } from './bulk';
+import { InsertDialog } from './insertDialog';
+import { MenuItem, PopupMenu } from './popupMenu';
+import { COPY_FORMATS, formatDocument } from '../shared/formats';
 import { CodeDialog, toCodeQuery } from './codeDialog';
 import { ChartView } from './chartView';
 import { ChartSpec, chartStages } from '../shared/chart';
@@ -342,6 +345,15 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
     case 'bulkResult':
       bulk.onResult(m);
       break;
+    case 'insertResult':
+      insertDialog.onResult(m);
+      break;
+    case 'showInsert':
+      if (!readOnly) {
+        closeDocument();
+        insertDialog.open(collectionName);
+      }
+      break;
     case 'explainResult':
       if (m.requestId === explainRequest) explainView.show(m);
       break;
@@ -622,10 +634,46 @@ const columnMenu = new ColumnMenu({ columns: () => allColumns, layout: () => lay
 
 grid.addEventListener('contextmenu', (e) => {
   const th = (e.target as HTMLElement).closest<HTMLElement>('th[data-key]');
-  if (!th) return;
+  if (th) {
+    e.preventDefault();
+    columnMenu.open(e.clientX, e.clientY, th.dataset.key!);
+    return;
+  }
+  const td = (e.target as HTMLElement).closest<HTMLTableCellElement>('tbody td');
+  const row = Number(td?.closest('tr')?.dataset.row);
+  const doc = docs[row];
+  if (!td || !doc) return;
   e.preventDefault();
-  columnMenu.open(e.clientX, e.clientY, th.dataset.key!);
+  if (!td.classList.contains('rownum')) selectCell(td);
+  const cell = cellValue(td);
+  const canWrite = !readOnly && state.mode === 'find';
+  const items: MenuItem[] = [{ label: 'Open document', action: () => openDocument(row) }];
+  if (cell) items.push({ label: 'Copy value', title: 'mongosh syntax (Ctrl+C)', action: () => vscode.postMessage({ type: 'copy', text: toShell(cell.value) }) });
+  items.push('separator', ...copyItems(doc));
+  if (canWrite) {
+    items.push('separator', { label: 'Duplicate…', title: 'Insert a copy without _id', action: () => duplicate(doc) });
+    if ('_id' in doc) items.push({ label: 'Delete document', action: () => vscode.postMessage({ type: 'deleteDocument', id: doc._id }) });
+  }
+  docMenu.open(e.clientX, e.clientY, items);
 });
+
+const docMenu = new PopupMenu(el('docMenu'));
+
+/** "Copy as" entries of the menus of a document. */
+function copyItems(doc: Record<string, unknown>): MenuItem[] {
+  return COPY_FORMATS.map((f) => ({
+    label: `Copy as ${f.label}`,
+    title: f.title,
+    action: () => vscode.postMessage({ type: 'copy', text: formatDocument(doc, f.id, collectionName) }),
+  }));
+}
+
+/** Opens the insert dialog with the document without its _id. */
+function duplicate(doc: Record<string, unknown>): void {
+  const { _id, ...rest } = doc;
+  closeDocument();
+  insertDialog.open(collectionName, toShell(rest, 2));
+}
 
 // Dragging a header onto another one moves the column there (among its siblings).
 function headerDropSide(e: DragEvent): { th: HTMLElement; after: boolean } | null {
@@ -1117,13 +1165,13 @@ el('docCollapse').addEventListener('click', () =>
   el('docBody').querySelectorAll('.jchildren .jnode').forEach((n) => n.classList.add('collapsed')),
 );
 el('docCopy').addEventListener('click', () => {
-  if (openDocIndex >= 0) vscode.postMessage({ type: 'copy', text: toShell(docs[openDocIndex], 2) });
+  if (openDocIndex >= 0) docMenu.openBelow(el('docCopy'), copyItems(docs[openDocIndex]));
 });
 el('docEdit').addEventListener('click', () => {
   if (openDocIndex >= 0) vscode.postMessage({ type: 'editDocument', id: docs[openDocIndex]._id });
 });
 el('docDuplicate').addEventListener('click', () => {
-  if (openDocIndex >= 0) vscode.postMessage({ type: 'duplicateDocument', doc: docs[openDocIndex] });
+  if (openDocIndex >= 0) duplicate(docs[openDocIndex]);
 });
 el('docDelete').addEventListener('click', () => {
   if (openDocIndex >= 0) vscode.postMessage({ type: 'deleteDocument', id: docs[openDocIndex]._id });
@@ -1142,7 +1190,7 @@ function autosize(): void {
 }
 
 el('run').addEventListener('click', () => run(true));
-el('insert').addEventListener('click', () => vscode.postMessage({ type: 'insertDocument' }));
+el('insert').addEventListener('click', () => insertDialog.open(collectionName));
 el('export').addEventListener('click', () => {
   // Exports what the table shows: the last query run, or the pipeline up to the previewed stage.
   if (state.mode === 'aggregate' && !pipeline.prepare()) return;
@@ -1192,11 +1240,12 @@ filterInput.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (explainView.isOpen || bulk.isOpen || codeDialog.isOpen || indexDialog.isOpen) {
-    if (e.key === 'Escape') {
+  if (explainView.isOpen || bulk.isOpen || codeDialog.isOpen || indexDialog.isOpen || insertDialog.isOpen) {
+    if (e.key === 'Escape' && !e.defaultPrevented) {
       if (explainView.isOpen) explainView.close();
       else if (codeDialog.isOpen) codeDialog.close();
       else if (indexDialog.isOpen) indexDialog.close();
+      else if (insertDialog.isOpen) insertDialog.close();
       else bulk.close();
       e.preventDefault();
     }
@@ -1324,6 +1373,7 @@ completeWith(el<HTMLTextAreaElement>('pipelineText'), 'pipeline');
 completeWith(el<HTMLTextAreaElement>('bulkUpdate'), 'update');
 completeWith(el<HTMLTextAreaElement>('indexKeys'), 'index');
 completeWith(el<HTMLTextAreaElement>('indexPartialFilter'), 'filter');
+completeWith(el<HTMLTextAreaElement>('insertText'), 'document');
 
 const pipeline = new PipelineEditor({
   run: () => run(true),
@@ -1548,6 +1598,7 @@ el('codePipeline').addEventListener('click', showCode);
 // Update many / Delete many
 
 const bulk = new BulkDialog((message) => vscode.postMessage(message));
+const insertDialog = new InsertDialog({ post: (message) => vscode.postMessage(message), fields: () => collectionFields });
 
 function openBulk(op: BulkOp): void {
   if (!isValidObject(filterInput.value)) {

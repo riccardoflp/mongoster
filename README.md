@@ -83,13 +83,25 @@ Mongoster also runs without VS Code, as a [desktop app](#desktop-app) with the s
   - It also works on nested fields, on the elements of expanded arrays (`items.2.qty`) and on empty cells (it adds the field).
   - Numeric types stay the original ones; `NumberLong(...)` and similar force a type.
   - If the value has changed in the database in the meantime, you are asked whether to overwrite it. Not available for `_id`, for views and in Aggregate mode.
-- **JSON document**: clicking the row number (or `Enter` on the selected cell) opens a dialog with an expandable JSON tree; `↑/↓` to move through the documents, `Copy`.
+- **JSON document**: clicking the row number (or `Enter` on the selected cell) opens a dialog with an expandable JSON tree; `↑/↓` to move through the documents.
+- **Copying a document**: `Copy ▾` in the document dialog, or right-click a row, copies it as:
+  - `mongosh` (`ObjectId(…)`, `ISODate(…)`) or `Extended JSON` (`{ "$oid": … }`, as mongoexport writes it): both keep the types and can be pasted into `Insert`, a query or the playground;
+  - `JSON`: plain JSON for other tools, with ids, dates and decimals as strings;
+  - `YAML`: ids as strings, dates as YAML timestamps, multi-line text as `|` blocks;
+  - `insertOne command`: `db.getCollection("…").insertOne({ … })`, ready for mongosh.
+  - The right-click menu also has `Open document`, `Copy value`, `Duplicate…` and `Delete document`.
 - **Editing**: `Edit` opens the document in an editor tab; `Ctrl+S` saves it to MongoDB.
   - Numeric types stay the original ones (Double, Int32, Long), even when the value changes; `NumberLong(...)` and similar force an explicit type.
   - The editor also accepts mongosh syntax (`ObjectId(...)`, `ISODate(...)`).
   - If the document was changed or deleted in the database after it was opened, you are asked whether to overwrite / insert it again.
   - `_id` can't be changed: use `Duplicate`.
-- **Insert / Duplicate / Delete**: `Insert` in the toolbar (or `+` on the collection in the tree) opens a new document to save with `Ctrl+S`; `Duplicate` opens a copy without `_id`; `Delete` (or the `Delete` key on a cell) deletes it after a confirmation.
+- **Insert**: `Insert` in the toolbar (or `+` on the collection in the tree) opens a dialog where you type or paste the documents and press `Insert` (`Ctrl+Enter`); nothing to save.
+  - It takes one document `{ … }`, an array `[ { … }, { … } ]` (inserted with `insertMany`), one document per line (mongoexport's JSON Lines) or a pasted `db.coll.insertOne(…)` / `insertMany(…)`, in mongosh syntax or Extended JSON, with autocomplete of the field names and values and syntax colors. While you type it says how many documents it found, or what's wrong.
+  - `Template` starts from the fields most documents of the collection have (`ISODate()` for dates); without `_id`, MongoDB generates one. A pasted `_id` that already exists is pointed out, with the hint to remove it.
+  - If one of several documents is refused (duplicate key, validation), the ones before it are inserted and it says how many, and the text stays in the dialog. `Keep open` stays open after inserting, to insert more; closing without inserting keeps the text for the next time.
+  - `Open in Editor` moves the text to an editor tab instead, inserted with `Ctrl+S` as before.
+  - Inserts are published to redis-oplog and can be undone.
+- **Duplicate / Delete**: `Duplicate` opens `Insert` with a copy of the document without `_id`; `Delete` (or the `Delete` key on a cell) deletes it after a confirmation.
 - **Export**: the `Export` button exports what the table shows (the query, or the pipeline up to the stage shown): all the results or just the current page. Also from the tree: right-click a collection or view → `Export Collection…`.
   - **JSON**: a readable array (relaxed Extended JSON).
   - **JSON Lines**: one document per line in canonical Extended JSON, which keeps all the types; it's the right format to import again.

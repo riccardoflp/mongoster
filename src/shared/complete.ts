@@ -24,6 +24,8 @@ export type CompletionKind =
   | 'stageObject'
   /** A field name as a string, e.g. distinct("…"). */
   | 'field'
+  /** Documents to insert: one, or an array of them. */
+  | 'document'
   | { stage: string };
 
 export interface CompletionItem {
@@ -266,6 +268,8 @@ type Ctx =
   | { k: 'outputs'; of: Ctx }
   | { k: 'opts'; keys: string[]; children: Record<string, Ctx>; value?: Ctx }
   | { k: 'fieldName' }
+  /** Keys of a document (or sub-document at `prefix`); `field`: the field the value belongs to. */
+  | { k: 'doc'; prefix: string; field?: string }
   | { k: 'none' };
 
 const NONE: Ctx = { k: 'none' };
@@ -293,6 +297,8 @@ function rootContext(kind: CompletionKind): Ctx {
       return { k: 'stageObj' };
     case 'field':
       return { k: 'fieldName' };
+    case 'document':
+      return { k: 'doc', prefix: '' };
   }
 }
 
@@ -406,6 +412,10 @@ function child(ctx: Ctx, key: string | null): Ctx {
       return key === null ? NONE : ctx.children[key] ?? NONE;
     case 'fieldName':
       return key === null ? ctx : NONE;
+    case 'doc':
+      // An array element: a document of the array (insertMany), or an element of an array field.
+      if (key === null) return ctx;
+      return { k: 'doc', prefix: `${ctx.prefix}${key}.`, field: ctx.prefix + key };
     default:
       return NONE;
   }
@@ -651,6 +661,8 @@ function keyItems(ctx: Ctx, fields: FieldHint[], quote: string | undefined): Com
       return opKeys(ACCUMULATORS, quote);
     case 'opts':
       return ctx.keys.map((k) => keyItem(k, 'operator', quote, 'option'));
+    case 'doc':
+      return fieldKeys(fields, ctx.prefix, quote).filter((item) => !item.label.includes('.'));
     default:
       return [];
   }
@@ -659,7 +671,8 @@ function keyItems(ctx: Ctx, fields: FieldHint[], quote: string | undefined): Com
 function valueItems(ctx: Ctx, fields: FieldHint[], quote: string | undefined): CompletionItem[] {
   switch (ctx.k) {
     case 'field':
-    case 'value': {
+    case 'value':
+    case 'doc': {
       const hint = fields.find((h) => h.path === ctx.field);
       return (hint?.values ?? [])
         .filter((v) => !quote || typeof v.value === 'string')

@@ -1692,6 +1692,69 @@ body.mode-indexes .not-indexes {
   padding: 10px 14px 12px;
 }
 
+/* ---------- insert ---------- */
+
+.insert-box {
+  width: min(760px, 96vw);
+}
+
+.insert-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 10px 14px 0;
+}
+
+#insertText {
+  font-family: var(--mono);
+  font-size: var(--vscode-editor-font-size, 13px);
+  line-height: 1.45;
+  tab-size: 2;
+  resize: vertical;
+  min-height: 12em;
+  max-height: 60vh;
+  white-space: pre;
+  overflow: auto;
+}
+
+.insert-hint {
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.insert-hint code {
+  font-family: var(--mono);
+}
+
+.insert-status {
+  min-height: 1.4em;
+  color: var(--muted);
+}
+
+.insert-status.invalid {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.insert-status.done {
+  color: var(--vscode-testing-iconPassed, #73c991);
+}
+
+#insertError {
+  margin: 0;
+}
+
+.insert-box .bulk-actions {
+  align-items: center;
+}
+
+.insert-box .bulk-actions label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+}
+
 button.danger-primary:not(:disabled) {
   background: var(--vscode-inputValidation-errorBorder, #be1100);
   color: #fff;
@@ -2195,6 +2258,13 @@ body.resizing * {
   color: inherit;
   padding: 3px 14px;
   border-radius: 0;
+}
+
+.context-menu hr {
+  width: 100%;
+  margin: 4px 0;
+  border: none;
+  border-top: 1px solid var(--vscode-menu-separatorBackground, var(--border));
 }
 
 .context-menu button:hover,

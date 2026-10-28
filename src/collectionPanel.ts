@@ -7,6 +7,7 @@ import { byId, CollectionRef, DocumentFileSystem, relaxed, restoreTypes } from '
 import { errorMessage } from './tree';
 import { QueryHistory, sameQuery } from './queryHistory';
 import { parseQuery, relaxEjson, toShell } from './shared/query';
+import { parseDocuments } from './shared/formats';
 import { PipelineStage, parseStageBody } from './shared/pipeline';
 import { StageError, buildPipeline, fromRelaxed, toBson, toUpdate } from './queries';
 import { exportDocuments } from './transfer';
@@ -68,15 +69,15 @@ export class CollectionPanel {
     target: CollectionTarget,
     /** A query to show instead of the last one. */
     initial?: { query: QueryText; explain: boolean },
-    /** A tab to show instead of the last one. */
-    mode?: 'indexes',
+    /** A tab to show instead of the last one, or the insert dialog. */
+    mode?: 'indexes' | 'insert',
   ): void {
     const key = panelKey(target);
     const existing = CollectionPanel.panels.get(key);
     if (existing) {
       existing.panel.reveal();
       if (initial) existing.post({ type: 'loadQuery', ...initial });
-      if (mode) existing.post({ type: 'showMode', mode });
+      if (mode) existing.showMode(mode);
       return;
     }
     const panel = new CollectionPanel(context, connections, documents, target, () => {
@@ -115,8 +116,8 @@ export class CollectionPanel {
   private readonly history: QueryHistory;
   /** Query to load once the webview is ready. */
   private pending?: { query: QueryText; explain: boolean };
-  /** Tab to show once the webview is ready. */
-  private pendingMode?: 'indexes';
+  /** Tab (or the insert dialog) to show once the webview is ready. */
+  private pendingMode?: 'indexes' | 'insert';
 
   private constructor(
     private readonly context: vscode.ExtensionContext,
@@ -163,6 +164,10 @@ export class CollectionPanel {
     return true;
   }
 
+  private showMode(mode: 'indexes' | 'insert'): void {
+    this.post(mode === 'insert' ? { type: 'showInsert' } : { type: 'showMode', mode });
+  }
+
   private post(message: HostMessage): void {
     void this.panel.webview.postMessage(message);
   }
@@ -173,7 +178,7 @@ export class CollectionPanel {
         this.postInit();
         this.postHistory();
         if (this.pending) this.post({ type: 'loadQuery', ...this.pending });
-        if (this.pendingMode) this.post({ type: 'showMode', mode: this.pendingMode });
+        if (this.pendingMode) this.showMode(this.pendingMode);
         this.pending = this.pendingMode = undefined;
         break;
       case 'saveQuery': {
@@ -235,15 +240,12 @@ export class CollectionPanel {
       case 'editDocument':
         await this.documents.open(this.target, fromRelaxed(m.id));
         break;
-      case 'duplicateDocument': {
-        if (this.refuseWrite()) return;
-        const { _id, ...rest } = m.doc;
-        await this.documents.openNew(this.target, JSON.stringify(rest, null, 2) + '\n');
+      case 'insertDocuments':
+        await this.insertDocuments(m.requestId, m.text);
         break;
-      }
-      case 'insertDocument':
+      case 'insertInEditor':
         if (this.refuseWrite()) return;
-        await this.documents.openNew(this.target);
+        await this.documents.openNew(this.target, `${m.text.trim() || '{\n  \n}'}\n`);
         break;
       case 'updateField':
         await this.updateField(m);
@@ -309,6 +311,53 @@ export class CollectionPanel {
 
   private postHistory(): void {
     this.post({ type: 'history', recent: this.history.recent, saved: this.history.saved });
+  }
+
+  private async insertDocuments(requestId: number, text: string): Promise<void> {
+    const reply = (ok: boolean, message?: string) => this.post({ type: 'insertResult', requestId, ok, message });
+    if (this.target.readOnly) return reply(false, readOnlyMessage(this.target));
+    let docs: Document[];
+    try {
+      docs = parseDocuments(text).map((d) => EJSON.deserialize(d, { relaxed: false }) as Document);
+    } catch (err) {
+      return reply(false, errorMessage(err));
+    }
+    const many = docs.length > 1;
+    const rec = UndoHistory.start(this.target, many ? `Insert ${docs.length} documents` : 'Insert document', docs.length);
+    let coll: Collection;
+    let inserted = 0;
+    let failure: string | undefined;
+    try {
+      coll = await this.coll();
+    } catch (err) {
+      return reply(false, errorMessage(err));
+    }
+    try {
+      if (many) inserted = (await coll.insertMany(docs)).insertedCount;
+      else inserted = (await coll.insertOne(docs[0])).acknowledged ? 1 : 0;
+    } catch (err) {
+      // An ordered insertMany stops at the first error: the documents before it are in.
+      inserted = (err as { result?: { insertedCount?: number } }).result?.insertedCount ?? 0;
+      failure = errorMessage(err);
+      // Typically a copied document pasted back with its _id.
+      if (/E11000 .* index: _id_ /.test(failure)) failure += '. Remove _id to insert a copy with a new one.';
+    }
+    if (!inserted) return reply(false, failure);
+    // The driver sets the _id of the documents it sends.
+    const ids = docs.slice(0, inserted).map((d) => d._id);
+    ids.forEach((id) => rec?.addNew(id));
+    RedisOplog.sink(this.target)?.inserted(ids);
+    const entry = await rec?.commit(coll);
+    const into = `into ${this.target.collection}.`;
+    const message = failure
+      ? `Inserted ${inserted} of ${docs.length} documents ${into}`
+      : many
+        ? `Inserted ${inserted.toLocaleString('en-US')} documents ${into}`
+        : `Inserted document ${toShell(relaxed(ids[0]))} ${into}`;
+    reply(!failure, failure ? `Inserted ${inserted} of ${docs.length} documents, then: ${failure}` : message);
+    UndoHistory.notify(message, entry);
+    this.post({ type: 'refresh' });
+    void vscode.commands.executeCommand('mongoster.refresh');
   }
 
   private async deleteDocument(id: unknown): Promise<void> {
@@ -766,7 +815,7 @@ export class CollectionPanel {
       <button id="historyBtn" class="secondary" title="Recent and saved queries" aria-haspopup="true" aria-expanded="false">History ▾</button>
       <button id="export" class="secondary not-indexes not-schema not-chart" title="Export the results to JSON, JSON Lines or CSV">Export</button>
       <button id="watch" class="secondary not-view" title="Show the changes of the collection as they happen (change stream)">Watch</button>
-      <button id="insert" class="secondary editable" title="Insert a new document">Insert</button>
+      <button id="insert" class="secondary editable" title="Insert documents: type them or paste a copied one">Insert</button>
       </div>
     </div>
     <div class="find-only">
@@ -916,6 +965,7 @@ export class CollectionPanel {
     <div id="columnsList" class="columns-list"></div>
   </div>
   <div id="columnMenu" class="context-menu hidden" role="menu"></div>
+  <div id="docMenu" class="context-menu hidden" role="menu"></div>
   <main class="grid-wrap" id="gridWrap">
     <table id="grid" class="grid"></table>
     <div id="empty" class="empty hidden">No documents match this query.</div>
@@ -929,8 +979,8 @@ export class CollectionPanel {
         <span class="spacer"></span>
         <button id="docExpand" class="icon" title="Expand all">⊞</button>
         <button id="docCollapse" class="icon" title="Collapse all">⊟</button>
-        <button id="docCopy" class="secondary">Copy</button>
-        <button id="docDuplicate" class="secondary editable doc-write" title="Open a copy without _id as a new document">Duplicate</button>
+        <button id="docCopy" class="secondary" title="Copy as mongosh, Extended JSON, JSON, YAML or an insertOne command" aria-haspopup="menu">Copy ▾</button>
+        <button id="docDuplicate" class="secondary editable doc-write" title="Insert a copy without _id">Duplicate</button>
         <button id="docDelete" class="secondary editable danger doc-write">Delete</button>
         <button id="docEdit" class="primary doc-write" title="Open in an editor tab (Ctrl+S saves to the database)">Edit</button>
         <button id="docClose" class="icon" title="Close (Esc)">✕</button>
@@ -954,6 +1004,29 @@ export class CollectionPanel {
       <div class="bulk-actions">
         <button id="codeOpen" class="secondary" title="Open the code in a new editor tab">Open in Editor</button>
         <button id="codeCopy" class="primary">Copy</button>
+      </div>
+    </div>
+  </div>
+  <div id="insertModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-box insert-box">
+      <div class="modal-head">
+        <span id="insertTitle" class="doc-title">Insert</span>
+        <span class="spacer"></span>
+        <button id="insertTemplate" class="secondary" title="Start from the fields most documents of the collection have">Template</button>
+        <button id="insertClose" class="icon" title="Close (Esc)">✕</button>
+      </div>
+      <div class="insert-body">
+        <textarea id="insertText" rows="16" spellcheck="false" aria-label="Documents to insert" aria-describedby="insertHint"></textarea>
+        <div id="insertHint" class="insert-hint">One document <code>{ … }</code> or several <code>[ { … }, { … } ]</code>, in mongosh syntax or Extended JSON: paste what Copy gives. <code>ObjectId(…)</code>, <code>ISODate(…)</code> and <code>NumberLong(…)</code> keep their types; without <code>_id</code> one is generated.</div>
+        <div id="insertStatus" class="insert-status" aria-live="polite"></div>
+        <div id="insertError" class="error hidden"></div>
+      </div>
+      <div class="bulk-actions">
+        <button id="insertEditor" class="secondary">Open in Editor</button>
+        <span class="spacer"></span>
+        <label title="Stay open after inserting, to insert more"><input id="insertKeep" type="checkbox"> Keep open</label>
+        <button id="insertCancel" class="secondary">Cancel</button>
+        <button id="insertApply" class="primary" title="Ctrl+Enter">Insert</button>
       </div>
     </div>
   </div>

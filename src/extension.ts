@@ -361,7 +361,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!node) return undefined;
       const target = collectionTarget(node);
       if (target.readOnly) return vscode.window.showErrorMessage(readOnlyMessage(target));
-      return documents.openNew(target);
+      return CollectionPanel.show(context, connections, documents, target, undefined, 'insert');
     }),
 
     vscode.commands.registerCommand('mongoster.exportCollection', (node?: CollectionNode) => {
