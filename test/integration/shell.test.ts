@@ -46,9 +46,68 @@ describe('playground runtime', () => {
     const r = await run('db.many.find().sort({ i: 1 })');
     expect((r.value as unknown[]).length).toBe(RESULT_LIMIT);
     expect(r.more).toBe(true);
-    // Only top-level expressions are awaited, as the value of a variable.
-    const all = await run('const docs = db.many.find().toArray();\ndocs.length');
+    const all = await run('db.many.find().toArray().length');
     expect(all).toMatchObject({ kind: 'value', value: RESULT_LIMIT + 5 });
+  });
+
+  it('awaits every call where it is, as mongosh does', async () => {
+    await coll('stock').insertMany([
+      { _id: 1, n: 5, items: [{ sku: 'a1' }, { sku: 'a2' }] },
+      { _id: 2, n: 7, items: [] },
+    ]);
+    const r = await run(`
+      const n = db.stock.findOne({ _id: 1 }).n;
+      print(db.stock.countDocuments({}));
+      print(\`skus: \${db.stock.findOne({ _id: 1 }).items.map((i) => i.sku).join(",")}\`);
+      let found = "none";
+      if (db.stock.findOne({ n: 7 })) found = "seven";
+      if (db.stock.findOne({ n: 99 })) found = "ninety-nine";
+      let total = 0;
+      for (const d of db.stock.find().sort({ _id: 1 }).toArray()) total += d.n;
+      ({
+        n,
+        length: db.stock.find().toArray().length,
+        sku: db.stock.findOne({}).items[0].sku,
+        counts: [db.stock.countDocuments({ n: 5 }), db.stock.countDocuments({ n: { $gt: 5 } })],
+        found,
+        total,
+        missing: db.stock.findOne({ _id: 3 })?.n,
+      })
+    `);
+    expect(r.value).toEqual({ n: 5, length: 2, sku: 'a1', counts: [1, 1], found: 'seven', total: 12, missing: null });
+    expect(r.printed).toEqual(['2', 'skus: a1,a2']);
+  });
+
+  it('awaits in the blocks of if, for, while and try at the top level', async () => {
+    await coll('c').insertMany([{ _id: 1 }, { _id: 2 }]);
+    const r = await run(`
+      if (db.c.countDocuments() === 2) {
+        db.c.insertOne({ _id: 3 });
+      }
+      for (let i = 4; i < 6; i++) db.c.insertOne({ _id: i });
+      while (db.c.countDocuments() < 7) db.c.insertOne({ _id: db.c.countDocuments() + 1 });
+      try {
+        db.c.insertOne({ _id: 1 });
+      } catch (e) {
+        print("duplicate:", db.c.findOne({ _id: 1 })._id);
+      }
+      db.c.countDocuments()
+    `);
+    expect(r.value).toBe(7);
+    expect(r.printed).toEqual(['duplicate: 1']);
+  });
+
+  it('keeps cursors lazy: chained, kept in a variable, iterated, explained', async () => {
+    await coll('c').insertMany([{ n: 3 }, { n: 1 }, { n: 2 }]);
+    const r = await run(`
+      const cur = db.c.find({}, { _id: 0 }).sort({ n: 1 });
+      cur.forEach((d) => print(d.n));
+      print(db.c.find().count(), db.c.find().sort({ n: -1 }).limit(1).toArray()[0].n);
+      print(db.c.find({ n: 1 }).explain().queryPlanner.namespace);
+      db.c.find({}, { _id: 0 }).sort({ n: -1 }).limit(2)
+    `);
+    expect(r.printed).toEqual(['1', '2', '3', '3 3', `${DB}.c`]);
+    expect(r).toMatchObject({ kind: 'documents', value: [{ n: 3 }, { n: 2 }], more: false });
   });
 
   it('stores the BSON helpers as their exact types and returns them as relaxed EJSON', async () => {

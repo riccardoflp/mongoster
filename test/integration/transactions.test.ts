@@ -152,18 +152,60 @@ describe('playground transactions', () => {
       const session = db.getMongo().startSession();
       const orders = session.getDatabase("${DB}").orders;
       session.startTransaction({ readConcern: { level: "snapshot" } });
-      // Only the value of a statement is awaited: the array first, then its length.
-      const first = orders.find().toArray();
+      const first = orders.find().toArray().length;
       db.orders.insertOne({ _id: "outside" });
-      const second = orders.find().toArray();
+      const second = orders.find().toArray().length;
       session.commitTransaction();
       session.endSession();
-      ({ first: first.length, second: second.length })
+      ({ first, second })
     `);
     // The transaction keeps reading its snapshot: the insert made outside isn't in it.
     expect(r.value).toEqual({ first: 1, second: 1 });
     expect(await coll('orders').countDocuments()).toBe(2);
     expect(published()).toEqual([{ e: 'i', id: 'outside' }]);
+  });
+
+  it('awaits the calls inside expressions in a transaction: nothing runs after the session ends', async () => {
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown) => rejections.push(reason);
+    process.on('unhandledRejection', onRejection);
+    try {
+      const r = await run(`
+        const s = db.getMongo().startSession();
+        s.startTransaction();
+        const n = s.getDatabase("${DB}").stock.findOne({ _id: "apple" }).n;
+        const shop = s.getDatabase("${DB}");
+        if (shop.stock.findOne({ _id: "apple" }).n > 5) {
+          shop.orders.insertOne({ _id: 12, was: n, orders: shop.orders.countDocuments() });
+        }
+        print(\`in transaction: \${shop.orders.countDocuments()}\`);
+        s.commitTransaction();
+        s.endSession();
+        ({ n, orders: db.orders.find().sort({ _id: 1 }).toArray().length })
+      `);
+      expect(r.value).toEqual({ n: 10, orders: 2 });
+      expect(printed).toEqual(['in transaction: 2 [0]']);
+      expect(await coll('orders').findOne({ _id: 12 })).toEqual({ _id: 12, was: 10, orders: 1 });
+      expect(published()).toEqual([{ e: 'i', id: 12 }]);
+      // A promise left running would reject later, once the session has ended.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(rejections).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onRejection);
+    }
+  });
+
+  it('awaits inside a withTransaction callback the reads used in an expression', async () => {
+    const r = await run(`
+      const session = db.getMongo().startSession();
+      const shop = session.getDatabase("${DB}");
+      session.withTransaction(() => {
+        shop.orders.insertOne({ _id: 13, was: shop.stock.findOne({ _id: "apple" }).n });
+        return \`orders: \${shop.orders.countDocuments()}\`;
+      })
+    `);
+    expect(r.value).toBe('orders: 2');
+    expect(await coll('orders').findOne({ _id: 13 })).toEqual({ _id: 13, was: 10 });
   });
 
   it('allows read-only transactions on a read-only connection and refuses their writes', async () => {
