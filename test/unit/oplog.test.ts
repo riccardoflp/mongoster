@@ -23,6 +23,11 @@ describe('updatedFields', () => {
     expect(updatedFields({ $set: { 'a.b1': 1, 'a.1b': 2 } })).toEqual(['a.b1', 'a.1b']);
   });
 
+  it('includes both the old and the new name of a $rename', () => {
+    expect(updatedFields({ $rename: { old: 'new', 'a.b': 'c.d', 'list.0': 'x' } })).toEqual(['old', 'a.b', 'list', 'new', 'c.d', 'x']);
+    expect(updatedFields({ $set: { a: 1 }, $rename: { a: 'b' } })).toEqual(['a', 'b']);
+  });
+
   it('gives the fields of a replacement document', () => {
     expect(updatedFields({ _id: 1, name: 'x', age: 3 })).toEqual(['name', 'age']);
   });

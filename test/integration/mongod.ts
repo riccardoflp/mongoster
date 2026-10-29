@@ -1,16 +1,18 @@
-// Starts one mongod for the integration tests and gives its URI to them (`inject('mongoUri')`).
+// Starts the servers of the integration tests and gives their URIs to them (`inject('mongoUri')`, a
+// standalone mongod, and `inject('replSetUri')`, a single-node replica set for sessions and transactions).
 // mongodb-memory-server downloads a MongoDB binary the first time; a local installation is used
 // instead when there is one: MONGOMS_SYSTEM_BINARY, or the newest MongoDB in Program Files on Windows.
-// The server listens on the first free port from 27110 to 27119.
+// The servers listen on the first free ports from 27110 to 27119.
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
-import { MongoMemoryServer } from 'mongodb-memory-server-core';
+import { MongoMemoryReplSet, MongoMemoryServer } from 'mongodb-memory-server-core';
 import type { TestProject } from 'vitest/node';
 
 declare module 'vitest' {
   export interface ProvidedContext {
     mongoUri: string;
+    replSetUri: string;
   }
 }
 
@@ -22,6 +24,12 @@ function freePort(port: number): Promise<boolean> {
     server.once('error', () => resolve(false));
     server.listen(port, '127.0.0.1', () => server.close(() => resolve(true)));
   });
+}
+
+/** The first free port of the range not already taken by the servers started here. */
+async function nextPort(taken: number[]): Promise<number> {
+  for (const p of PORTS) if (!taken.includes(p) && (await freePort(p))) return p;
+  throw new Error(`No free port from ${PORTS[0]} to ${PORTS[PORTS.length - 1]} for mongod`);
 }
 
 function localBinary(): string | undefined {
@@ -40,19 +48,25 @@ function localBinary(): string | undefined {
 }
 
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
-  let port: number | undefined;
-  for (const p of PORTS) if (await freePort(p)) {
-    port = p;
-    break;
-  }
-  if (!port) throw new Error(`No free port from ${PORTS[0]} to ${PORTS[PORTS.length - 1]} for mongod`);
   const systemBinary = localBinary();
-  const server = await MongoMemoryServer.create({
-    instance: { port, ip: '127.0.0.1' },
-    ...(systemBinary && { binary: { systemBinary } }),
-  });
-  project.provide('mongoUri', server.getUri());
-  return async () => {
+  const binary = systemBinary ? { systemBinary } : undefined;
+  const port = await nextPort([]);
+  const server = await MongoMemoryServer.create({ instance: { port, ip: '127.0.0.1' }, ...(binary && { binary }) });
+  let replSet: MongoMemoryReplSet | undefined;
+  try {
+    const replSetPort = await nextPort([port]);
+    replSet = await MongoMemoryReplSet.create({
+      replSet: { count: 1, storageEngine: 'wiredTiger', ip: '127.0.0.1' },
+      instanceOpts: [{ port: replSetPort }],
+      ...(binary && { binary }),
+    });
+  } catch (err) {
     await server.stop({ doCleanup: true, force: true });
+    throw err;
+  }
+  project.provide('mongoUri', server.getUri());
+  project.provide('replSetUri', replSet.getUri());
+  return async () => {
+    await Promise.all([replSet?.stop({ doCleanup: true, force: true }), server.stop({ doCleanup: true, force: true })]);
   };
 }
