@@ -50,11 +50,70 @@ const UNSUPPORTED_TEXT = /requires additional configuration|only supported (with
 /** The error says that the server has no search, rather than that something went wrong. */
 export function isSearchUnsupported(err: unknown): boolean {
   const e = err as { code?: unknown; message?: unknown } | undefined;
+  if (isSearchUnreachable(err)) return false;
   return (typeof e?.code === 'number' && UNSUPPORTED_CODES.has(e.code)) || (typeof e?.message === 'string' && UNSUPPORTED_TEXT.test(e.message));
 }
 
 export const SEARCH_UNSUPPORTED_HELP =
-  'Search indexes need MongoDB Atlas, an Atlas local deployment (atlas deployments setup --type local) or MongoDB Community 8.2 or later with mongot: this server has no search.';
+  'Search indexes need MongoDB Atlas, an Atlas local deployment (atlas deployments setup --type local) or MongoDB Community 8.3 or later with mongot: this server has no search.';
+
+/** SearchIndexManagementHostUnreachable: the server has search configured, but its mongot does not answer. */
+const UNREACHABLE_CODES = new Set([508]);
+const UNREACHABLE_TEXT = /Error connecting to Search Index Management service|SearchIndexManagementHostUnreachable|connectivity of gRPC channel/i;
+
+/** The error says that the server has search, but cannot reach its search process (mongot) now. */
+export function isSearchUnreachable(err: unknown): boolean {
+  const e = err as { code?: unknown; codeName?: unknown; message?: unknown } | undefined;
+  return (
+    (typeof e?.code === 'number' && UNREACHABLE_CODES.has(e.code)) ||
+    e?.codeName === 'SearchIndexManagementHostUnreachable' ||
+    (typeof e?.message === 'string' && UNREACHABLE_TEXT.test(e.message))
+  );
+}
+
+export const SEARCH_UNREACHABLE_HELP =
+  'The server is set up for search but cannot reach mongot, the process that builds and queries the search indexes: check that it is running and that mongotHost and searchIndexManagementHostAndPort point to it.';
+
+/**
+ * A validation error of mongot without the path of the command it was in: `"userCommand.indexes[0].mappings" is required`
+ * becomes `"mappings" is required`, as the same error is said when the index is changed.
+ */
+export function searchErrorText(message: string): string {
+  return message.replace(/"userCommand\.indexes\[\d+\]\./g, '"');
+}
+
+// ---- types
+
+/**
+ * The type of a definition by its shape: `mappings` for search, a `fields` list for vectorSearch;
+ * undefined when it has neither.
+ */
+export function definitionType(definition: unknown): SearchIndexType | undefined {
+  if (!isPlainObject(definition)) return undefined;
+  if (isPlainObject(definition.mappings)) return 'search';
+  if (Array.isArray(definition.fields)) return 'vectorSearch';
+  return undefined;
+}
+
+/**
+ * The type of an index of $listSearchIndexes. Atlas says it (`type`); MongoDB Community's mongot
+ * does not, so it is told from the definition.
+ */
+export function searchIndexType(index: { type?: unknown; latestDefinition?: unknown }): SearchIndexType | string {
+  if (typeof index.type === 'string' && index.type) return index.type;
+  return definitionType(index.latestDefinition) ?? 'search';
+}
+
+const TYPE_NAMES: Record<SearchIndexType, string> = { search: 'search', vectorSearch: 'vector search' };
+
+/** Why a definition of the other type is refused, in the terms of the dialog; undefined when it fits. */
+export function definitionTypeMismatch(type: SearchIndexType, definition: unknown): string | undefined {
+  const actual = definitionType(definition);
+  if (!actual || actual === type) return undefined;
+  return type === 'search'
+    ? `A ${TYPE_NAMES.search} index is defined by its mappings, e.g. { mappings: { dynamic: true } }; this definition has a fields list, as a ${TYPE_NAMES.vectorSearch} index has.`
+    : `A ${TYPE_NAMES.vectorSearch} index is defined by a fields list, e.g. { fields: [{ type: "vector", path: "embedding", numDimensions: 1536, similarity: "cosine" }] }; this definition has mappings, as a ${TYPE_NAMES.search} index has.`;
+}
 
 // ---- summaries
 

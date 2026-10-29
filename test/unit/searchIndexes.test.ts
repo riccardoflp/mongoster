@@ -4,9 +4,15 @@ import { CompletionKind, CompletionResult, FieldHint, SearchIndexHint, complete,
 import { FIRST_STAGES, PipelineStage, STAGE_TEMPLATES, misplacedFirstStages, parseStageBody } from '../../src/shared/pipeline';
 import { parseQuery } from '../../src/shared/query';
 import { analyzeSchema } from '../../src/shared/schema';
+import { toInfo } from '../../src/searchIndexes';
 import {
+  definitionType,
+  definitionTypeMismatch,
   dynamicDefinition,
+  isSearchUnreachable,
   isSearchUnsupported,
+  searchErrorText,
+  searchIndexType,
   mappedPaths,
   readVectorForm,
   searchFieldTypes,
@@ -58,7 +64,7 @@ describe('isSearchUnsupported', () => {
       isSearchUnsupported(new Error('Using Atlas Search Database Commands and the $listSearchIndexes aggregation stage requires additional configuration.')),
     ).toBe(true);
     expect(isSearchUnsupported({ message: "Unrecognized pipeline stage name: '$listSearchIndexes'" })).toBe(true);
-    expect(isSearchUnsupported({ message: 'Error connecting to Search Index Management service: mongot unreachable' })).toBe(true);
+    expect(isSearchUnsupported({ message: 'This command requires a mongot to be configured' })).toBe(true);
   });
 
   it('leaves real errors as errors', () => {
@@ -67,6 +73,175 @@ describe('isSearchUnsupported', () => {
     expect(isSearchUnsupported(new Error('Index already exists with a different definition'))).toBe(false);
     expect(isSearchUnsupported(undefined)).toBe(false);
     expect(isSearchUnsupported('mongot')).toBe(false);
+  });
+});
+
+describe('isSearchUnreachable', () => {
+  // As MongoDB Community 8.3.13 says it when its mongot (1.70.5) is stopped.
+  const listing = {
+    message: 'Executor error during aggregate command on namespace: searchtest.movies :: caused by :: Error connecting to Search Index Management service.',
+    code: 508,
+    codeName: 'SearchIndexManagementHostUnreachable',
+  };
+  const command = new Error('Error connecting to Search Index Management service.');
+  const query = { message: 'Failed to establish connectivity of gRPC channel before deadline 2026-10-29T01:14:11.573+01:00', code: 6, codeName: 'HostUnreachable' };
+
+  it('tells a mongot that does not answer from a server without search', () => {
+    for (const err of [listing, command, query]) {
+      expect(isSearchUnreachable(err)).toBe(true);
+      expect(isSearchUnsupported(err)).toBe(false);
+    }
+    expect(isSearchUnsupported({ message: 'Error connecting to Search Index Management service: mongot unreachable' })).toBe(false);
+    expect(isSearchUnreachable({ code: 31082, message: 'SearchNotEnabled' })).toBe(false);
+    expect(isSearchUnreachable({ code: 6, message: 'connection refused' })).toBe(false);
+    expect(isSearchUnreachable(undefined)).toBe(false);
+  });
+});
+
+describe('searchErrorText', () => {
+  it('drops the path of the command from the validation errors of mongot', () => {
+    // mongot 1.70.5: createSearchIndexes and updateSearchIndex say the same mistake in these two ways.
+    expect(searchErrorText('"userCommand.indexes[0].mappings.fields.title.type" must be one of [autocomplete, string]')).toBe(
+      '"mappings.fields.title.type" must be one of [autocomplete, string]',
+    );
+    expect(searchErrorText('"userCommand.indexes[0].fields[0].numDimensions" must be within bounds [1..8192]')).toBe(
+      '"fields[0].numDimensions" must be within bounds [1..8192]',
+    );
+    expect(searchErrorText('"fields" is required')).toBe('"fields" is required');
+    expect(searchErrorText('references non-existent analyzers: lucene.nope')).toBe('references non-existent analyzers: lucene.nope');
+  });
+});
+
+describe('search index types', () => {
+  it('tells the type by the shape of the definition', () => {
+    expect(definitionType({ mappings: { dynamic: true } })).toBe('search');
+    expect(definitionType({ mappings: { dynamic: false, fields: {} }, synonyms: [] })).toBe('search');
+    expect(definitionType({ fields: [{ type: 'vector', path: 'v', numDimensions: 3, similarity: 'cosine' }] })).toBe('vectorSearch');
+    expect(definitionType({ fields: [] })).toBe('vectorSearch');
+    expect(definitionType({})).toBeUndefined();
+    expect(definitionType(undefined)).toBeUndefined();
+  });
+
+  it('takes the type Atlas gives, and tells it from the definition when mongot gives none', () => {
+    expect(searchIndexType({ type: 'vectorSearch', latestDefinition: { mappings: {} } })).toBe('vectorSearch');
+    expect(searchIndexType({ type: 'search' })).toBe('search');
+    expect(searchIndexType({ latestDefinition: { fields: [{ type: 'vector', path: 'embedding' }] } })).toBe('vectorSearch');
+    expect(searchIndexType({ latestDefinition: { mappings: { dynamic: true } } })).toBe('search');
+    expect(searchIndexType({})).toBe('search');
+  });
+
+  it('refuses a definition of the other type with what the type takes', () => {
+    expect(definitionTypeMismatch('search', { mappings: { dynamic: true } })).toBeUndefined();
+    expect(definitionTypeMismatch('vectorSearch', { fields: [] })).toBeUndefined();
+    expect(definitionTypeMismatch('search', {})).toBeUndefined();
+    expect(definitionTypeMismatch('search', { fields: [{ type: 'vector' }] })).toMatch(/^A search index is defined by its mappings/);
+    expect(definitionTypeMismatch('vectorSearch', { mappings: { dynamic: true } })).toMatch(/^A vector search index is defined by a fields list/);
+  });
+});
+
+describe('toInfo: $listSearchIndexes of MongoDB Community 8.3.13 with mongot 1.70.5', () => {
+  // Captured from the server: mongot gives no `type`, and `hostname` is an id rather than a host name.
+  const createdAt = new Date('2026-10-29T00:08:10.000Z');
+  const vectorDefinition = {
+    fields: [
+      { type: 'vector', path: 'embedding', numDimensions: 3, similarity: 'cosine' },
+      { type: 'filter', path: 'year' },
+    ],
+  };
+  const pendingVector = {
+    id: '6ae28e6a9199231f348eef68',
+    name: 'vector_index',
+    status: 'PENDING',
+    queryable: false,
+    latestDefinitionVersion: { version: 0, createdAt },
+    latestDefinition: vectorDefinition,
+    statusDetail: [],
+  };
+  const readyStatic = {
+    id: '6ae28e6a9199231f348eef67',
+    name: 'static',
+    status: 'READY',
+    queryable: true,
+    latestDefinitionVersion: { version: 0, createdAt },
+    latestDefinition: { mappings: { dynamic: false, fields: { title: [{ type: 'string' }, { type: 'autocomplete' }], year: { type: 'number' } } } },
+    statusDetail: [
+      {
+        hostname: '6ae28e399199231f348eef58',
+        status: 'READY',
+        queryable: true,
+        mainIndex: {
+          status: 'READY',
+          queryable: true,
+          definitionVersion: { version: 0, createdAt },
+          // The definition with the defaults of mongot filled in: the list shows latestDefinition instead.
+          definition: {
+            mappings: {
+              dynamic: false,
+              fields: {
+                year: { type: 'number', representation: 'double', indexDoubles: true, indexIntegers: true },
+                title: [
+                  { type: 'autocomplete', minGrams: 2, maxGrams: 15, foldDiacritics: true, tokenization: 'edgeGram' },
+                  { type: 'string', indexOptions: 'offsets', store: true, norms: 'include' },
+                ],
+              },
+            },
+          },
+        },
+      },
+    ],
+  };
+  // While updateSearchIndex builds the new definition, the old one (mainIndex) still answers the queries.
+  const updating = {
+    id: '6ae28ed89199231f348eef6c',
+    name: 'dyn2',
+    status: 'BUILDING',
+    queryable: true,
+    latestDefinitionVersion: { version: 1, createdAt },
+    latestDefinition: { mappings: { dynamic: false, fields: { title: { type: 'string' }, year: { type: 'number' } } } },
+    statusDetail: [
+      {
+        hostname: '6ae28e399199231f348eef58',
+        status: 'BUILDING',
+        queryable: true,
+        mainIndex: { status: 'READY', queryable: true, definitionVersion: { version: 0, createdAt }, definition: { mappings: { dynamic: true, fields: {} } } },
+      },
+    ],
+  };
+
+  it('reads a vector index being created as a vector index', () => {
+    const info = toInfo(pendingVector);
+    expect(info).toEqual({ name: 'vector_index', type: 'vectorSearch', status: 'PENDING', queryable: false, definition: vectorDefinition, message: undefined, hosts: undefined });
+    expect(summarizeSearchDefinition(info.type, info.definition)).toEqual(['embedding · 3 dims · cosine', 'filter: year']);
+    expect(searchStatusPending(info.status)).toBe(true);
+    expect(searchIndexCommand('movies', info.name, 'vectorSearch', info.definition)).toMatch(/^db\.getCollection\("movies"\)\.createSearchIndex\("vector_index", "vectorSearch", /);
+  });
+
+  it('shows the definition as it was given, with the status of each host', () => {
+    const info = toInfo(readyStatic);
+    expect(info.type).toBe('search');
+    expect(info.definition).toEqual(readyStatic.latestDefinition);
+    expect(info.hosts).toEqual([{ host: '6ae28e399199231f348eef58', status: 'READY', queryable: true, message: undefined, staged: undefined }]);
+    expect(summarizeSearchDefinition(info.type, info.definition)).toEqual(['2 fields: title (string, autocomplete), year (number)']);
+  });
+
+  it('follows an index being changed until its new definition is ready', () => {
+    const info = toInfo(updating);
+    expect(info).toMatchObject({ name: 'dyn2', type: 'search', status: 'BUILDING', queryable: true });
+    expect(info.hosts).toEqual([{ host: '6ae28e399199231f348eef58', status: 'BUILDING', queryable: true, message: undefined, staged: undefined }]);
+    expect(searchStatusPending(info.status)).toBe(true);
+  });
+
+  it('keeps the type Atlas gives and its staged index', () => {
+    const info = toInfo({
+      name: 'v',
+      type: 'vectorSearch',
+      status: 'READY',
+      queryable: true,
+      latestDefinition: vectorDefinition,
+      statusDetail: [{ hostname: 'atlas-shard-00-01', mainIndex: { status: 'READY', queryable: true }, stagedIndex: { status: 'PENDING', message: 'waiting' } }],
+    });
+    expect(info.type).toBe('vectorSearch');
+    expect(info.hosts).toEqual([{ host: 'atlas-shard-00-01', status: 'READY', queryable: true, message: 'waiting', staged: 'PENDING' }]);
   });
 });
 

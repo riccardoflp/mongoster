@@ -8,6 +8,7 @@ import { buildPipeline, toBson } from './queries';
 import { isWriteStage, textToPipeline } from './shared/pipeline';
 import { relaxEjson, toShell } from './shared/query';
 import { FieldSchema, analyzeSchema } from './shared/schema';
+import { searchIndexType } from './shared/searchIndexes';
 
 /** What the tools need from the extension. */
 export interface ToolHost {
@@ -176,7 +177,7 @@ export function mcpTools(host: ToolHost): McpTool[] {
           'Indexes:',
           ...(indexes.length ? indexes.map((ix) => `- ${ix.name}: ${shell(ix.key)}${ix.unique ? ' unique' : ''}${ix.sparse ? ' sparse' : ''}${ix.expireAfterSeconds !== undefined ? ` TTL ${ix.expireAfterSeconds}s` : ''}${ix.partialFilterExpression ? ` partial ${shell(ix.partialFilterExpression)}` : ''}${ix.hidden ? ' hidden' : ''}`) : ['- none (a view)']),
           ...(searchIndexes.length
-            ? ['', 'Search indexes (the `index` of $search / $vectorSearch, which must be the first stage):', ...searchIndexes.map((ix) => `- ${ix.name}: ${ix.type ?? 'search'}${ix.status ? ` ${ix.status}` : ''} ${shell(ix.latestDefinition ?? {})}`)]
+            ? ['', 'Search indexes (the `index` of $search / $vectorSearch, which must be the first stage):', ...searchIndexes.map((ix) => `- ${ix.name}: ${searchIndexType(ix)}${ix.status ? ` ${ix.status}` : ''} ${shell(ix.latestDefinition ?? {})}`)]
             : []),
           '',
           'Fields (path: types, % of documents that have it):',

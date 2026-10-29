@@ -7,7 +7,17 @@ import { relaxed } from './documentFs';
 import { fromRelaxed } from './queries';
 import { errorMessage } from './tree';
 import { isPlainObject, parseQuery } from './shared/query';
-import { DEFAULT_NAMES, SEARCH_UNSUPPORTED_HELP, SearchIndexType, isSearchUnsupported } from './shared/searchIndexes';
+import {
+  DEFAULT_NAMES,
+  SEARCH_UNREACHABLE_HELP,
+  SEARCH_UNSUPPORTED_HELP,
+  SearchIndexType,
+  definitionTypeMismatch,
+  isSearchUnreachable,
+  isSearchUnsupported,
+  searchErrorText,
+  searchIndexType,
+} from './shared/searchIndexes';
 import type { SearchIndexInfo } from './shared/messages';
 
 const TYPES: SearchIndexType[] = ['search', 'vectorSearch'];
@@ -18,11 +28,12 @@ export async function loadSearchIndexes(coll: Collection): Promise<{ indexes: Se
     return { indexes: list.map(toInfo) };
   } catch (err) {
     if (isSearchUnsupported(err)) return { indexes: [], unsupported: errorMessage(err) };
-    return { indexes: [], error: errorMessage(err) };
+    return { indexes: [], error: explain(err).message };
   }
 }
 
-function toInfo(doc: Document): SearchIndexInfo {
+/** An index of $listSearchIndexes as the tab shows it; exported for the tests. */
+export function toInfo(doc: Document): SearchIndexInfo {
   const raw = relaxed(doc) as Record<string, unknown>;
   const text = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
   const hosts = Array.isArray(raw.statusDetail)
@@ -40,7 +51,7 @@ function toInfo(doc: Document): SearchIndexInfo {
     : undefined;
   return {
     name: String(raw.name),
-    type: text(raw.type) ?? 'search',
+    type: searchIndexType(raw),
     status: text(raw.status),
     queryable: typeof raw.queryable === 'boolean' ? raw.queryable : undefined,
     definition: isPlainObject(raw.latestDefinition) ? raw.latestDefinition : {},
@@ -49,9 +60,12 @@ function toInfo(doc: Document): SearchIndexInfo {
   };
 }
 
-/** The error of a command, said in terms of what the server lacks when it has no search. */
+/** The error of a command, said in terms of what the server lacks when it has no search or cannot reach mongot. */
 function explain(err: unknown): Error {
-  return new Error(isSearchUnsupported(err) ? `${SEARCH_UNSUPPORTED_HELP}\n${errorMessage(err)}` : errorMessage(err));
+  const message = searchErrorText(errorMessage(err));
+  if (isSearchUnsupported(err)) return new Error(`${SEARCH_UNSUPPORTED_HELP}\n${message}`);
+  if (isSearchUnreachable(err)) return new Error(`${SEARCH_UNREACHABLE_HELP}\n${message}`);
+  return new Error(message);
 }
 
 /**
@@ -67,13 +81,21 @@ export async function saveSearchIndex(coll: Collection, original: string | undef
     throw new Error(`Definition: ${errorMessage(err)}`);
   }
   if (!isPlainObject(value)) throw new Error('The definition must be an object, e.g. { mappings: { dynamic: true } }');
+  const mismatch = definitionTypeMismatch(type as SearchIndexType, value);
+  if (mismatch) throw new Error(mismatch);
   const definition = fromRelaxed(value) as Document;
   try {
     if (original !== undefined) {
       await coll.updateSearchIndex(original, definition);
       return `Search index ${original}: the new definition is being built. Queries keep using the previous one until it is ready.`;
     }
-    const created = await coll.createSearchIndex({ name: name.trim() || DEFAULT_NAMES[type as SearchIndexType], type, definition });
+    const indexName = name.trim() || DEFAULT_NAMES[type as SearchIndexType];
+    // mongot takes a second index of the same name and definition without a word, and Atlas says the
+    // name is taken in its own terms: the name is checked first (when the list can't be read, the
+    // command says what is wrong).
+    const taken = await coll.listSearchIndexes(indexName).toArray().then((l) => l.length > 0, () => false);
+    if (taken) throw new Error(`A search index named ${indexName} already exists: open it in the list to change its definition, or choose another name.`);
+    const created = await coll.createSearchIndex({ name: indexName, type, definition });
     return `Created search index ${created}: it is being built, and can be queried once its status is READY.`;
   } catch (err) {
     throw explain(err);
