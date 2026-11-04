@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
 
 - **Insert dialog**: `Insert` (in the toolbar, or `+` on a collection in the tree) opens a dialog in the collection's tab instead of an editor tab to save: type or paste the documents and press `Insert` (`Ctrl+Enter`). It takes one document, an array (inserted with `insertMany`), JSON Lines or a pasted `insertOne(…)` / `insertMany(…)`, in mongosh syntax or Extended JSON, with autocomplete and syntax colors, and says while you type how many documents it found or what's wrong. `Template` starts from the collection's fields; errors (a duplicate `_id`, validation) show in the dialog, and when one of several documents is refused it says how many went in. `Keep open` inserts several in a row; `Open in Editor` still opens an editor tab. `Duplicate` opens the dialog with the copy.
 - **Copy as**: `Copy ▾` in the document dialog copies the document as mongosh, Extended JSON, plain JSON, YAML or an `insertOne` command. The same formats are in a new right-click menu on the rows, with `Open document`, `Copy value`, `Duplicate…` and `Delete document`.
