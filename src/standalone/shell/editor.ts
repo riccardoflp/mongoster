@@ -145,6 +145,7 @@ export function openEditor(request: EditorOpen): void {
       title: request.title,
       tooltip: request.tooltip,
       icon: { id: request.language === 'json' ? 'json' : request.language === 'javascript' ? 'file-code' : 'file' },
+      colorTitle: true,
       content: container,
       shown: () => editor.layout(),
       focus: () => editor.focus(),
@@ -168,10 +169,11 @@ function select(entry: Entry, selection: Span): void {
   entry.editor.revealRangeInCenterIfOutsideViewport(range);
 }
 
-export function updateEditor(id: number, changes: { title?: string; tooltip?: string; language?: string; text?: string; readOnly?: boolean; dirty?: boolean; actions?: MenuAction[]; keys?: { key: string; command: string }[] }): void {
+export function updateEditor(id: number, changes: { title?: string; tooltip?: string; color?: string; language?: string; text?: string; readOnly?: boolean; dirty?: boolean; actions?: MenuAction[]; keys?: { key: string; command: string }[] }): void {
   const entry = entries.get(id);
   if (!entry) return;
-  const { language, text, readOnly, keys, ...tabChanges } = changes;
+  const { language, text, readOnly, keys, color, ...tabChanges } = changes;
+  if (color !== undefined) update(entry.tab, { color: color || undefined });
   if (language !== undefined) monaco.editor.setModelLanguage(entry.model, language);
   if (text !== undefined && text !== entry.model.getValue()) entry.model.setValue(text);
   if (readOnly !== undefined) entry.editor.updateOptions({ readOnly });

@@ -269,11 +269,6 @@ export function themeInfo(kind: ThemeKind): ThemeInfo {
   return { kind, vars: { ...FONTS, ...(kind === 'dark' ? DARK : LIGHT) }, syntax: { ...SYNTAX[kind] } };
 }
 
-/** The color of a theme color id (`charts.red`), for the icons of the tree. */
-export function themeColor(kind: ThemeKind, id: string): string | undefined {
-  return (kind === 'dark' ? DARK : LIGHT)[id.replace(/\./g, '-')];
-}
-
 interface SyntaxColors {
   comment: string;
   string: string;

@@ -231,12 +231,14 @@ export type HostMessage =
 // Playground result tab
 
 export type PlaygroundHostMessage =
-  | { type: 'running'; title: string; target: string }
+  | { type: 'running'; title: string; target: string; color?: string }
   | {
       type: 'result';
       title: string;
       /** "connection › database" */
       target: string;
+      /** The connection's color. */
+      color?: string;
       durationMs: number;
       kind: 'documents' | 'value' | 'none';
       /** Relaxed EJSON. */

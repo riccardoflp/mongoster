@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as vscode from 'vscode';
 import type { MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
+import { paintTab } from './connectionColors';
 import type { DiagramHostMessage, DiagramViewMessage } from './shared/messages';
 import { analyzeRelations } from './relationsAnalysis';
 import { Box, RelGraph, toSvg } from './shared/relations';
@@ -38,6 +39,7 @@ export class DiagramPanel {
     for (const p of DiagramPanel.panels.values()) {
       if (p.scope.connectionId !== info.id) continue;
       p.info = info;
+      paintTab(p.panel, p.context.extensionUri, info.color);
       p.postInit();
     }
   }
@@ -60,7 +62,7 @@ export class DiagramPanel {
       vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')] },
     );
-    this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'mongoster.svg');
+    paintTab(this.panel, context.extensionUri, info.color);
     this.panel.webview.html = this.html();
     this.panel.onDidDispose(() => DiagramPanel.panels.delete(scopeKey(scope)));
     this.panel.webview.onDidReceiveMessage((m: DiagramViewMessage) => void this.receive(m));

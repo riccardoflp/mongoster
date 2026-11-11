@@ -10,6 +10,10 @@ export interface TabSpec extends TabRef {
   tooltip?: string;
   /** The URL of an image, or a codicon id. */
   icon?: { src: string } | { id: string };
+  /** A CSS color: a line of that color above the tab (the color of its connection). */
+  color?: string;
+  /** The name takes `color` too: editors, whose names VS Code colors with the decorations. */
+  colorTitle?: boolean;
   content: HTMLElement;
   /** Its tab was selected. */
   shown?(): void;
@@ -63,7 +67,13 @@ function drawTab(tab: Tab): void {
   tab.el.replaceChildren();
   tab.el.title = tab.tooltip ?? tab.title;
   if (tab.icon) tab.el.append('src' in tab.icon ? h('img', { class: 'tab-icon', src: tab.icon.src, alt: '' }) : icon(tab.icon.id, 'tab-icon'));
-  tab.el.append(h('span', { class: 'tab-title' }, tab.title));
+  const title = h('span', { class: 'tab-title' }, tab.title);
+  tab.el.classList.toggle('colored', !!tab.color);
+  if (tab.color) {
+    tab.el.style.setProperty('--tab-color', tab.color);
+    if (tab.colorTitle) title.style.color = tab.color;
+  } else tab.el.style.removeProperty('--tab-color');
+  tab.el.append(title);
   tab.el.classList.toggle('dirty', tab.dirty);
   tab.el.append(
     iconButton(tab.dirty ? 'circle-filled' : 'close', tab.dirty ? 'Unsaved changes — close' : 'Close (Ctrl+W)', () => requestClose(tab)),
@@ -174,7 +184,7 @@ export function touched(tab: Tab): void {
   activate(tab, false);
 }
 
-export function update(tab: Tab, changes: Partial<Pick<Tab, 'title' | 'tooltip' | 'icon' | 'dirty' | 'actions'>>): void {
+export function update(tab: Tab, changes: Partial<Pick<Tab, 'title' | 'tooltip' | 'icon' | 'color' | 'dirty' | 'actions'>>): void {
   Object.assign(tab, changes);
   drawTab(tab);
   if (changes.actions) drawActions(tab.group);

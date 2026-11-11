@@ -67,7 +67,7 @@ function receive(m: HostMessage): void {
       treeChanged(m.handle);
       break;
     case 'panelOpen':
-      openPanel(m.id, m.title, m.icon, m.src, m.column, m.preserveFocus);
+      openPanel(m.id, m.title, m.icon, m.color, m.src, m.column, m.preserveFocus);
       break;
     case 'panelUpdate':
       updatePanel(m.id, m);

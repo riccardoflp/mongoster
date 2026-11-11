@@ -43,6 +43,7 @@ import {
   withProgress,
 } from './ui';
 import { createWebviewPanel } from './webview';
+import { registerFileDecorationProvider } from './decorations';
 
 export * from './base';
 export { TextDocument, TextEditor } from './documents';
@@ -133,6 +134,7 @@ export const window = {
   createOutputChannel,
   createTreeView,
   createWebviewPanel,
+  registerFileDecorationProvider,
   showTextDocument,
   onDidChangeActiveTextEditor,
   onDidChangeActiveColorTheme,

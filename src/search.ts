@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { ThemeColors } from './themeColors';
 import { BSON, Document, FindCursor, MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
+import { paintTab } from './connectionColors';
 import type { DocumentFileSystem } from './documentFs';
 import { fromRelaxed } from './queries';
 import type { SearchCollection, SearchHit, SearchHostMessage, SearchOptions, SearchProgress, SearchResult, SearchViewMessage } from './shared/messages';
@@ -230,6 +231,7 @@ export class SearchPanel {
       if (p.scope.connectionId !== info.id) continue;
       p.info = info;
       p.panel.title = scopeTitle(p.scope, info);
+      paintTab(p.panel, p.context.extensionUri, info.color);
       p.postInit();
     }
   }
@@ -251,7 +253,7 @@ export class SearchPanel {
       vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')] },
     );
-    this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'mongoster.svg');
+    paintTab(this.panel, context.extensionUri, info.color);
     this.panel.webview.html = this.html();
     ThemeColors.attach(this.panel);
     this.panel.onDidDispose(() => {

@@ -148,7 +148,9 @@ function row(node: Node): HTMLElement {
       el.append(glyph);
     }
   }
-  el.append(h('span', { class: 'row-label' }, data.label));
+  const name = h('span', { class: 'row-label' }, data.label);
+  if (data.color) name.style.setProperty('--label-color', data.color);
+  el.append(name);
   if (data.description) el.append(h('span', { class: 'row-description' }, data.description));
   if (data.inline.length) {
     el.append(

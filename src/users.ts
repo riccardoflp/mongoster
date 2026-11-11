@@ -4,6 +4,7 @@
 import * as vscode from 'vscode';
 import { BSON, Document, MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
+import { paintTab } from './connectionColors';
 import type { Privilege, RoleEntry, RoleRef, UserEntry, UsersHostMessage, UsersViewMessage } from './shared/messages';
 import { isPlainObject, parseQuery, relaxEjson } from './shared/query';
 import { toBson } from './queries';
@@ -80,6 +81,7 @@ export class UsersPanel {
     if (!p) return;
     p.info = info;
     p.panel.title = `Users: ${info.name}`;
+    paintTab(p.panel, p.context.extensionUri, info.color);
     void p.postInit();
   }
 
@@ -98,7 +100,7 @@ export class UsersPanel {
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')],
     });
-    this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'mongoster.svg');
+    paintTab(this.panel, context.extensionUri, info.color);
     this.panel.webview.html = this.html();
     this.panel.onDidDispose(() => UsersPanel.panels.delete(info.id));
     this.panel.webview.onDidReceiveMessage((m: UsersViewMessage) => void this.receive(m));

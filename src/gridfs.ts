@@ -8,6 +8,7 @@ import { pipeline } from 'stream/promises';
 import { Transform } from 'stream';
 import { BSON, Document, GridFSBucket, MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
+import { paintTab } from './connectionColors';
 import type { DocumentFileSystem } from './documentFs';
 import type { GridFSHostMessage, GridFSViewMessage, GridFile, GridSort } from './shared/messages';
 import { hexDump } from './shared/gridfs';
@@ -244,7 +245,7 @@ export class GridFSPanel {
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')],
     });
-    this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'mongoster.svg');
+    paintTab(this.panel, context.extensionUri, this.info()?.color);
     this.panel.webview.html = this.html();
     this.panel.onDidDispose(() => GridFSPanel.panels.delete(targetKey(target)));
     this.panel.webview.onDidReceiveMessage((m: GridFSViewMessage) => void this.receive(m));
@@ -268,6 +269,7 @@ export class GridFSPanel {
 
   private postInit(): void {
     const info = this.info();
+    paintTab(this.panel, this.context.extensionUri, info?.color);
     this.post({ type: 'init', connectionName: info?.name ?? '?', readOnly: !!info?.readOnly, color: info?.color, database: this.target.database, bucket: this.target.bucket });
   }
 

@@ -2,13 +2,12 @@
 // nodes it shows; the title actions, the inline actions and the context menu come from package.json.
 import { Menu, MenuItemConstructorOptions } from 'electron';
 import type { MenuAction, TreeItemData } from '../protocol';
-import { themeColor } from '../theme';
-import { themeKind } from './appearance';
 import { Disposable, ThemeIcon, TreeDataProvider, TreeItem, TreeItemCollapsibleState, Uri } from './base';
 import { onRequest, onShell, post } from './bridge';
 import { runCommand } from './commands';
 import { action, commandInfo, menu } from './contributions';
 import { runtime } from './runtime';
+import { cssColor, decorationColor } from './decorations';
 
 interface View {
   id: string;
@@ -44,7 +43,8 @@ const APP_PROTOCOL = 'mongoster-app';
 
 function iconOf(item: TreeItem): TreeItemData['icon'] {
   const icon = item.iconPath;
-  if (icon instanceof ThemeIcon) return { id: icon.id, color: icon.color && themeColor(themeKind(), icon.color.id) };
+  // The theme's variable: the color changes with the theme.
+  if (icon instanceof ThemeIcon) return { id: icon.id, color: icon.color && cssColor(icon.color) };
   if (icon instanceof Uri) return { src: `${APP_PROTOCOL}://res${icon.path}` };
   return undefined;
 }
@@ -105,6 +105,7 @@ onRequest('treeChildren', async ({ handle }): Promise<TreeItemData[]> => {
       description: typeof item.description === 'string' ? item.description : undefined,
       tooltip: item.tooltip,
       icon: iconOf(item),
+      color: await decorationColor(item.resourceUri),
       collapsible: item.collapsibleState === TreeItemCollapsibleState.Expanded ? 2 : item.collapsibleState === TreeItemCollapsibleState.Collapsed ? 1 : 0,
       hasCommand: !!item.command,
       inline: menu('view/item/context', { view: current.id, viewItem: item.contextValue })

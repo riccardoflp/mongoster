@@ -28,6 +28,7 @@ import {
 } from './base';
 import { onRequest, onShell, post } from './bridge';
 import { action, keybindings, menu } from './contributions';
+import { decorationColor, onDidChangeDecorations } from './decorations';
 import { themeFile } from '../theme';
 import { outputText, showErrorMessage, showSaveDialog, showWarningMessage } from './ui';
 
@@ -332,6 +333,18 @@ function editorContext(doc: TextDocument) {
   };
 }
 
+/** Gives the editor's tab the color the decorations give its document (a connection's color, say). */
+async function paintEditor(editor: TextEditor): Promise<void> {
+  const uri = editor.document.uri;
+  const color = await decorationColor(uri);
+  if (editors.get(editor.id) !== editor || editor.document.uri !== uri) return;
+  post({ type: 'editorUpdate', id: editor.id, color: color ?? '' });
+}
+
+onDidChangeDecorations(() => {
+  for (const editor of editors.values()) void paintEditor(editor);
+});
+
 function editorChrome(doc: TextDocument) {
   const context = editorContext(doc);
   return {
@@ -364,6 +377,7 @@ export async function showTextDocument(target: TextDocument | Uri, optionsOrColu
       selection: options.selection && span(options.selection),
       ...editorChrome(doc),
     });
+    void paintEditor(editor);
   }
   if (options.selection) editor.selected(new Selection(options.selection.start, options.selection.end));
   if (!options.preserveFocus) setActive(editor);
@@ -444,6 +458,7 @@ async function saveAs(doc: TextDocument): Promise<boolean> {
     if (editor.document !== doc) continue;
     editor.document = saved;
     post({ type: 'editorUpdate', id: editor.id, uri: target.toString(), language: saved.languageId, dirty: false, ...editorChrome(saved) });
+    void paintEditor(editor);
   }
   if (!other) openedEmitter.fire(saved);
   savedEmitter.fire(saved);

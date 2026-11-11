@@ -26,6 +26,7 @@ import { McpServer } from './mcpServer';
 import { MONITOR_TABS, OpenQueryArgs, WorkspaceHost } from './mcp/workspace';
 import { QueryHistory } from './queryHistory';
 import { exportConnections, importConnections } from './connectionsTransfer';
+import { ConnectionDecorations } from './connectionColors';
 import type { QueryText } from './shared/messages';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -112,6 +113,8 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   void mcp.restart();
 
+  const playgrounds = new Playgrounds(context, connections);
+  const decorations = new ConnectionDecorations(connections, [DOC_SCHEME, DEF_SCHEME], [playgrounds]);
   context.subscriptions.push(
     connections,
     history,
@@ -119,7 +122,9 @@ export function activate(context: vscode.ExtensionContext): void {
     mcp,
     vscode.commands.registerCommand('mongoster.mcp.setup', () => mcp.setup()),
     vscode.commands.registerCommand('mongoster.mcp.changePort', () => mcp.changePort()),
-    new Playgrounds(context, connections),
+    playgrounds,
+    decorations,
+    vscode.window.registerFileDecorationProvider(decorations),
     treeView,
     vscode.workspace.registerFileSystemProvider(DOC_SCHEME, documents, { isCaseSensitive: true }),
     documents.onDidSave((ref) => CollectionPanel.refresh(ref)),

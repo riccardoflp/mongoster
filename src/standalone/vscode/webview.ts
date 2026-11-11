@@ -3,9 +3,10 @@
 import * as path from 'path';
 import type { Column, ThemeInfo } from '../protocol';
 import { themeInfo } from '../theme';
-import { Event, EventEmitter, Thenable, Uri, ViewColumn } from './base';
+import { Event, EventEmitter, Thenable, ThemeColor, Uri, ViewColumn } from './base';
 import { onShell, post } from './bridge';
-import { themeKind } from './appearance';
+import { onDidChangeActiveColorTheme, themeKind } from './appearance';
+import { cssColor } from './decorations';
 import { runtime } from './runtime';
 
 /** The protocol the app serves its own files and the webviews' documents from. */
@@ -69,6 +70,9 @@ export class Webview {
   }
 }
 
+/** An icon, or one for each kind of theme. */
+export type IconPath = Uri | { light: Uri; dark: Uri };
+
 export interface WebviewPanelOnDidChangeViewStateEvent {
   readonly webviewPanel: WebviewPanel;
 }
@@ -79,7 +83,8 @@ export class WebviewPanel {
   active = true;
   viewColumn: ViewColumn | undefined;
   private name: string;
-  private icon: Uri | undefined;
+  private icon: IconPath | undefined;
+  private color: ThemeColor | undefined;
   private disposed = false;
   private readonly disposeEmitter = new EventEmitter<void>();
   private readonly stateEmitter = new EventEmitter<WebviewPanelOnDidChangeViewStateEvent>();
@@ -106,13 +111,30 @@ export class WebviewPanel {
     post({ type: 'panelUpdate', id: this.id, title: value });
   }
 
-  get iconPath(): Uri | undefined {
+  get iconPath(): IconPath | undefined {
     return this.icon;
   }
 
-  set iconPath(value: Uri | undefined) {
+  set iconPath(value: IconPath | undefined) {
     this.icon = value;
-    post({ type: 'panelUpdate', id: this.id, icon: value ? this.webview.asWebviewUri(value).toString() : '' });
+    if (this.webview.announced) post({ type: 'panelUpdate', id: this.id, icon: this.iconUrl() ?? '' });
+  }
+
+  /** The URL of the icon for the current theme. */
+  iconUrl(): string | undefined {
+    const icon = this.icon instanceof Uri || !this.icon ? this.icon : this.icon[themeKind()];
+    return icon && this.webview.asWebviewUri(icon).toString();
+  }
+
+  /** The app's own: the color of a line above the tab (Mongoster gives the tabs of a connection its color). */
+  get tabColor(): ThemeColor | undefined {
+    return this.color;
+  }
+
+  set tabColor(value: ThemeColor | undefined) {
+    if (value?.id === this.color?.id) return;
+    this.color = value;
+    if (this.webview.announced) post({ type: 'panelUpdate', id: this.id, color: value ? cssColor(value) : '' });
   }
 
   reveal(viewColumn?: ViewColumn, preserveFocus?: boolean): void {
@@ -169,7 +191,8 @@ export function createWebviewPanel(
       type: 'panelOpen',
       id,
       title: panel.title,
-      icon: panel.iconPath ? panel.webview.asWebviewUri(panel.iconPath).toString() : undefined,
+      icon: panel.iconUrl(),
+      color: panel.tabColor && cssColor(panel.tabColor),
       src: panel.webview.src(),
       column: column(show.viewColumn),
       preserveFocus: !!show.preserveFocus,
@@ -179,6 +202,12 @@ export function createWebviewPanel(
 }
 
 onShell('panelClosed', (m) => panels.get(m.id)?.close(false));
+// Icons with a light and a dark version follow the theme.
+onDidChangeActiveColorTheme(() => {
+  for (const panel of panels.values()) {
+    if (panel.iconPath && !(panel.iconPath instanceof Uri) && panel.webview.announced) post({ type: 'panelUpdate', id: panel.id, icon: panel.iconUrl() ?? '' });
+  }
+});
 onShell('panelMessage', (m) => panels.get(m.id)?.webview.receive(m.message));
 
 /** The shell says which tabs are shown and which one is active. */

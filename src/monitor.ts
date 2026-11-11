@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { ThemeColors } from './themeColors';
 import { BSON, Db, Document, MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
+import { paintTab } from './connectionColors';
 import type {
   CollectionStats,
   DatabaseStats,
@@ -75,6 +76,7 @@ export class MonitorPanel {
     if (!p) return;
     p.info = info;
     p.panel.title = `Monitor: ${info.name}`;
+    paintTab(p.panel, p.context.extensionUri, info.color);
     void p.postInit();
   }
 
@@ -93,7 +95,7 @@ export class MonitorPanel {
       vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')] },
     );
-    this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'mongoster.svg');
+    paintTab(this.panel, context.extensionUri, info.color);
     this.panel.webview.html = this.html();
     ThemeColors.attach(this.panel);
     this.panel.onDidDispose(() => MonitorPanel.panels.delete(info.id));

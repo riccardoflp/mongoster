@@ -37,3 +37,28 @@ export enum TreeItemCollapsibleState {
   Collapsed = 1,
   Expanded = 2,
 }
+
+export class Uri {
+  private constructor(
+    readonly scheme: string,
+    readonly authority: string,
+    readonly path: string,
+  ) {}
+  static from(c: { scheme: string; authority?: string; path?: string }): Uri {
+    return new Uri(c.scheme, c.authority ?? '', c.path ?? '');
+  }
+  static joinPath(base: Uri, ...parts: string[]): Uri {
+    return new Uri(base.scheme, base.authority, [base.path, ...parts].join('/'));
+  }
+  toString(): string {
+    return `${this.scheme}://${this.authority}${this.path}`;
+  }
+}
+
+export class FileDecoration {
+  constructor(
+    public badge?: string,
+    public tooltip?: string,
+    public color?: ThemeColor,
+  ) {}
+}

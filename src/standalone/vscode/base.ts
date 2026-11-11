@@ -321,6 +321,21 @@ export class ThemeColor {
   constructor(readonly id: string) {}
 }
 
+// ---- decorations
+
+export class FileDecoration {
+  constructor(
+    public badge?: string,
+    public tooltip?: string,
+    public color?: ThemeColor,
+  ) {}
+}
+
+export interface FileDecorationProvider {
+  onDidChangeFileDecorations?: Event<undefined | Uri | Uri[]>;
+  provideFileDecoration(uri: Uri, token: CancellationToken): FileDecoration | undefined | null | Thenable<FileDecoration | undefined | null>;
+}
+
 export class ThemeIcon {
   static readonly File = new ThemeIcon('file');
   static readonly Folder = new ThemeIcon('folder');
@@ -344,6 +359,8 @@ export class TreeItem {
   description?: string | boolean;
   tooltip?: string;
   iconPath?: ThemeIcon | Uri;
+  /** Its name takes the color of this URI's decoration. */
+  resourceUri?: Uri;
   contextValue?: string;
   command?: Command;
   collapsibleState?: TreeItemCollapsibleState;

@@ -63,6 +63,17 @@ button.link {
   text-decoration: underline;
 }
 
+body[data-color='red'] { --conn-color: var(--vscode-charts-red, #f14c4c); }
+body[data-color='orange'] { --conn-color: var(--vscode-charts-orange, #d18616); }
+body[data-color='yellow'] { --conn-color: var(--vscode-charts-yellow, #cca700); }
+body[data-color='green'] { --conn-color: var(--vscode-charts-green, #89d185); }
+body[data-color='blue'] { --conn-color: var(--vscode-charts-blue, #3794ff); }
+body[data-color='purple'] { --conn-color: var(--vscode-charts-purple, #b180d7); }
+
+body[data-color] .bar {
+  border-top: 3px solid var(--conn-color);
+}
+
 .bar {
   display: flex;
   align-items: center;

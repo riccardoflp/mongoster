@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { ThemeColors } from './themeColors';
 import { BSON, Document, MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
+import { paintTab } from './connectionColors';
 import { openOperation } from './monitor';
 import { Advice, AdvisorCollection, AdvisorIndex, analyze } from './shared/advisor';
 import type { AdvisorHostMessage, AdvisorReport, AdvisorSources, AdvisorViewMessage } from './shared/messages';
@@ -60,6 +61,7 @@ export class AdvisorPanel {
       if (p.scope.connectionId !== info.id) continue;
       p.info = info;
       p.panel.title = scopeTitle(p.scope, info);
+      paintTab(p.panel, p.context.extensionUri, info.color);
       p.postInit();
     }
   }
@@ -80,7 +82,7 @@ export class AdvisorPanel {
       vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')] },
     );
-    this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'mongoster.svg');
+    paintTab(this.panel, context.extensionUri, info.color);
     this.panel.webview.html = this.html();
     ThemeColors.attach(this.panel);
     this.panel.onDidDispose(() => AdvisorPanel.panels.delete(scopeKey(scope)));

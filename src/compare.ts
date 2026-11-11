@@ -5,7 +5,8 @@
 import * as vscode from 'vscode';
 import { createHash } from 'crypto';
 import { AnyBulkWriteOperation, BSON, Collection, Document } from 'mongodb';
-import type { ConnectionInfo, ConnectionManager } from './connections';
+import type { ConnectionColor, ConnectionInfo, ConnectionManager } from './connections';
+import { paintTab } from './connectionColors';
 import type { DocumentFileSystem } from './documentFs';
 import { toBson } from './queries';
 import { CompareCounts, CompareOptions, DiffKind, comparable, fieldDiff } from './shared/compare';
@@ -144,7 +145,7 @@ export class ComparePanel {
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')],
     });
-    this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'mongoster.svg');
+    paintTab(this.panel, context.extensionUri, this.color());
     this.panel.webview.html = this.html();
     this.panel.webview.onDidReceiveMessage((m: CompareViewMessage) => void this.receive(m));
   }
@@ -168,8 +169,15 @@ export class ComparePanel {
     return { connectionName: info?.name ?? '?', database: t.database, collection: t.collection, readOnly: !!why, why, color: info?.color };
   }
 
+  /** The tab's color: the one both sides have, or the only one there is (comparing with production, say). */
+  private color(): ConnectionColor | undefined {
+    const [left, right] = [this.connections.get(this.left.connectionId)?.color, this.connections.get(this.right.connectionId)?.color];
+    return left === right || !right ? left : !left ? right : undefined;
+  }
+
   private postInit(): void {
     this.panel.title = this.title();
+    paintTab(this.panel, this.context.extensionUri, this.color());
     this.post({ type: 'init', left: this.sideInfo('left'), right: this.sideInfo('right'), options: this.options });
   }
 

@@ -25,6 +25,8 @@ export interface TreeItemData {
   tooltip?: string;
   /** Codicon id and its color (a CSS color), or the URL of an image. */
   icon?: { id: string; color?: string } | { src: string };
+  /** The color of the label (a CSS color), from the decoration of the item's resourceUri. */
+  color?: string;
   /** 0 none, 1 collapsed, 2 expanded. */
   collapsible: 0 | 1 | 2;
   hasCommand: boolean;
@@ -152,13 +154,15 @@ export type HostMessage =
   | { type: 'theme'; theme: ThemeInfo }
   | { type: 'viewTitle'; actions: MenuAction[]; message?: string }
   | { type: 'treeChanged'; handle?: string }
-  | { type: 'panelOpen'; id: number; title: string; icon?: string; src: string; column: Column; preserveFocus: boolean }
-  | { type: 'panelUpdate'; id: number; title?: string; icon?: string; src?: string }
+  | { type: 'panelOpen'; id: number; title: string; icon?: string; color?: string; src: string; column: Column; preserveFocus: boolean }
+  /** `icon` and `color` empty: none any more. `color` is a CSS color: the line above the tab. */
+  | { type: 'panelUpdate'; id: number; title?: string; icon?: string; color?: string; src?: string }
   | { type: 'panelReveal'; id: number; column?: Column; preserveFocus: boolean }
   | { type: 'panelClose'; id: number }
   | { type: 'panelMessage'; id: number; message: unknown }
   | ({ type: 'editorOpen' } & EditorOpen)
-  | { type: 'editorUpdate'; id: number; uri?: string; title?: string; tooltip?: string; language?: string; text?: string; readOnly?: boolean; dirty?: boolean; actions?: MenuAction[]; keys?: { key: string; command: string }[] }
+  /** `color`: the CSS color of the tab's name and of the line above it, from the decoration of the document; empty for none. */
+  | { type: 'editorUpdate'; id: number; uri?: string; title?: string; tooltip?: string; color?: string; language?: string; text?: string; readOnly?: boolean; dirty?: boolean; actions?: MenuAction[]; keys?: { key: string; command: string }[] }
   | { type: 'editorReveal'; id: number; column?: Column; selection?: Span; preserveFocus: boolean }
   | { type: 'editorEdits'; id: number; edits: { range: Span; text: string }[]; clean: boolean }
   | { type: 'editorSelect'; id: number; selection: Span }

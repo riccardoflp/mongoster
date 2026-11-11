@@ -2,6 +2,8 @@
 // the print() output, or the error with its line.
 import * as vscode from 'vscode';
 import { ThemeColors } from '../themeColors';
+import { paintTab } from '../connectionColors';
+import type { ConnectionColor } from '../connections';
 import type { PlaygroundHostMessage, PlaygroundViewMessage } from '../shared/messages';
 
 export class PlaygroundResultPanel {
@@ -37,6 +39,7 @@ export class PlaygroundResultPanel {
     panel.source = source?.uri;
     panel.lineOffset = source?.lineOffset ?? 0;
     if (message.type === 'result') panel.panel.title = `Result: ${message.title}`;
+    paintTab(panel.panel, context.extensionUri, message.color as ConnectionColor | undefined);
     if (!panel.panel.visible) panel.panel.reveal(vscode.ViewColumn.Beside, true);
     panel.post(message);
     return panel;

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { ConnectionInfo, ConnectionManager } from './connections';
+import { connectionUri, themeColorOf } from './connectionColors';
 import { bucketNames } from './shared/gridfs';
 
 export class FolderNode extends vscode.TreeItem {
@@ -29,6 +30,8 @@ export class ConnectionNode extends vscode.TreeItem {
     // The connection's color wins over the green "connected" tint; the description then says it.
     const color = info.color ? `charts.${info.color}` : connected ? 'testing.iconPassed' : undefined;
     this.iconPath = new vscode.ThemeIcon(info.readOnly ? 'lock' : 'server', color ? new vscode.ThemeColor(color) : undefined);
+    // Its name takes the color too, through the decoration of this URI.
+    if (info.color) this.resourceUri = connectionUri(info.id);
     this.description = [info.readOnly && 'read-only', info.ssh && 'SSH', info.redisOplog && 'redis-oplog', connected && (info.color || info.readOnly) && 'connected'].filter(Boolean).join(' · ');
     this.tooltip = [
       `${info.name}${connected ? ' (connected)' : ''}`,
@@ -43,6 +46,11 @@ export class ConnectionNode extends vscode.TreeItem {
   }
 }
 
+/** The icon of a node below a connection, in the connection's color: the names stay in the usual one. */
+function connectionIcon(id: string, connection: ConnectionInfo): vscode.ThemeIcon {
+  return new vscode.ThemeIcon(id, connection.color ? themeColorOf(connection.color) : undefined);
+}
+
 export class DatabaseNode extends vscode.TreeItem {
   readonly kind = 'database';
   constructor(
@@ -54,7 +62,7 @@ export class DatabaseNode extends vscode.TreeItem {
     super(database, filter ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
     this.id = `db:${connection.id}/${database}${filter ? `?${filter}` : ''}`;
     this.contextValue = connection.readOnly ? 'database.readonly' : 'database';
-    this.iconPath = new vscode.ThemeIcon('database');
+    this.iconPath = connectionIcon('database', connection);
     if (sizeOnDisk !== undefined) this.description = formatBytes(sizeOnDisk);
   }
 }
@@ -70,7 +78,7 @@ export class CollectionNode extends vscode.TreeItem {
     super(collection, vscode.TreeItemCollapsibleState.None);
     this.id = `coll:${connection.id}/${database}/${collection}`;
     this.contextValue = `${isView ? 'view' : 'collection'}${connection.readOnly ? '.readonly' : ''}`;
-    this.iconPath = new vscode.ThemeIcon(isView ? 'eye' : 'table');
+    this.iconPath = connectionIcon(isView ? 'eye' : 'table', connection);
     this.tooltip = `${database}.${collection}${isView ? ' (view)' : ''}`;
     this.command = {
       command: 'mongoster.openCollection',
@@ -92,7 +100,7 @@ export class BucketNode extends vscode.TreeItem {
     this.id = `bucket:${connection.id}/${database}/${bucket}`;
     this.description = 'GridFS';
     this.contextValue = `bucket${connection.readOnly ? '.readonly' : ''}`;
-    this.iconPath = new vscode.ThemeIcon('files');
+    this.iconPath = connectionIcon('files', connection);
     this.tooltip = `GridFS bucket ${database}.${bucket} (${bucket}.files and ${bucket}.chunks)`;
     this.command = { command: 'mongoster.openGridFS', title: 'Open GridFS Bucket', arguments: [this] };
   }

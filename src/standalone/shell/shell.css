@@ -255,7 +255,13 @@ body.dragging .editor {
 
 .row-label {
   overflow: hidden;
+  color: var(--label-color, inherit);
   text-overflow: ellipsis;
+}
+
+/* As in VS Code, the selection's colors win over a decoration's. */
+#tree:focus .row.selected .row-label {
+  color: inherit;
 }
 
 .row-description {
@@ -395,6 +401,11 @@ body.dragging .editor {
 #editors:not(.split) .tab.selected,
 .group.active .tab.selected {
   border-top-color: var(--vscode-tab-activeBorderTop);
+}
+
+/* A tab of a colored connection: a line of its color above it. */
+.tab.colored {
+  box-shadow: inset 0 2px 0 var(--tab-color);
 }
 
 .tab-icon {

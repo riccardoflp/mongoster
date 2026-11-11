@@ -115,6 +115,9 @@ export class Playgrounds implements vscode.Disposable {
   private readonly output = vscode.window.createOutputChannel('Mongoster Playground');
   private readonly status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   private readonly lensChanged = new vscode.EventEmitter<void>();
+  private readonly targetChanged = new vscode.EventEmitter<vscode.Uri | undefined>();
+  /** A playground's connection changed: its tab takes that connection's color. */
+  readonly onDidChange = this.targetChanged.event;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly fieldCache = new Map<string, { at: number; hints: Promise<FieldHint[]> }>();
   private readonly collectionCache = new Map<string, { at: number; names: Promise<string[]> }>();
@@ -132,6 +135,7 @@ export class Playgrounds implements vscode.Disposable {
       this.output,
       this.status,
       this.lensChanged,
+      this.targetChanged,
       vscode.commands.registerCommand('mongoster.newPlayground', (node?: unknown) => this.create(node)),
       vscode.commands.registerCommand('mongoster.runPlayground', () => this.run()),
       vscode.commands.registerCommand('mongoster.changePlaygroundConnection', () => this.change()),
@@ -156,7 +160,7 @@ export class Playgrounds implements vscode.Disposable {
         this.updateStatus();
       }),
       vscode.workspace.onDidCloseTextDocument((doc) => {
-        if (doc.isUntitled) this.targets.delete(doc.uri.toString());
+        if (doc.isUntitled && this.targets.delete(doc.uri.toString())) this.targetChanged.fire(doc.uri);
       }),
       vscode.workspace.onDidRenameFiles((e) => {
         for (const { oldUri, newUri } of e.files) {
@@ -216,12 +220,18 @@ export class Playgrounds implements vscode.Disposable {
 
   private async setTarget(uri: vscode.Uri, target: Target): Promise<void> {
     this.targets.set(uri.toString(), target);
+    this.targetChanged.fire(uri);
     if (uri.scheme !== 'untitled') {
       const saved = this.context.workspaceState.get<Record<string, Target>>(TARGETS_KEY) ?? {};
       await this.context.workspaceState.update(TARGETS_KEY, { ...saved, [uri.toString()]: target });
     }
     this.lensChanged.fire();
     this.updateStatus();
+  }
+
+  /** The connection a playground runs on. */
+  connectionOf(uri: vscode.Uri): string | undefined {
+    return this.targets.get(uri.toString())?.connectionId;
   }
 
   /** The playground's target, if its connection still exists. */
@@ -334,7 +344,7 @@ export class Playgrounds implements vscode.Disposable {
     const targetLabel = `${info.name} › ${database}`;
     const output: string[] = [];
     this.output.appendLine(`\n▶ ${title} on ${targetLabel} — ${new Date().toLocaleTimeString()}`);
-    PlaygroundResultPanel.show(this.context, { type: 'running', title, target: targetLabel });
+    PlaygroundResultPanel.show(this.context, { type: 'running', title, target: targetLabel, color: info.color });
 
     this.running = true;
     const started = Date.now();
@@ -366,7 +376,7 @@ export class Playgrounds implements vscode.Disposable {
         const message = 'Cancelled. Operations already sent may still complete on the server.';
         PlaygroundResultPanel.show(
           this.context,
-          { type: 'result', title, target: targetLabel, durationMs, kind: 'none', limit: RESULT_LIMIT, output, error: { message } },
+          { type: 'result', title, target: targetLabel, color: info.color, durationMs, kind: 'none', limit: RESULT_LIMIT, output, error: { message } },
           { uri: doc.uri, lineOffset },
         );
         return;
@@ -377,6 +387,7 @@ export class Playgrounds implements vscode.Disposable {
           type: 'result',
           title,
           target: `${info.name} › ${outcome.database}`,
+          color: info.color,
           durationMs,
           kind: outcome.kind,
           value: outcome.value,
@@ -400,6 +411,7 @@ export class Playgrounds implements vscode.Disposable {
           type: 'result',
           title,
           target: targetLabel,
+          color: info.color,
           durationMs: Date.now() - started,
           kind: 'none',
           limit: RESULT_LIMIT,

@@ -23,6 +23,8 @@ const MAX_CELL = 160;
 window.addEventListener('message', (e: MessageEvent<PlaygroundHostMessage>) => {
   const m = e.data;
   if (m.type !== 'running' && m.type !== 'result') return; // e.g. the theme's colors
+  if (m.color) document.body.dataset.color = m.color;
+  else delete document.body.dataset.color;
   if (m.type === 'running') {
     el('meta').textContent = `Running ${m.title} on ${m.target}…`;
     document.body.classList.add('running');

@@ -16,7 +16,7 @@ const panels = new Map<number, Panel>();
 
 const tabIcon = (src: string | undefined) => (src ? { src } : undefined);
 
-export function openPanel(id: number, title: string, icon: string | undefined, src: string, column: Column, preserveFocus: boolean): void {
+export function openPanel(id: number, title: string, icon: string | undefined, color: string | undefined, src: string, column: Column, preserveFocus: boolean): void {
   const frame = h('iframe', {
     class: 'webview',
     src,
@@ -36,6 +36,7 @@ export function openPanel(id: number, title: string, icon: string | undefined, s
       id,
       title,
       icon: tabIcon(icon),
+      color,
       content: h('div', {}, frame),
       focus: () => frame.contentWindow?.focus(),
       requestClose: () => {
@@ -49,7 +50,7 @@ export function openPanel(id: number, title: string, icon: string | undefined, s
   );
 }
 
-export function updatePanel(id: number, changes: { title?: string; icon?: string; src?: string }): void {
+export function updatePanel(id: number, changes: { title?: string; icon?: string; color?: string; src?: string }): void {
   const panel = panels.get(id);
   if (!panel) return;
   if (changes.title !== undefined) {
@@ -57,6 +58,7 @@ export function updatePanel(id: number, changes: { title?: string; icon?: string
     update(panel.tab, { title: changes.title });
   }
   if (changes.icon !== undefined) update(panel.tab, { icon: tabIcon(changes.icon) });
+  if (changes.color !== undefined) update(panel.tab, { color: changes.color || undefined });
   if (changes.src !== undefined) {
     panel.loaded = false;
     panel.frame.src = changes.src;

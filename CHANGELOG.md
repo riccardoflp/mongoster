@@ -11,6 +11,8 @@
   - The tools that return documents or field values are offered only with `mongoster.mcp.readDocuments` on. None of them writes, kills an operation or changes the profiler.
 - The relationship diagram now calls an array of ids (`productIds: [ObjectId(…), …]`) a many-to-many relation; it was shown as many-to-one.
 - An invalid Redis URL is no longer repeated in the error message, where it could show its password.
+- **A connection's color everywhere**: the tabs of a colored connection show Mongoster's leaf in its color — collections, monitor, users, watch, global search, index advisor, diagram, GridFS, compare (the color both sides share, or the only one) and the playground result, which now has the colored stripe too. The tabs of its documents and definitions opened in the editor, and of the playgrounds running on it, take the color on their name. In the tree, the databases, collections, views and GridFS buckets below it have their icons in its color and the connection's name takes it too, while the other names keep the usual color. Changing the color applies right away.
+- In the desktop app the tabs of a colored connection also have a line of its color above them, and the icons in the tree follow the theme when it changes from dark to light.
 
 ## 0.7.0
 

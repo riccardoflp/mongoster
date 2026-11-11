@@ -3,6 +3,7 @@
 import * as vscode from 'vscode';
 import { BSON, ChangeStream, ChangeStreamOptions, Document, MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
+import { paintTab } from './connectionColors';
 import type { DocumentFileSystem } from './documentFs';
 import { fromRelaxed, toBson } from './queries';
 import type { WatchEvent, WatchHostMessage, WatchOptions, WatchState, WatchViewMessage } from './shared/messages';
@@ -54,6 +55,7 @@ export class WatchPanel {
       if (p.scope.connectionId !== info.id) continue;
       p.info = info;
       p.panel.title = scopeTitle(p.scope, info);
+      paintTab(p.panel, p.context.extensionUri, info.color);
       void p.postInit();
     }
   }
@@ -82,7 +84,7 @@ export class WatchPanel {
       vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')] },
     );
-    this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'mongoster.svg');
+    paintTab(this.panel, context.extensionUri, info.color);
     this.panel.webview.html = this.html();
     this.panel.onDidDispose(() => {
       WatchPanel.panels.delete(scopeKey(scope));

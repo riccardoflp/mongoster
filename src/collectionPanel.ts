@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { ThemeColors } from './themeColors';
 import { BSON, Collection, Document } from 'mongodb';
 import { ConnectionColor, ConnectionInfo, ConnectionManager } from './connections';
+import { paintTab } from './connectionColors';
 import { byId, CollectionRef, DocumentFileSystem, relaxed, restoreTypes } from './documentFs';
 import { errorMessage } from './tree';
 import { QueryHistory, sameQuery } from './queryHistory';
@@ -137,7 +138,7 @@ export class CollectionPanel {
       vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: roots },
     );
-    this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'collection.svg');
+    paintTab(this.panel, context.extensionUri, target.color, 'collection.svg');
     this.panel.webview.html = this.html();
     this.panel.webview.onDidReceiveMessage((m: WebviewMessage) => this.onMessage(m));
     ThemeColors.attach(this.panel);
@@ -146,6 +147,7 @@ export class CollectionPanel {
 
   private postInit(): void {
     const t = this.target;
+    paintTab(this.panel, this.context.extensionUri, t.color, 'collection.svg');
     this.post({
       type: 'init',
       connectionName: t.connectionName,
