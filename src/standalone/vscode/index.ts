@@ -44,6 +44,7 @@ import {
 } from './ui';
 import { createWebviewPanel } from './webview';
 import { registerFileDecorationProvider } from './decorations';
+import { createFileSystemWatcher } from './watcher';
 
 export * from './base';
 export { TextDocument, TextEditor } from './documents';
@@ -54,6 +55,8 @@ export type { InputBoxOptions, MessageOptions, OutputChannel, Progress, Progress
 export { Webview, WebviewPanel } from './webview';
 export type { WebviewOptions } from './webview';
 export type { TreeView } from './tree';
+export { RelativePattern } from './watcher';
+export type { FileSystemWatcher, GlobPattern } from './watcher';
 export type { ColorTheme } from './appearance';
 
 // ---- the extension and its context
@@ -158,6 +161,13 @@ export interface WorkspaceFolder {
   readonly index: number;
 }
 
+export interface WorkspaceFoldersChangeEvent {
+  readonly added: readonly WorkspaceFolder[];
+  readonly removed: readonly WorkspaceFolder[];
+}
+
+const workspaceFoldersEmitter = new EventEmitter<WorkspaceFoldersChangeEvent>();
+
 export const workspace = {
   openTextDocument,
   registerFileSystemProvider: (scheme: string, provider: Parameters<typeof registerFileSystemProvider>[1], _options?: unknown) =>
@@ -170,6 +180,9 @@ export const workspace = {
   onDidSaveTextDocument,
   onDidChangeTextDocument,
   onDidRenameFiles,
+  createFileSystemWatcher,
+  /** Never fires: the app has no workspace folders. */
+  onDidChangeWorkspaceFolders: workspaceFoldersEmitter.event,
   get textDocuments(): readonly TextDocument[] {
     return textDocuments();
   },

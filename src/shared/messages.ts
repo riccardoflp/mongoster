@@ -4,10 +4,12 @@ import type { SchemaSummary } from './schema';
 import type { ChartSpec } from './chart';
 import type { OpQuery, SlowOp, SlowOpSource } from './profile';
 import type { CompareCounts, CompareOptions, DiffKind, FieldDiff } from './compare';
+import type { StructureCounts, StructureDiff } from './structure';
 import type { FieldHint } from './complete';
 import type { ColumnLayout } from './columns';
 import type { PipelineStage } from './pipeline';
 import type { ExplainSummary } from './explain';
+import type { CollectionReferences } from './references';
 
 export interface QueryRequest {
   type: 'query';
@@ -100,9 +102,19 @@ export interface SavedQuery extends QueryText {
   id: string;
   /** Set for saved (favorite) queries. */
   name?: string;
-  /** Last run / save time, epoch ms. */
+  /** Last run / save time, epoch ms (for the project's queries, when their file last changed). */
   at: number;
+  /** Where a saved query lives: the user's (globalState, the default) or the project's (a file in the repository). */
+  source?: SavedQuerySource;
+  /** The project's queries: the file, relative to its workspace folder, to show. */
+  file?: string;
+  description?: string;
+  /** The project's queries for one connection only: its name. */
+  connection?: string;
 }
+
+/** Where a saved query is kept: for the user, or in the project's repository. */
+export type SavedQuerySource = 'user' | 'project';
 
 /** "Update many" / "Delete many" on the documents matching `filter`. */
 export interface BulkRequest {
@@ -131,6 +143,8 @@ export type WebviewMessage =
   | AggregateRequest
   | { type: 'editDocument'; id: unknown }
   | { type: 'deleteDocument'; id: unknown }
+  /** Opens the History tab of a document: its versions from the oplog. */
+  | { type: 'documentHistory'; id: unknown }
   /** Deletes the rows selected in the table, by _id, after a confirmation. */
   | { type: 'deleteDocuments'; ids: unknown[] }
   /** Inserts the documents of the insert dialog (one, or an array; mongosh syntax). */
@@ -139,8 +153,14 @@ export type WebviewMessage =
   | { type: 'insertInEditor'; text: string }
   | { type: 'saveExpanded'; expanded: string[] }
   | { type: 'saveLayout'; layout: ColumnLayout }
-  | { type: 'saveQuery'; query: QueryText }
+  /** Saves a query with a name; `place` skips the question of where (For me / In the project). */
+  | { type: 'saveQuery'; query: QueryText; place?: SavedQuerySource }
   | { type: 'removeQuery'; id: string }
+  | { type: 'renameQuery'; id: string }
+  /** Moves a saved query from the user's to the project's, or back. */
+  | { type: 'moveQuery'; id: string }
+  /** Opens the file of a project's saved query in the editor. */
+  | { type: 'openQueryFile'; id: string }
   | { type: 'clearHistory' }
   | { type: 'copy'; text: string }
   | UpdateFieldRequest
@@ -173,7 +193,11 @@ export type WebviewMessage =
   | BulkRequest
   | FieldActionRequest
   /** Without `page`, everything the source finds is exported (e.g. the selected rows). */
-  | { type: 'export'; source: QuerySource; expanded: string[]; layout: ColumnLayout; page?: { skip: number; limit: number }; count: number | null };
+  | { type: 'export'; source: QuerySource; expanded: string[]; layout: ColumnLayout; page?: { skip: number; limit: number }; count: number | null }
+  /** The references leaving and reaching the collection (answered with 'references' once they are known). */
+  | { type: 'loadReferences' }
+  /** Opens a collection of the database with a filter: a referenced document, or the documents referencing one. */
+  | { type: 'openReference'; collection: string; filter: string };
 
 export type HostMessage =
   | {
@@ -195,6 +219,8 @@ export type HostMessage =
   | { type: 'error'; requestId: number; message: string; stage?: number }
   | { type: 'refresh' }
   | { type: 'history'; recent: SavedQuery[]; saved: SavedQuery[] }
+  /** Saves the tab's current query (the `Save Query in the Project` command). */
+  | { type: 'saveCurrent'; place?: SavedQuerySource }
   | { type: 'fieldResult'; requestId: number; ok: boolean; message?: string }
   | {
       type: 'explainResult';
@@ -225,7 +251,9 @@ export type HostMessage =
   /** A field was renamed to `to` (or removed, without it): the column layout follows. */
   | { type: 'fieldChanged'; from: string; to?: string }
   /** A query to show (from the server monitor), then run or explain. */
-  | { type: 'loadQuery'; query: QueryText; explain: boolean };
+  | { type: 'loadQuery'; query: QueryText; explain: boolean }
+  /** The references of the collection, found by sampling its database: cells become links. */
+  | ({ type: 'references' } & CollectionReferences);
 
 // ---------------------------------------------------------------------------
 // Playground result tab
@@ -728,6 +756,35 @@ export type CompareViewMessage =
   | { type: 'swap' }
   | { type: 'copy'; text: string };
 
+// ---------------------------------------------------------------------------
+// Comparing the structure of two databases
+
+export interface StructureSide {
+  connectionName: string;
+  database: string;
+  /** No changes: a read-only connection. */
+  readOnly: boolean;
+  why?: string;
+  color?: string;
+}
+
+export type StructureHostMessage =
+  | { type: 'init'; left: StructureSide; right: StructureSide }
+  | { type: 'progress'; text: string }
+  | { type: 'result'; diffs: StructureDiff[]; counts: StructureCounts; notes: string[]; durationMs: number }
+  | { type: 'error'; message: string }
+  /** A change finished (or was refused or cancelled: `ok` false); `comparing` when a new comparison follows. */
+  | { type: 'applied'; ok: boolean; message?: string; comparing?: boolean };
+
+export type StructureViewMessage =
+  | { type: 'ready' }
+  | { type: 'compare' }
+  | { type: 'swap' }
+  /** Makes the right side like the left for these differences (null: all of them). */
+  | { type: 'apply'; ids: string[] | null }
+  | { type: 'copy'; text: string }
+  | { type: 'openPlayground'; script: string };
+
 // ---- users and roles
 
 export interface RoleRef {
@@ -891,6 +948,53 @@ export type HistoryViewMessage =
   | { type: 'clear' }
   | { type: 'settings' };
 
+// ---- scheduled tasks
+
+/** A task as the Scheduled Tasks tab lists it. */
+export interface ScheduledTaskView {
+  task: import('./schedule').ScheduledTask;
+  state: import('./schedule').TaskState;
+  /** Epoch ms of the next run (none when disabled). */
+  next?: number;
+  /** Running in this window, or in another VS Code window. */
+  running?: 'here' | 'elsewhere';
+  progress?: string;
+  /** Undefined when the connection was removed. */
+  connectionName?: string;
+  color?: string;
+}
+
+export interface ScheduleConnection {
+  id: string;
+  name: string;
+  color?: string;
+}
+
+export type ScheduleHostMessage =
+  | { type: 'init'; tasks: ScheduledTaskView[]; connections: ScheduleConnection[]; defaultFolder: string; app: boolean; tray: boolean }
+  /** Opens the form on a task: a new one (prefilled from the tree) or one to edit. */
+  | { type: 'edit'; task: import('./schedule').ScheduledTask; isNew: boolean }
+  /** The databases of a connection, or the collections of a database. */
+  | { type: 'names'; connectionId: string; database?: string; names: string[]; error?: string }
+  | { type: 'folder'; path: string }
+  | { type: 'saved' }
+  | { type: 'message'; text: string; failed?: boolean };
+
+export type ScheduleViewMessage =
+  | { type: 'ready' }
+  | { type: 'new' }
+  | { type: 'edit'; id: string }
+  | { type: 'save'; task: import('./schedule').ScheduledTask }
+  | { type: 'toggle'; id: string; enabled: boolean }
+  | { type: 'run'; id: string }
+  | { type: 'cancel'; id: string }
+  | { type: 'delete'; id: string }
+  | { type: 'names'; connectionId: string; database?: string }
+  | { type: 'browse'; folder: string }
+  | { type: 'reveal'; path: string }
+  /** The desktop app's setting that keeps it in the tray. */
+  | { type: 'traySetting' };
+
 // ---- global search
 
 export interface SearchOptions {
@@ -1025,3 +1129,86 @@ export type DiagramViewMessage =
   | { type: 'copy'; text: string }
   /** Saves the diagram as an SVG file, with the boxes where they are on screen. */
   | { type: 'saveSvg'; boxes: import('./relations').Box[]; keysOnly: boolean };
+
+// ---- a document's history from the oplog
+
+/** One version of the document, after one write, as the History tab shows it. */
+export interface DocVersionView {
+  /** Identifies the version in messages: the oplog timestamp and the position in an applyOps. */
+  key: string;
+  /** Wall clock time (ISO), or the timestamp's seconds. */
+  time: string;
+  /** The oplog timestamp, Timestamp({ t, i }). */
+  ts: string;
+  kind: import('./docHistory').DocOpKind;
+  /** Fields set and unset by an update, arrays resized. */
+  set?: string[];
+  unset?: string[];
+  truncated?: string[];
+  /** Drops and renames of the collection. */
+  command?: string;
+  state: import('./docHistory').VersionState;
+  /** The document after the write, relaxed EJSON, unknown values as UNKNOWN_TEXT. */
+  doc?: unknown;
+  unknown?: string[];
+  /** Differences from the version before (left: before, right: after). */
+  diff: import('./docHistory').VersionDiff[];
+  /** The version is the document as it is now. */
+  current?: boolean;
+  /** Who or what wrote it, as far as the oplog and the undo history tell. */
+  group?: 'transaction' | 'batch';
+  partial?: boolean;
+  prepared?: boolean;
+  lsid?: string;
+  txnNumber?: string;
+  migrate?: boolean;
+  /** The label of Mongoster's own write, from the undo history. */
+  mongoster?: string;
+  /** Why it couldn't be rebuilt from the version before. */
+  mismatch?: string;
+}
+
+export interface DocHistoryInfo {
+  connectionName: string;
+  color?: string;
+  database: string;
+  collection: string;
+  /** The _id in mongosh syntax. */
+  id: string;
+  /** Why versions can't be restored (a read-only connection). */
+  readOnly?: string;
+}
+
+export type DocHistoryHostMessage =
+  | { type: 'init'; info: DocHistoryInfo }
+  | { type: 'loading'; older: boolean }
+  | {
+      type: 'result';
+      /** Newest first. */
+      versions: DocVersionView[];
+      /** The document exists now. */
+      exists: boolean;
+      /** First and last entries of the oplog, ISO. */
+      oplogFirst?: string;
+      oplogLast?: string;
+      /** The oplog was read back to this time (ISO); older writes need Load older. */
+      readFrom?: string;
+      /** Read back to the oplog's first entry: there is nothing older. */
+      complete: boolean;
+      /** The document before the oldest write found. */
+      before: import('./docHistory').VersionState;
+      conflict: boolean;
+      durationMs: number;
+      /** Reading stopped at the time limit. */
+      timedOut?: boolean;
+    }
+  | { type: 'error'; message: string; kind: 'standalone' | 'sharded' | 'auth' | 'view' | 'other' }
+  | { type: 'restored'; ok: boolean; message?: string };
+
+export type DocHistoryViewMessage =
+  | { type: 'ready' }
+  | { type: 'refresh' }
+  | { type: 'loadOlder' }
+  | { type: 'restore'; key: string }
+  | { type: 'openDocument' }
+  | { type: 'copy'; text: string };

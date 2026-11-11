@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { once } from 'events';
-import { BSON, Document, MongoBulkWriteError, ObjectId } from 'mongodb';
+import { BSON, Collection, Document, MongoBulkWriteError, ObjectId } from 'mongodb';
 import { ConnectionManager } from './connections';
 import { CollectionRef } from './documentFs';
 import { QuerySource, buildPipeline, toBson } from './queries';
@@ -17,9 +17,9 @@ import { isPlainObject, parseQuery, relaxEjson } from './shared/query';
 
 const { EJSON } = BSON;
 
-type Format = 'json' | 'jsonl' | 'csv';
+export type ExportFormat = 'json' | 'jsonl' | 'csv';
 
-const FORMATS: (vscode.QuickPickItem & { format: Format; ext: string })[] = [
+const FORMATS: (vscode.QuickPickItem & { format: ExportFormat; ext: string })[] = [
   { label: 'JSON', description: 'Array of documents, readable (relaxed Extended JSON)', format: 'json', ext: 'json' },
   { label: 'JSON Lines', description: 'One document per line, canonical Extended JSON: keeps every type, re-importable', format: 'jsonl', ext: 'jsonl' },
   { label: 'CSV', description: 'The columns shown in the table; expanded arrays give one row per element', format: 'csv', ext: 'csv' },
@@ -35,6 +35,83 @@ export interface ExportOptions {
   count?: number | null;
 }
 
+/** The results of a query or a pipeline, from `skip` up to `limit` documents (all without them). */
+export type ExportCursor = AsyncIterable<Document> & { close(): Promise<void> };
+export type OpenExport = (skip?: number, limit?: number) => Promise<ExportCursor>;
+
+/** Checks the query or pipeline (it throws on an error) and returns how to read its results. */
+export function exportSource(coll: Collection, source: QuerySource): OpenExport {
+  if (source.kind === 'find') {
+    const filter = toBson(source.filter, 'Filter') ?? {};
+    const sort = toBson(source.sort, 'Sort');
+    const projection = toBson(source.projection, 'Projection');
+    return async (skip, limit) => coll.find(filter, { sort, projection, skip, limit, promoteLongs: false, batchSize: 1000 });
+  }
+  const { pipeline, write } = buildPipeline(source.stages, source.upto);
+  if (write) throw new Error(`A pipeline ending with ${write.op} writes to the database and can't be exported. Select an earlier stage to export its output.`);
+  return async (skip, limit) =>
+    coll.aggregate(skip === undefined ? pipeline : [...pipeline, { $skip: skip }, { $limit: limit! }], {
+      allowDiskUse: true,
+      promoteLongs: false,
+      batchSize: 1000,
+    });
+}
+
+/** Where an export writes. */
+export interface ExportWriter {
+  readonly closed: boolean;
+  write(text: string): Promise<void>;
+  close(): Promise<void>;
+  /** Stops writing and removes the partial file. */
+  abort(): Promise<void>;
+}
+
+export interface ExportHooks {
+  /** Every 1000 documents. */
+  progress?(documents: number): void;
+  cancelled?(): boolean;
+}
+
+/**
+ * Writes the documents of the cursor in the format, then closes the cursor and the writer; when
+ * cancelled (or on an error) the partial file is removed. Returns the documents written, or
+ * undefined if cancelled.
+ */
+export async function writeExport(
+  cursor: ExportCursor,
+  format: ExportFormat,
+  out: ExportWriter,
+  columns: Pick<ExportOptions, 'expanded' | 'layout'>,
+  hooks: ExportHooks = {},
+): Promise<number | undefined> {
+  let written = 0;
+  const csvDocs: Record<string, unknown>[] = [];
+  try {
+    if (format === 'json') await out.write('[');
+    for await (const doc of cursor) {
+      if (hooks.cancelled?.()) return undefined;
+      if (format === 'jsonl') await out.write(EJSON.stringify(doc, { relaxed: false }) + '\n');
+      else {
+        const relaxed = relaxEjson(EJSON.serialize(doc, { relaxed: false })) as Record<string, unknown>;
+        if (format === 'csv') csvDocs.push(relaxed);
+        else await out.write((written ? ',\n' : '\n') + indent(JSON.stringify(relaxed, null, 2)));
+      }
+      written++;
+      if (written % 1000 === 0) hooks.progress?.(written);
+    }
+    if (format === 'json') await out.write(written ? '\n]\n' : ']\n');
+    if (format === 'csv') {
+      const table = applyLayout(buildColumns(csvDocs, new Set(columns.expanded)), columns.layout ?? {});
+      await out.write('﻿' + toCsv(csvTable(csvDocs, table)));
+    }
+    await out.close();
+    return written;
+  } finally {
+    await cursor.close();
+    if (!out.closed) await out.abort();
+  }
+}
+
 /** Asks for format, scope and file, then streams the results to the file. Returns the number of documents written. */
 export async function exportDocuments(
   connections: ConnectionManager,
@@ -43,25 +120,10 @@ export async function exportDocuments(
   options: ExportOptions,
 ): Promise<number | undefined> {
   // Validate before asking anything.
-  let open: (skip?: number, limit?: number) => Promise<AsyncIterable<Document> & { close(): Promise<void> }>;
+  let open: OpenExport;
   try {
     const client = await connections.getClient(ref.connectionId);
-    const coll = client.db(ref.database).collection(ref.collection);
-    if (source.kind === 'find') {
-      const filter = toBson(source.filter, 'Filter') ?? {};
-      const sort = toBson(source.sort, 'Sort');
-      const projection = toBson(source.projection, 'Projection');
-      open = async (skip, limit) => coll.find(filter, { sort, projection, skip, limit, promoteLongs: false, batchSize: 1000 });
-    } else {
-      const { pipeline, write } = buildPipeline(source.stages, source.upto);
-      if (write) throw new Error(`A pipeline ending with ${write.op} writes to the database and can't be exported. Select an earlier stage to export its output.`);
-      open = async (skip, limit) =>
-        coll.aggregate(skip === undefined ? pipeline : [...pipeline, { $skip: skip }, { $limit: limit! }], {
-          allowDiskUse: true,
-          promoteLongs: false,
-          batchSize: 1000,
-        });
-    }
+    open = exportSource(client.db(ref.database).collection(ref.collection), source);
   } catch (err) {
     void vscode.window.showErrorMessage(`Export failed: ${errorMessage(err)}`);
     return undefined;
@@ -88,41 +150,17 @@ export async function exportDocuments(
   });
   if (!uri) return undefined;
 
-  let written = 0;
+  let written: number | undefined;
   try {
-    const done = await vscode.window.withProgress(
+    written = await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: `Exporting ${ref.collection}`, cancellable: true },
-      async (progress, token) => {
-        const cursor = await open(page?.skip, page?.limit);
-        const out = new FileWriter(uri);
-        const csvDocs: Record<string, unknown>[] = [];
-        try {
-          if (format.format === 'json') await out.write('[');
-          for await (const doc of cursor) {
-            if (token.isCancellationRequested) return false;
-            if (format.format === 'jsonl') await out.write(EJSON.stringify(doc, { relaxed: false }) + '\n');
-            else {
-              const relaxed = relaxEjson(EJSON.serialize(doc, { relaxed: false })) as Record<string, unknown>;
-              if (format.format === 'csv') csvDocs.push(relaxed);
-              else await out.write((written ? ',\n' : '\n') + indent(JSON.stringify(relaxed, null, 2)));
-            }
-            written++;
-            if (written % 1000 === 0) progress.report({ message: `${written.toLocaleString()} documents` });
-          }
-          if (format.format === 'json') await out.write(written ? '\n]\n' : ']\n');
-          if (format.format === 'csv') {
-            const columns = applyLayout(buildColumns(csvDocs, new Set(options.expanded)), options.layout ?? {});
-            await out.write('﻿' + toCsv(csvTable(csvDocs, columns)));
-          }
-          await out.close();
-          return true;
-        } finally {
-          await cursor.close();
-          if (!out.closed) await out.abort();
-        }
-      },
+      async (progress, token) =>
+        writeExport(await open(page?.skip, page?.limit), format.format, uri.scheme === 'file' ? new FileWriter(uri.fsPath) : new RemoteWriter(uri), options, {
+          progress: (n) => progress.report({ message: `${n.toLocaleString()} documents` }),
+          cancelled: () => token.isCancellationRequested,
+        }),
     );
-    if (!done) {
+    if (written === undefined) {
       void vscode.window.showInformationMessage('Export cancelled.');
       return undefined;
     }
@@ -142,40 +180,50 @@ export async function exportDocuments(
 
 const indent = (text: string) => text.replace(/^/gm, '  ');
 
-/** Streams to a local file; buffers and writes once for other file systems (remote workspaces). */
-class FileWriter {
-  private readonly stream?: fs.WriteStream;
-  private readonly chunks: string[] = [];
+/** Streams to a local file. */
+export class FileWriter implements ExportWriter {
+  private readonly stream: fs.WriteStream;
   closed = false;
 
-  constructor(private readonly uri: vscode.Uri) {
-    if (uri.scheme === 'file') this.stream = fs.createWriteStream(uri.fsPath, { encoding: 'utf8' });
+  constructor(private readonly file: string) {
+    this.stream = fs.createWriteStream(file, { encoding: 'utf8' });
   }
 
   async write(text: string): Promise<void> {
-    if (!this.stream) {
-      this.chunks.push(text);
-      return;
-    }
     if (!this.stream.write(text)) await once(this.stream, 'drain');
   }
 
   async close(): Promise<void> {
     this.closed = true;
-    if (!this.stream) {
-      await vscode.workspace.fs.writeFile(this.uri, new TextEncoder().encode(this.chunks.join('')));
-      return;
-    }
     this.stream.end();
     await once(this.stream, 'finish');
   }
 
-  /** Stops writing and removes the partial file. */
   async abort(): Promise<void> {
     this.closed = true;
-    if (!this.stream) return;
     this.stream.destroy();
-    await fs.promises.rm(this.uri.fsPath, { force: true });
+    await fs.promises.rm(this.file, { force: true });
+  }
+}
+
+/** Buffers and writes once, for other file systems than the local one (remote workspaces). */
+class RemoteWriter implements ExportWriter {
+  private readonly chunks: string[] = [];
+  closed = false;
+
+  constructor(private readonly uri: vscode.Uri) {}
+
+  async write(text: string): Promise<void> {
+    this.chunks.push(text);
+  }
+
+  async close(): Promise<void> {
+    this.closed = true;
+    await vscode.workspace.fs.writeFile(this.uri, new TextEncoder().encode(this.chunks.join('')));
+  }
+
+  async abort(): Promise<void> {
+    this.closed = true;
   }
 }
 

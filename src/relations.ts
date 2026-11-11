@@ -6,7 +6,7 @@ import type { MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
 import { paintTab } from './connectionColors';
 import type { DiagramHostMessage, DiagramViewMessage } from './shared/messages';
-import { analyzeRelations } from './relationsAnalysis';
+import { RelationsCache, analyzeRelations } from './relationsAnalysis';
 import { Box, RelGraph, toSvg } from './shared/relations';
 import { CollectionNode, errorMessage } from './tree';
 
@@ -105,16 +105,19 @@ export class DiagramPanel {
 
   private async analyze(requestId: number, sample: number): Promise<void> {
     this.lastRequest = requestId;
+    const current = () => requestId === this.lastRequest;
     const progress = (text: string) => {
-      if (requestId === this.lastRequest) this.post({ type: 'progress', requestId, text });
+      if (current()) this.post({ type: 'progress', requestId, text });
     };
     try {
-      const { database, collections, relations } = await analyzeRelations((await this.client()).db(this.scope.database), sample, progress);
-      if (requestId !== this.lastRequest) return;
+      const { database, collections, relations } = await analyzeRelations((await this.client()).db(this.scope.database), sample, progress, () => !current());
+      if (!current()) return;
       this.graph = { database, collections, relations, sample };
+      // The collection tabs of the database follow these references too.
+      RelationsCache.store(this.info.id, database, this.graph);
       this.post({ type: 'graph', requestId, graph: this.graph });
     } catch (err) {
-      if (requestId === this.lastRequest) this.post({ type: 'graph', requestId, error: errorMessage(err) });
+      if (current()) this.post({ type: 'graph', requestId, error: errorMessage(err) });
     }
   }
 

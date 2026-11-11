@@ -27,12 +27,15 @@ const DUPLICATE_KEY = 11000;
 
 type Pick<T> = vscode.QuickPickItem & { value: T };
 
-interface CollectionInfo {
+export interface CollectionInfo {
   name: string;
   type?: string;
   options?: Document;
   info?: { uuid?: { buffer: Uint8Array } };
 }
+
+/** What a backup saves: databases with their collections. */
+export type BackupPlan = { database: string; collections: CollectionInfo[] }[];
 
 /** The files of one collection in a backup folder, or a collection of an archive (its metadata only). */
 export interface BackupFiles {
@@ -52,14 +55,14 @@ export interface BackupDatabase {
   collections: BackupFiles[];
 }
 
-interface DumpStats {
+export interface DumpStats {
   collections: number;
   documents: number;
   bytes: number;
   cancelled: boolean;
 }
 
-interface DumpHooks {
+export interface DumpHooks {
   progress(documents: number): void;
   cancelled(): boolean;
 }
@@ -79,7 +82,7 @@ interface RestoreResult {
 
 const plural = (n: number, what: string) => `${n.toLocaleString('en-US')} ${what}${n === 1 ? '' : 's'}`;
 
-function formatSize(n: number): string {
+export function formatSize(n: number): string {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let i = 0;
   while (n >= 1024 && i < units.length - 1) {
@@ -96,6 +99,14 @@ function stamp(d = new Date()): string {
 }
 
 const safeName = (s: string) => s.replace(/[\\/:*?"<>|\s]+/g, '_');
+
+/** `file`, or `file_2`, `file_3`… (before the extension) if it exists: never something written before. */
+export function uniquePath(file: string, extension = ''): string {
+  const base = extension && file.endsWith(extension) ? file.slice(0, -extension.length) : file;
+  let candidate = base + extension;
+  for (let n = 2; fs.existsSync(candidate); n++) candidate = `${base}_${n}${extension}`;
+  return candidate;
+}
 
 async function writeText(file: string, text: string, gzip: boolean): Promise<void> {
   const data = Buffer.from(text, 'utf8');
@@ -160,7 +171,7 @@ async function dumpCollection(db: Db, info: CollectionInfo, dir: string, gzip: b
 /** An archive of the collections (to gzip): the prelude with their metadata, then their documents one collection after the other. */
 export async function* archiveOf(
   client: MongoClient,
-  plan: { database: string; collections: CollectionInfo[] }[],
+  plan: BackupPlan,
   stats: DumpStats,
   hooks: (database: string, info: CollectionInfo) => DumpHooks,
 ): AsyncGenerator<Buffer> {
@@ -192,6 +203,93 @@ export async function* archiveOf(
       stats.collections++;
     }
   }
+}
+
+/** The collections of a database a backup saves (not system.*), sorted by name. */
+export async function backupCollections(client: MongoClient, database: string): Promise<CollectionInfo[]> {
+  return ((await client.db(database).listCollections({}, { nameOnly: false }).toArray()) as CollectionInfo[])
+    .filter((c) => !c.name.startsWith('system.'))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The databases of a connection a backup saves (not admin, local and config), sorted. */
+export async function backupDatabases(client: MongoClient): Promise<string[]> {
+  return (await client.db('admin').admin().listDatabases({ nameOnly: true })).databases
+    .map((d) => d.name)
+    .filter((d) => !SYSTEM_DATABASES.includes(d))
+    .sort();
+}
+
+/** Leaves the time series collections out of the plan (they need mongodump); returns their names. */
+export function leaveOutUnsupported(plan: BackupPlan): string[] {
+  const skipped = plan.flatMap((p) => p.collections.filter((c) => c.type === 'timeseries').map((c) => `${p.database}.${c.name}`));
+  for (const p of plan) p.collections = p.collections.filter((c) => c.type !== 'timeseries');
+  return skipped;
+}
+
+/** Everything of a connection, a database or a collection, without asking: what a scheduled backup saves. */
+export async function planBackup(client: MongoClient, database?: string, collection?: string): Promise<{ plan: BackupPlan; skipped: string[] }> {
+  const plan: BackupPlan = [];
+  if (database && collection) {
+    const found = (await backupCollections(client, database)).filter((c) => c.name === collection);
+    if (!found.length) throw new Error(`The collection ${database}.${collection} doesn't exist.`);
+    plan.push({ database, collections: found });
+  } else if (database) plan.push({ database, collections: await backupCollections(client, database) });
+  else for (const d of await backupDatabases(client)) plan.push({ database: d, collections: await backupCollections(client, d) });
+  return { plan, skipped: leaveOutUnsupported(plan) };
+}
+
+/** The estimated number of documents of each collection, by "database.collection" (views have none). */
+export async function backupTotals(client: MongoClient, plan: BackupPlan): Promise<Map<string, number>> {
+  const totals = new Map<string, number>();
+  for (const p of plan) {
+    for (const c of p.collections) {
+      if (c.type !== 'view') totals.set(`${p.database}.${c.name}`, await client.db(p.database).collection(c.name).estimatedDocumentCount().catch(() => 0));
+    }
+  }
+  return totals;
+}
+
+/**
+ * Writes a backup: an archive at `root`, or a new folder `root` with a sub-folder per database.
+ * When it fails or is cancelled, what was written is deleted.
+ */
+export async function writeBackup(
+  client: MongoClient,
+  plan: BackupPlan,
+  format: 'archive' | 'gzip' | 'plain',
+  root: string,
+  hooks: (database: string, info: CollectionInfo) => DumpHooks,
+): Promise<DumpStats> {
+  const stats: DumpStats = { collections: 0, documents: 0, bytes: 0, cancelled: false };
+  try {
+    if (format === 'archive') await pipeline(archiveOf(client, plan, stats, hooks), zlib.createGzip(), fs.createWriteStream(root));
+    else {
+      done: for (const p of plan) {
+        const dir = path.join(root, p.database);
+        await fs.promises.mkdir(dir, { recursive: true });
+        for (const c of p.collections) {
+          const h = hooks(p.database, c);
+          await dumpCollection(client.db(p.database), c, dir, format === 'gzip', stats, h);
+          if (stats.cancelled || h.cancelled()) {
+            stats.cancelled = true;
+            break done;
+          }
+          stats.collections++;
+        }
+      }
+    }
+  } catch (err) {
+    await fs.promises.rm(root, { recursive: true, force: true }).catch(() => undefined);
+    throw err;
+  }
+  if (stats.cancelled) await fs.promises.rm(root, { recursive: true, force: true }).catch(() => undefined);
+  return stats;
+}
+
+/** The command that restores a backup with the MongoDB tools. */
+export function mongorestoreCommand(root: string, format: 'archive' | 'gzip' | 'plain'): string {
+  return format === 'archive' ? `mongorestore --gzip --archive="${root}"` : `mongorestore ${format === 'gzip' ? '--gzip ' : ''}--dir "${root}"`;
 }
 
 /** The documents of a .bson file (gzipped if it ends with .gz), one raw buffer each. */
@@ -386,16 +484,12 @@ export class Backups {
     if (!client) return;
 
     // What
-    const listCollections = async (db: string) =>
-      ((await client.db(db).listCollections({}, { nameOnly: false }).toArray()) as CollectionInfo[])
-        .filter((c) => !c.name.startsWith('system.'))
-        .sort((a, b) => a.name.localeCompare(b.name));
-    const plan: { database: string; collections: CollectionInfo[] }[] = [];
+    const plan: BackupPlan = [];
     try {
       if (database && collection) {
-        plan.push({ database, collections: (await listCollections(database)).filter((c) => c.name === collection) });
+        plan.push({ database, collections: (await backupCollections(client, database)).filter((c) => c.name === collection) });
       } else if (database) {
-        const all = await listCollections(database);
+        const all = await backupCollections(client, database);
         let picked = all;
         if (all.length > 1) {
           const pick = await vscode.window.showQuickPick<Pick<CollectionInfo>>(
@@ -407,12 +501,12 @@ export class Backups {
         }
         plan.push({ database, collections: picked });
       } else {
-        const names = (await client.db('admin').admin().listDatabases({ nameOnly: true })).databases.map((d) => d.name).filter((d) => !SYSTEM_DATABASES.includes(d));
+        const names = await backupDatabases(client);
         if (!names.length) {
           void vscode.window.showInformationMessage(`${info.name} has no databases to back up.`);
           return;
         }
-        let picked = names.sort();
+        let picked = names;
         if (names.length > 1) {
           const pick = await vscode.window.showQuickPick(
             picked.map((d) => ({ label: d, picked: true })),
@@ -421,14 +515,13 @@ export class Backups {
           if (!pick?.length) return;
           picked = pick.map((p) => p.label);
         }
-        for (const d of picked) plan.push({ database: d, collections: await listCollections(d) });
+        for (const d of picked) plan.push({ database: d, collections: await backupCollections(client, d) });
       }
     } catch (err) {
       void vscode.window.showErrorMessage(`Backup failed: ${errorMessage(err)}`);
       return;
     }
-    const skipped = plan.flatMap((p) => p.collections.filter((c) => c.type === 'timeseries').map((c) => `${p.database}.${c.name}`));
-    for (const p of plan) p.collections = p.collections.filter((c) => c.type !== 'timeseries');
+    const skipped = leaveOutUnsupported(plan);
     if (!plan.some((p) => p.collections.length)) {
       void vscode.window.showWarningMessage(skipped.length ? `Nothing to back up: time series collections aren't supported (use mongodump).` : `Nothing to back up in ${what}.`);
       return;
@@ -445,7 +538,6 @@ export class Backups {
     );
     if (!format) return;
     const archive = format.value === 'archive';
-    const gzip = format.value !== 'plain';
     let root: string;
     if (archive) {
       const file = await vscode.window.showSaveDialog({
@@ -470,26 +562,19 @@ export class Backups {
       if (!folder) return;
       await this.context.globalState.update(FOLDER_KEY, folder.fsPath);
       // A new folder: never one of an earlier backup (it's deleted if the backup is cancelled).
-      const base = path.join(folder.fsPath, `${safeName(what)}_${stamp()}`);
-      root = base;
-      for (let n = 2; fs.existsSync(root); n++) root = `${base}_${n}`;
+      root = uniquePath(path.join(folder.fsPath, `${safeName(what)}_${stamp()}`));
     }
 
     // Copy
-    const totals = new Map<string, number>();
-    for (const p of plan) {
-      for (const c of p.collections) {
-        if (c.type !== 'view') totals.set(`${p.database}.${c.name}`, await client.db(p.database).collection(c.name).estimatedDocumentCount().catch(() => 0));
-      }
-    }
+    const totals = await backupTotals(client, plan);
     const total = [...totals.values()].reduce((a, b) => a + b, 0);
     const started = Date.now();
-    const stats: DumpStats = { collections: 0, documents: 0, bytes: 0, cancelled: false };
+    let stats: DumpStats;
     try {
-      await vscode.window.withProgress(
+      stats = await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: `Backing up ${what}`, cancellable: true },
-        async (progress, token) => {
-          const hooks = (database: string, c: CollectionInfo): DumpHooks => {
+        (progress, token) =>
+          writeBackup(client, plan, format.value, root, (database, c) => {
             let reported = 0;
             return {
               progress: (n) => {
@@ -501,32 +586,13 @@ export class Backups {
               },
               cancelled: () => token.isCancellationRequested,
             };
-          };
-          if (archive) {
-            await pipeline(archiveOf(client, plan, stats, hooks), zlib.createGzip(), fs.createWriteStream(root));
-            return;
-          }
-          for (const p of plan) {
-            const dir = path.join(root, p.database);
-            await fs.promises.mkdir(dir, { recursive: true });
-            for (const c of p.collections) {
-              await dumpCollection(client.db(p.database), c, dir, gzip, stats, hooks(p.database, c));
-              if (stats.cancelled || token.isCancellationRequested) {
-                stats.cancelled = true;
-                return;
-              }
-              stats.collections++;
-            }
-          }
-        },
+          }),
       );
     } catch (err) {
-      await fs.promises.rm(root, { recursive: true, force: true }).catch(() => undefined);
       void vscode.window.showErrorMessage(`Backup of ${what} failed: ${errorMessage(err)}`);
       return;
     }
     if (stats.cancelled) {
-      await fs.promises.rm(root, { recursive: true, force: true }).catch(() => undefined);
       void vscode.window.showWarningMessage(`Backup of ${what} cancelled: the incomplete backup was deleted.`);
       return;
     }
@@ -535,7 +601,7 @@ export class Backups {
     const parts = [plural(stats.collections, 'collection'), plural(stats.documents, 'document'), formatSize(stats.bytes)];
     const note = skipped.length ? ` Time series collections aren't supported and were left out (use mongodump): ${skipped.join(', ')}.` : '';
     const message = `Backed up ${what} (${parts.join(', ')}) to ${root} in ${seconds} s.${note}`;
-    const command = archive ? `mongorestore --gzip --archive="${root}"` : `mongorestore ${gzip ? '--gzip ' : ''}--dir "${root}"`;
+    const command = mongorestoreCommand(root, format.value);
     const reveal = archive ? 'Reveal File' : 'Reveal Folder';
     const show = note ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
     const answer = await show(message, 'Copy mongorestore Command', reveal);

@@ -241,17 +241,51 @@ describe('list_saved_queries', () => {
       [
         'Queries of shop.orders on Local.',
         '',
-        'Saved (2):',
-        '- "By city", saved 2026-01-02T00:00:00Z',
+        'Saved (2 for the user):',
+        '- "By city", saved for the user 2026-01-02T00:00:00Z',
         '  pipeline: [ { $match: { a: 1 } }, { $group: { _id: "$city" } } ]',
         '  disabled stages: { $limit: 10 }',
-        '- "Active", saved 2026-01-01T00:00:00Z',
+        '- "Active", saved for the user 2026-01-01T00:00:00Z',
         '  filter: { status: "active" }',
         '  sort: { at: -1 }',
         '',
         'Recent (1, newest first):',
         '- run 2026-01-03T00:00:00Z',
         '  projection: { name: 1 }',
+      ].join('\n'),
+    );
+  });
+
+  it("lists the project's queries first, with their file", async () => {
+    const saved: SavedQuery[] = [
+      { id: '1', name: 'Mine', filter: '{ a: 1 }', sort: '', projection: '', at: Date.UTC(2026, 0, 1), source: 'user' },
+      {
+        id: 'project:/repo/.mongoster/queries/shop/orders/late.json',
+        name: 'Late',
+        description: 'Orders not shipped\nafter a week',
+        filter: '{ shipped: false }',
+        sort: '',
+        projection: '',
+        at: Date.UTC(2026, 0, 5),
+        source: 'project',
+        file: '.mongoster/queries/shop/orders/late.json',
+        connection: 'Local',
+      },
+    ];
+    const { tools } = setup({ saved });
+    const { text } = await call(tools, 'list_saved_queries', { connection: 'c1', database: 'shop', collection: 'orders' });
+    expect(text).toBe(
+      [
+        'Queries of shop.orders on Local.',
+        '',
+        'Saved (1 in the project, 1 for the user):',
+        '- "Late", in the project: .mongoster/queries/shop/orders/late.json (only on the connection Local)',
+        '  description: Orders not shipped after a week',
+        '  filter: { shipped: false }',
+        '- "Mine", saved for the user 2026-01-01T00:00:00Z',
+        '  filter: { a: 1 }',
+        '',
+        'Recent: none.',
       ].join('\n'),
     );
   });

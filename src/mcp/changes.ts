@@ -7,6 +7,7 @@ import { McpTool, ToolError, boolArg, intArg, stringArg, truncate } from '../sha
 import { toBson } from '../queries';
 import { oplogEntry } from '../replication';
 import { isPlainObject, relaxEjson } from '../shared/query';
+import { isTransactionEntry } from '../shared/docHistory';
 import { MAX_OUTPUT, MAX_TIME_MS, ToolContext, connectionProp, message, plural, shell } from './context';
 
 const { EJSON } = BSON;
@@ -98,8 +99,8 @@ function listArg(args: Record<string, unknown>, key: string, allowed: string[]):
 }
 
 /** The error code of a server error. */
-const codeOf = (err: unknown): number | undefined => (err as { code?: number })?.code;
-const notAuthorized = (err: unknown) => codeOf(err) === 13 || /not authorized|unauthorized/i.test(message(err));
+export const codeOf = (err: unknown): number | undefined => (err as { code?: number })?.code;
+export const notAuthorized =(err: unknown) => codeOf(err) === 13 || /not authorized|unauthorized/i.test(message(err));
 
 /** Database and collection of the scope; collection needs database. */
 function scopeArgs(args: Record<string, unknown>): { database?: string; collection?: string } {
@@ -329,12 +330,7 @@ export function changesTools(ctx: ToolContext): McpTool[] {
         if (hello.msg === 'isdbgrid') throw new ToolError(`${info.name} is a sharded cluster (mongos): the oplog is on each shard. Use a connection to a shard's replica set, or watch_changes.`);
         if (!hello.setName) throw new ToolError(`The oplog exists only on replica sets: ${info.name} is a standalone server. (A single-node replica set is enough, e.g. mongod --replSet rs0 and rs.initiate().)`);
 
-        // Matching on the server: the namespace and _id of an entry, or of one of the operations of a transaction.
-        const nsMatch: unknown = collection ? `${database}.${collection}` : database ? { $regex: `^${database.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.` } : undefined;
-        const op: Document = {};
-        if (nsMatch) op.ns = collection && codes.includes('c') ? { $in: [nsMatch, `${database}.$cmd`] } : nsMatch;
-        if (id !== undefined) op.$or = [{ 'o._id': id }, { 'o2._id': id }];
-        const filter: Document = { $or: [{ op: { $in: codes }, ...op }, { op: 'c', 'o.applyOps': { $elemMatch: { op: { $in: codes }, ...op } } }] };
+        const filter = writesFilter(codes, database, collection, id);
         const ts: Document = {};
         if (since) ts.$gte = new Timestamp({ t: Math.floor(since.getTime() / 1000), i: 0 });
         if (until) ts.$lt = new Timestamp({ t: Math.floor(until.getTime() / 1000) + 1, i: 0 });
@@ -377,7 +373,7 @@ export function changesTools(ctx: ToolContext): McpTool[] {
             if (inner) {
               const lsid = obj(e.lsid);
               const label = [
-                isTransaction(e, inner) ? 'transaction' : 'batched write (one command applied as applyOps)',
+                isTransactionEntry(e, inner) ? 'transaction' : 'batched write (one command applied as applyOps)',
                 lsid.id !== undefined && `lsid ${shell(lsid.id)}`,
                 e.txnNumber !== undefined && `txnNumber ${shell(e.txnNumber)}`,
                 (e.partialTxn || nonZero(obj(e.prevOpTime).ts)) && 'part of a larger transaction',
@@ -446,12 +442,15 @@ export function changesTools(ctx: ToolContext): McpTool[] {
 }
 
 /**
- * Whether an applyOps entry is a transaction: it has a session, and isn't one of the batched writes of a
- * single command (insertMany, deleteMany…), whose operations carry stmtId or which are marked with multiOpType.
+ * The oplog filter of the writes (`codes`: i, u, d, c) to a database, a collection or one document of it
+ * (by _id, in o._id or o2._id): the entries themselves, or the applyOps of a transaction containing them.
  */
-function isTransaction(e: Obj, inner: Obj[]): boolean {
-  if (e.lsid === undefined || e.multiOpType !== undefined) return false;
-  return !inner.some((x) => x.stmtId !== undefined);
+export function writesFilter(codes: string[], database?: string, collection?: string, id?: unknown): Document {
+  const nsMatch: unknown = collection ? `${database}.${collection}` : database ? { $regex: `^${database.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.` } : undefined;
+  const op: Document = {};
+  if (nsMatch) op.ns = collection && codes.includes('c') ? { $in: [nsMatch, `${database}.$cmd`] } : nsMatch;
+  if (id !== undefined) op.$or = [{ 'o._id': id }, { 'o2._id': id }];
+  return { $or: [{ op: { $in: codes }, ...op }, { op: 'c', 'o.applyOps': { $elemMatch: { op: { $in: codes }, ...op } } }] };
 }
 
 const nonZero = (ts: unknown) => ts instanceof Timestamp && (ts.t !== 0 || ts.i !== 0);

@@ -4,6 +4,9 @@
 !dist/playground.js
 !dist/monitor.js
 !dist/compare.js
+!dist/docHistory.js
+!dist/structure.js
+!dist/scheduledTasks.js
 !dist/users.js
 !dist/gridfs.js
 !dist/undoHistory.js

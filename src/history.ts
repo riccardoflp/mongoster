@@ -390,6 +390,34 @@ export class UndoHistory implements vscode.Disposable {
     return this.read(entry);
   }
 
+  /**
+   * The operations recorded on a collection between two times (epoch ms) that wrote the document `id`,
+   * with what they did to it: Mongoster's own writes in a document's history. An operation undone since
+   * is found through its undo, which recorded the same documents.
+   */
+  async writesOf(target: HistoryTarget, id: unknown, from: number, to: number): Promise<{ label: string; time: number; kind: 'inserted' | 'updated' | 'deleted' }[]> {
+    await this.loaded;
+    const key = keyOf(id);
+    const out: { label: string; time: number; kind: 'inserted' | 'updated' | 'deleted' }[] = [];
+    for (const e of this.entries) {
+      if (e.connectionId !== target.connectionId || e.database !== target.database || e.collection !== target.collection || e.time < from || e.time > to) continue;
+      const source = e.undone ? this.entries.find((u) => u.undoOf === e.id && u.size) : e;
+      if (!source?.size) continue;
+      let doc: Recorded | undefined;
+      try {
+        doc = (await this.read(source)).find((d) => keyOf(d.id) === key);
+      } catch {
+        continue;
+      }
+      if (!doc) continue;
+      // Through the undo the document went the other way: what was before the undo is what the operation left.
+      const kind =
+        source === e ? (!doc.before ? 'inserted' : doc.after === null ? 'deleted' : 'updated') : !doc.before ? 'deleted' : doc.after === null ? 'inserted' : 'updated';
+      out.push({ label: e.label, time: e.time, kind });
+    }
+    return out;
+  }
+
   private async open(id: string): Promise<{ entry: HistoryEntry; where: string; coll: Collection; docs: Recorded[] }> {
     await this.loaded;
     const entry = this.entries.find((e) => e.id === id);

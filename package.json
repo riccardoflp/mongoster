@@ -260,6 +260,12 @@
         "icon": "$(diff)"
       },
       {
+        "command": "mongoster.compareStructure",
+        "title": "Compare Structure With…",
+        "category": "Mongoster",
+        "icon": "$(diff)"
+      },
+      {
         "command": "mongoster.copyCollection",
         "title": "Copy Collection To…",
         "category": "Mongoster",
@@ -314,6 +320,12 @@
         "icon": "$(history)"
       },
       {
+        "command": "mongoster.documentHistory",
+        "title": "Document History",
+        "category": "Mongoster",
+        "icon": "$(history)"
+      },
+      {
         "command": "mongoster.undoLast",
         "title": "Undo Last Change",
         "category": "Mongoster",
@@ -346,6 +358,28 @@
         "title": "Restore from Backup…",
         "category": "Mongoster",
         "icon": "$(history)"
+      },
+      {
+        "command": "mongoster.saveQueryInProject",
+        "title": "Save Query in the Project…",
+        "category": "Mongoster"
+      },
+      {
+        "command": "mongoster.chooseQueriesFolder",
+        "title": "Choose the Project Folder for Saved Queries…",
+        "category": "Mongoster"
+      },
+      {
+        "command": "mongoster.showScheduledTasks",
+        "title": "Show Scheduled Tasks",
+        "category": "Mongoster",
+        "icon": "$(watch)"
+      },
+      {
+        "command": "mongoster.scheduleTask",
+        "title": "Schedule…",
+        "category": "Mongoster",
+        "icon": "$(calendar)"
       },
       {
         "command": "mongoster.mcp.setup",
@@ -412,6 +446,11 @@
           "command": "mongoster.undoLast",
           "when": "view == mongoster.connections",
           "group": "2_history@1"
+        },
+        {
+          "command": "mongoster.showScheduledTasks",
+          "when": "view == mongoster.connections",
+          "group": "2_history@2"
         },
         {
           "command": "mongoster.importConnections",
@@ -631,6 +670,11 @@
           "group": "2_transfer@4"
         },
         {
+          "command": "mongoster.compareStructure",
+          "when": "view == mongoster.connections && viewItem =~ /^database/",
+          "group": "2_transfer@4"
+        },
+        {
           "command": "mongoster.watchChanges",
           "when": "view == mongoster.connections && viewItem =~ /^(connection|database|collection)/",
           "group": "2_monitor@2"
@@ -661,6 +705,11 @@
           "group": "2_backup@2"
         },
         {
+          "command": "mongoster.scheduleTask",
+          "when": "view == mongoster.connections && viewItem =~ /^(connection|database)/",
+          "group": "2_backup@3"
+        },
+        {
           "command": "mongoster.backup",
           "when": "view == mongoster.connections && viewItem =~ /^(collection|view)/",
           "group": "2_transfer@6"
@@ -669,6 +718,11 @@
           "command": "mongoster.restore",
           "when": "view == mongoster.connections && viewItem == collection",
           "group": "2_transfer@7"
+        },
+        {
+          "command": "mongoster.scheduleTask",
+          "when": "view == mongoster.connections && viewItem =~ /^(collection|view)/",
+          "group": "2_transfer@8"
         },
         {
           "command": "mongoster.importConnections",
@@ -683,8 +737,16 @@
       ],
       "commandPalette": [
         {
+          "command": "mongoster.documentHistory",
+          "when": "resourceScheme == mongoster"
+        },
+        {
           "command": "mongoster.clearTreeFilter",
           "when": "mongoster.treeFiltered"
+        },
+        {
+          "command": "mongoster.saveQueryInProject",
+          "when": "activeWebviewPanelId == 'mongoster.collection'"
         },
         {
           "command": "mongoster.openCollection",
@@ -849,6 +911,10 @@
         {
           "command": "mongoster.restore",
           "when": "false"
+        },
+        {
+          "command": "mongoster.scheduleTask",
+          "when": "false"
         }
       ],
       "editor/title": [
@@ -856,6 +922,11 @@
           "command": "mongoster.runPlayground",
           "when": "resourceFilename =~ /\\.mongodb\\.js$/",
           "group": "navigation@1"
+        },
+        {
+          "command": "mongoster.documentHistory",
+          "when": "resourceScheme == mongoster && resourceFilename =~ /^(?!new-\\d+\\.json$)/",
+          "group": "navigation@2"
         }
       ]
     },
@@ -930,6 +1001,24 @@
           "default": true,
           "markdownDescription": "Let the AI read documents and field values (the `find_documents`, `aggregate`, `distinct_values`, `watch_changes`, `write_history` and `mongoster_write_details` tools). Turned off, it only sees connections, databases, collections, their structure and statistics, and opens tabs for you to look at the documents.",
           "order": 8
+        },
+        "mongoster.savedQueries.folder": {
+          "type": "string",
+          "default": ".mongoster/queries",
+          "markdownDescription": "Folder of the queries saved **In the project**, one JSON file per query, to share them with the team and version them with git. A relative path is inside each workspace folder (in the desktop app, inside the project folder chosen with **Mongoster: Choose the Project Folder for Saved Queries…**); an absolute path is used as it is.",
+          "order": 9
+        },
+        "mongoster.references.detect": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Find the references between the collections of a database when one of its collections is opened, so that the table can follow them (Ctrl/Cmd+click on a reference, `Open referenced document` and `Find referencing documents` in the menu of a row). It reads 100 documents of each collection of the database once per session, in the background. Turned off, the table only follows the references found by a `Relationship Diagram` of the database.",
+          "order": 10
+        },
+        "mongoster.scheduledTasks.keepRunningInTray": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Desktop app only: when there are enabled scheduled tasks, closing the window keeps the app running in the system tray (menu bar on macOS) so that the tasks keep running. `Open` in the tray icon's menu shows the window again, `Quit` closes the app. VS Code runs scheduled tasks only while one of its windows is open.",
+          "order": 11
         }
       }
     },

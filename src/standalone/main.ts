@@ -3,9 +3,11 @@
 // of VS Code's side bar, tabs and dialogs.
 import * as fs from 'fs';
 import * as path from 'path';
-import { BrowserWindow, Menu, MenuItemConstructorOptions, app, ipcMain, nativeTheme, protocol, session, shell } from 'electron';
+import { BrowserWindow, Menu, MenuItemConstructorOptions, Notification, Tray, app, ipcMain, nativeImage, nativeTheme, protocol, session, shell } from 'electron';
 import packageJSON from '../../package.json';
 import { activate } from '../extension';
+import { Scheduler } from '../scheduler';
+import { TRAY_SETTING } from '../scheduledTasks';
 import type { HostMessage, ShellMessage } from './protocol';
 import { themeInfo } from './theme';
 import * as vscode from './vscode';
@@ -18,7 +20,7 @@ import { PackageJson, setRuntime } from './vscode/runtime';
 import { flushStorage, settings } from './vscode/storage';
 import { viewTitleActions } from './vscode/tree';
 import { outputChannels, refreshStatus } from './vscode/ui';
-import { APP_PROTOCOL, isResourceHost, panelDocument, panelOfHost, panelsShown } from './vscode/webview';
+import { APP_PROTOCOL, activePanelViewType, isResourceHost, panelDocument, panelOfHost, panelsShown } from './vscode/webview';
 
 const APP_NAME = 'Mongoster';
 const REPOSITORY = 'https://github.com/riccardoflp/mongoster';
@@ -172,8 +174,17 @@ function createWindow(): void {
     saveWindowState(win);
     if (closing) return;
     event.preventDefault();
+    if (!quitting && keepInTray()) {
+      hideToTray(win);
+      return;
+    }
+    // Quitting from the tray: the confirmation of unsaved files is in the window.
+    if (!win.isVisible()) showWindow();
     void confirmCloseAll().then((ok) => {
-      if (!ok) return;
+      if (!ok) {
+        quitting = false;
+        return;
+      }
       closing = true;
       win.close();
     });
@@ -184,6 +195,51 @@ function createWindow(): void {
   });
 
   void win.loadURL(`${APP_PROTOCOL}://shell/shell.html`);
+}
+
+// ---- the tray: with scheduled tasks enabled and the setting on, closing the window keeps the app running
+
+let tray: Tray | undefined;
+/** Quit was chosen (menu, tray, Cmd+Q): the window really closes. */
+let quitting = false;
+
+function keepInTray(): boolean {
+  return settings.value(TRAY_SETTING) === true && !!Scheduler.current?.hasEnabledTasks();
+}
+
+/** Shows the window again (from the tray, a second start, the dock); the tray icon goes. */
+function showWindow(): void {
+  tray?.destroy();
+  tray = undefined;
+  if (!window || window.isDestroyed()) return createWindow();
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+}
+
+function hideToTray(win: BrowserWindow): void {
+  win.hide();
+  if (tray) return;
+  const icon = nativeImage.createFromPath(path.join(appRoot, 'media', 'icon.png')).resize({ width: 16, height: 16 });
+  tray = new Tray(icon);
+  tray.setToolTip(`${APP_NAME}: scheduled tasks keep running`);
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: `Open ${APP_NAME}`, click: () => showWindow() },
+      { type: 'separator' },
+      { label: 'Quit', click: () => app.quit() },
+    ]),
+  );
+  tray.on('click', () => showWindow());
+}
+
+/** While the window is in the tray, a task that fails or is skipped is told by the system. */
+function notifyFromTray(task: { name: string }, status: string, error: string | undefined): void {
+  if ((window && !window.isDestroyed() && window.isVisible()) || !Notification.isSupported()) return;
+  if (status !== 'failed' && status !== 'skipped') return;
+  const notification = new Notification({ title: APP_NAME, body: `Scheduled task "${task.name}" ${status === 'failed' ? 'failed' : 'was skipped'}: ${error ?? ''}` });
+  notification.on('click', () => showWindow());
+  notification.show();
 }
 
 /** The shell loaded: it is told what there is, then gets what was said while it wasn't listening. */
@@ -242,7 +298,7 @@ function listenToShell(): void {
 
 async function commandPalette(): Promise<void> {
   const name = vscode.window.activeTextEditor?.document.name;
-  const items = paletteCommands({ resourceFilename: name, editorTextFocus: !!name }).map((c) => ({ label: c.title, command: c.command }));
+  const items = paletteCommands({ resourceFilename: name, editorTextFocus: !!name, activeWebviewPanelId: activePanelViewType() }).map((c) => ({ label: c.title, command: c.command }));
   const picked = await vscode.window.showQuickPick(items, { placeHolder: 'Type the name of a command to run' });
   if (picked) runCommand(picked.command);
 }
@@ -324,6 +380,8 @@ function buildMenu(): void {
         command('mongoster.showHistory'),
         command('mongoster.clearHistory'),
         { type: 'separator' },
+        command('mongoster.showScheduledTasks'),
+        { type: 'separator' },
         command('mongoster.mcp.setup'),
         command('mongoster.mcp.changePort'),
       ],
@@ -354,8 +412,7 @@ if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => {
     if (!window) return;
-    if (window.isMinimized()) window.restore();
-    window.focus();
+    showWindow();
   });
 
   void app.whenReady().then(() => {
@@ -377,8 +434,15 @@ else {
     nativeTheme.on('updated', () => window?.setBackgroundColor(themeInfo(themeKind()).vars['editor-background']));
     createWindow();
 
-    // One window, and the open tabs live in it: closing it quits the app, on macOS too.
+    // One window, and the open tabs live in it: closing it quits the app, on macOS too, unless it goes
+    // to the tray for the scheduled tasks (it is hidden then, not closed).
     app.on('window-all-closed', () => app.quit());
+    app.on('before-quit', () => (quitting = true));
+    app.on('activate', () => {
+      if (tray) showWindow();
+    });
+    const ran = Scheduler.current?.onDidRun(({ task, run }) => notifyFromTray(task, run.status, run.error));
+    if (ran) context.subscriptions.push(ran);
     app.on('will-quit', () => {
       for (const subscription of context.subscriptions.splice(0).reverse()) {
         try {

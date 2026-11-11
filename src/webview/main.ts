@@ -45,6 +45,7 @@ import { highlight } from './highlight';
 import { FilterBuilder } from './builder';
 import { CompletionKind, FieldHint, fieldHints } from '../shared/complete';
 import { analyzeSchema } from '../shared/schema';
+import { CollectionReferences, ReferenceTarget, referenceKeys, referenceTargets, referencingTargets } from '../shared/references';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: WebviewMessage): void;
@@ -324,6 +325,9 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
     case 'history':
       history.update(m.recent, m.saved);
       break;
+    case 'saveCurrent':
+      history.saveCurrent(m.place);
+      break;
     case 'loadQuery':
       loadQuery(m.query);
       if (m.explain) explain();
@@ -403,10 +407,21 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       renderGrid();
       renderStatus(m.durationMs);
       if (m.note) el('status').textContent = `${m.note} · ${m.durationMs} ms`;
+      // The references are found in the background once the documents are shown.
+      if (!referencesRequested && state.mode === 'find') {
+        referencesRequested = true;
+        vscode.postMessage({ type: 'loadReferences' });
+      }
       if (openDocIndex >= 0) {
         if (openDocIndex < docs.length) openDocument(openDocIndex);
         else closeDocument();
       }
+      break;
+    case 'references':
+      references = { outgoing: m.outgoing, incoming: m.incoming };
+      referenceColumns = referenceKeys(m.outgoing);
+      unmarkReferences();
+      markReferences();
       break;
     case 'error':
       if (m.requestId !== currentRequest) return;
@@ -617,6 +632,7 @@ function renderGrid(): void {
   pinColumns(pinnedLeafCount(columns, layout));
   columnsPanel.update();
   renderSelection();
+  markReferences();
 
   if (reselect) {
     const { row, path, elem } = reselect;
@@ -726,7 +742,12 @@ grid.addEventListener('contextmenu', (e) => {
   const cell = cellValue(td);
   const canWrite = !readOnly && state.mode === 'find';
   const items: MenuItem[] = [{ label: 'Open document', action: () => openDocument(row) }];
+  // Its writes in the oplog: a document of the collection (not of a view, nor a pipeline's output).
+  if (state.mode === 'find' && '_id' in doc && !document.body.classList.contains('view')) {
+    items.push({ label: 'History…', title: 'The versions of the document from the oplog', action: () => vscode.postMessage({ type: 'documentHistory', id: doc._id }) });
+  }
   if (cell) items.push({ label: 'Copy value', title: 'mongosh syntax (Ctrl+C)', action: () => vscode.postMessage({ type: 'copy', text: toShell(cell.value) }) });
+  items.push(...referenceItems(td, doc));
   items.push('separator', ...copyItems(doc));
   if (canWrite) {
     items.push('separator', { label: 'Duplicate…', title: 'Insert a copy without _id', action: () => duplicate(doc) });
@@ -744,6 +765,97 @@ function copyItems(doc: Record<string, unknown>): MenuItem[] {
     title: f.title,
     action: () => vscode.postMessage({ type: 'copy', text: formatDocument(doc, f.id, collectionName) }),
   }));
+}
+
+// ---------------------------------------------------------------------------
+// References: cells that reference a document of another collection (or of this one) are links
+
+/** The references leaving and reaching the collection, once the host has found them. */
+let references: CollectionReferences | null = null;
+let referencesRequested = false;
+/** Column keys that can hold references. */
+let referenceColumns = new Set<string>();
+const modKey = /Mac/.test(navigator.platform) ? 'Cmd' : 'Ctrl';
+
+/** Where a cell's value leads, in Find (the table shows the collection's own documents). */
+function cellTargets(td: HTMLElement): ReferenceTarget[] {
+  if (!references || state.mode !== 'find' || !td.dataset.path || td.classList.contains('more') || td.classList.contains('filler')) return [];
+  if (!referenceColumns.has((JSON.parse(td.dataset.path) as string[]).join('.'))) return [];
+  const cell = cellValue(td);
+  return cell ? referenceTargets(references.outgoing, cell.key, cell.value, databaseName) : [];
+}
+
+function describeTarget(t: ReferenceTarget): string {
+  return t.count > 1 ? `the ${t.count} referenced documents in ${t.collection}` : `the referenced document in ${t.collection}`;
+}
+
+/** Underlines the cells holding references and tells in their tooltip how to follow them. */
+function markReferences(): void {
+  if (!references?.outgoing.length || state.mode !== 'find') return;
+  grid.querySelectorAll<HTMLTableCellElement>('tbody td[data-path]').forEach((td) => {
+    if (td.classList.contains('ref-link')) return;
+    const targets = cellTargets(td);
+    if (!targets.length) return;
+    td.classList.add('ref-link');
+    const what = targets.length === 1 ? describeTarget(targets[0]) : `the referenced document (in ${targets.map((t) => t.collection).join(', ')})`;
+    td.dataset.title ??= td.title;
+    td.title = `${td.dataset.title}\n\n${modKey}+click: open ${what}`;
+  });
+}
+
+/** Before the references are marked again (found anew). */
+function unmarkReferences(): void {
+  grid.querySelectorAll<HTMLElement>('td.ref-link').forEach((td) => {
+    td.classList.remove('ref-link');
+    if (td.dataset.title !== undefined) td.title = td.dataset.title;
+  });
+}
+
+// With Ctrl/Cmd held, references under the pointer look clickable.
+const trackModifier = (e: KeyboardEvent | MouseEvent) => document.body.classList.toggle('mod-down', e.ctrlKey || e.metaKey);
+window.addEventListener('keydown', trackModifier);
+window.addEventListener('keyup', trackModifier);
+grid.addEventListener('mousemove', trackModifier);
+window.addEventListener('blur', () => document.body.classList.remove('mod-down'));
+
+/** Opens a collection of the database with the target's filter. */
+function openTarget(t: ReferenceTarget): void {
+  vscode.postMessage({ type: 'openReference', collection: t.collection, filter: t.filter });
+}
+
+const shortFilter = (filter: string) => (filter.length > 300 ? `${filter.slice(0, 299)}…` : filter);
+
+/** Ctrl/Cmd+click on a reference: opens it, or asks which collection when the field references several. */
+function followReference(td: HTMLElement, x: number, y: number): void {
+  const targets = cellTargets(td);
+  if (targets.length === 1) openTarget(targets[0]);
+  else if (targets.length > 1) {
+    docMenu.open(x, y, [{ heading: 'Open the referenced document in' }, ...targets.map((t) => ({ label: t.label, title: shortFilter(t.filter), action: () => openTarget(t) }))]);
+  }
+}
+
+/** `Open referenced document` on a reference, `Find referencing documents ▸` on a row others reference. */
+function referenceItems(td: HTMLElement, doc: Record<string, unknown>): MenuItem[] {
+  const items: MenuItem[] = [];
+  const targets = cellTargets(td);
+  const label = targets.some((t) => t.count > 1) ? 'Open referenced documents' : 'Open referenced document';
+  if (targets.length === 1) {
+    const t = targets[0];
+    items.push({ label, title: `${t.label}: ${shortFilter(t.filter)} (${modKey}+click)`, action: () => openTarget(t) });
+  } else if (targets.length > 1) {
+    items.push({ label, title: 'The field references several collections', items: targets.map((t) => ({ label: t.label, title: shortFilter(t.filter), action: () => openTarget(t) })) });
+  }
+  if (references && state.mode === 'find') {
+    const back = referencingTargets(references.incoming, doc);
+    if (back.length) {
+      items.push({
+        label: 'Find referencing documents',
+        title: 'The documents of other collections (or of this one) whose fields reference this one',
+        items: back.map((t) => ({ label: t.label, title: shortFilter(t.filter), action: () => openTarget(t) })),
+      });
+    }
+  }
+  return items;
 }
 
 // ---------------------------------------------------------------------------
@@ -1048,6 +1160,12 @@ grid.addEventListener('click', (e) => {
   const td = target.closest('td');
   const row = Number(td?.closest('tr')?.dataset.row);
   if (!td || !docs[row]) return;
+  // Ctrl/Cmd+click on a reference opens what it references.
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && td.classList.contains('ref-link')) {
+    selectCell(td);
+    followReference(td, e.clientX, e.clientY);
+    return;
+  }
   // Sub-rows of expanded arrays select their document.
   if (e.ctrlKey || e.metaKey || e.shiftKey) {
     selectRows(row, e.shiftKey, e.ctrlKey || e.metaKey);
@@ -1318,7 +1436,7 @@ function openDocument(index: number): void {
   el('docTitle').textContent = `Document ${state.skip + index + 1}${'_id' in doc ? ' · ' + toShell(doc._id) : ''}`;
   el<HTMLButtonElement>('docPrev').disabled = index === 0;
   el<HTMLButtonElement>('docNext').disabled = index === docs.length - 1;
-  for (const id of ['docEdit', 'docDelete']) {
+  for (const id of ['docEdit', 'docDelete', 'docHistory']) {
     const button = el<HTMLButtonElement>(id);
     button.disabled = !('_id' in doc);
     button.dataset.title ??= button.title;
@@ -1399,6 +1517,9 @@ el('docCopy').addEventListener('click', () => {
 });
 el('docEdit').addEventListener('click', () => {
   if (openDocIndex >= 0) vscode.postMessage({ type: 'editDocument', id: docs[openDocIndex]._id });
+});
+el('docHistory').addEventListener('click', () => {
+  if (openDocIndex >= 0) vscode.postMessage({ type: 'documentHistory', id: docs[openDocIndex]._id });
 });
 el('docDuplicate').addEventListener('click', () => {
   if (openDocIndex >= 0) duplicate(docs[openDocIndex]);
@@ -1504,6 +1625,9 @@ document.addEventListener('keydown', (e) => {
   } else if (e.key === 'F2') {
     e.preventDefault();
     startEdit(selectedCell);
+  } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && selectedCell.classList.contains('ref-link')) {
+    const r = selectedCell.getBoundingClientRect();
+    followReference(selectedCell, r.left, r.bottom);
   } else if (e.key === 'Enter') {
     openDocument(Number(selectedCell.closest('tr')!.dataset.row));
   } else if (e.key === 'Delete' && !readOnly && state.mode === 'find') {
@@ -1539,12 +1663,16 @@ function loadQuery(q: QueryText): void {
 
 const history = new HistoryPopover({
   apply: loadQuery,
-  save: (q) =>
+  save: (q, place) =>
     vscode.postMessage({
       type: 'saveQuery',
       query: { filter: q.filter, sort: q.sort, projection: q.projection, ...(q.pipeline && { pipeline: q.pipeline }) },
+      ...(place && { place }),
     }),
   remove: (id) => vscode.postMessage({ type: 'removeQuery', id }),
+  rename: (id) => vscode.postMessage({ type: 'renameQuery', id }),
+  move: (id) => vscode.postMessage({ type: 'moveQuery', id }),
+  openFile: (id) => vscode.postMessage({ type: 'openQueryFile', id }),
   clear: () => vscode.postMessage({ type: 'clearHistory' }),
   current: () =>
     state.mode === 'aggregate'

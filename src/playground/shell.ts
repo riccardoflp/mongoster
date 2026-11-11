@@ -513,6 +513,16 @@ class Shell {
         typeof index === 'string' ? coll.dropIndex(index) : db.command({ dropIndexes: name, index }),
       ),
       dropIndexes: write('dropIndexes', () => coll.dropIndexes()),
+      getSearchIndexes: (index?: string) => (index ? coll.listSearchIndexes(index) : coll.listSearchIndexes()).toArray(),
+      // As mongosh: (name, definition), (name, type, definition) or ({ name, type, definition }).
+      createSearchIndex: write('createSearchIndex', (...args: unknown[]) => {
+        const [first, second, third] = args;
+        const description: Document =
+          typeof first === 'string' ? (typeof second === 'string' ? { name: first, type: second, definition: third } : { name: first, definition: second }) : (first as Document);
+        return coll.createSearchIndex(description as never);
+      }),
+      updateSearchIndex: write('updateSearchIndex', (index: string, definition: Document) => coll.updateSearchIndex(index, definition)),
+      dropSearchIndex: write('dropSearchIndex', (index: string) => coll.dropSearchIndex(index)),
       drop: write('drop', () => coll.drop()),
       renameCollection: write('renameCollection', (to: string, dropTarget?: boolean) =>
         coll.rename(to, { dropTarget }).then(() => ({ ok: 1 })),

@@ -1,11 +1,17 @@
-// "History" popover: recent and saved queries of the collection.
-import type { QueryText, SavedQuery } from '../shared/messages';
+// "History" popover: recent and saved queries of the collection; saved ones are the user's or the project's.
+import type { QueryText, SavedQuery, SavedQuerySource } from '../shared/messages';
 import { pipelineToText, summarizePipeline } from '../shared/pipeline';
+import { MenuItem, PopupMenu } from './popupMenu';
 
 export interface HistoryCallbacks {
   apply(query: QueryText): void;
-  save(query: QueryText): void;
+  /** Saves with a name; `place` skips the question of where. */
+  save(query: QueryText, place?: SavedQuerySource): void;
   remove(id: string): void;
+  rename(id: string): void;
+  /** Moves a saved query between the user's and the project's. */
+  move(id: string): void;
+  openFile(id: string): void;
   clear(): void;
   current(): QueryText;
   notify(message: string): void;
@@ -18,16 +24,12 @@ export class HistoryPopover {
   private readonly button = document.getElementById('historyBtn') as HTMLButtonElement;
   private readonly search = document.getElementById('historySearch') as HTMLInputElement;
   private readonly body = document.getElementById('historyBody')!;
+  private readonly menu = new PopupMenu(document.getElementById('historyMenu')!);
 
   constructor(private readonly cb: HistoryCallbacks) {
     this.button.addEventListener('click', () => this.toggle());
     this.search.addEventListener('input', () => this.render());
-    document.getElementById('saveCurrent')!.addEventListener('click', () => {
-      const q = cb.current();
-      if (q.pipeline ? !q.pipeline.length : !q.filter.trim() && !q.sort.trim() && !q.projection.trim()) {
-        cb.notify(q.pipeline ? 'Nothing to save: the pipeline has no stages.' : 'Nothing to save: filter, sort and projection are empty.');
-      } else cb.save(q);
-    });
+    document.getElementById('saveCurrent')!.addEventListener('click', () => this.saveCurrent());
     this.panel.addEventListener('keydown', (e) => this.onKey(e));
     document.addEventListener('mousedown', (e) => {
       const t = e.target as Node;
@@ -39,6 +41,14 @@ export class HistoryPopover {
     return !this.panel.classList.contains('hidden');
   }
 
+  /** Saves the tab's current query, unless it is empty. */
+  saveCurrent(place?: SavedQuerySource): void {
+    const q = this.cb.current();
+    if (q.pipeline ? !q.pipeline.length : !q.filter.trim() && !q.sort.trim() && !q.projection.trim()) {
+      this.cb.notify(q.pipeline ? 'Nothing to save: the pipeline has no stages.' : 'Nothing to save: filter, sort and projection are empty.');
+    } else this.cb.save(q, place);
+  }
+
   update(recent: SavedQuery[], saved: SavedQuery[]): void {
     this.recent = recent;
     this.saved = saved;
@@ -46,6 +56,7 @@ export class HistoryPopover {
   }
 
   toggle(open = !this.isOpen): void {
+    this.menu.close();
     this.panel.classList.toggle('hidden', !open);
     this.button.setAttribute('aria-expanded', String(open));
     if (!open) return;
@@ -60,7 +71,7 @@ export class HistoryPopover {
     const q = this.search.value.trim().toLowerCase();
     const match = (e: SavedQuery) =>
       !q ||
-      [e.name ?? '', e.filter, e.sort, e.projection, e.pipeline ? pipelineToText(e.pipeline) : ''].some((t) =>
+      [e.name ?? '', e.description ?? '', e.filter, e.sort, e.projection, e.pipeline ? pipelineToText(e.pipeline) : ''].some((t) =>
         t.toLowerCase().includes(q),
       );
     const saved = this.saved.filter(match);
@@ -96,9 +107,20 @@ export class HistoryPopover {
       const main = document.createElement('div');
       main.className = 'hi-main';
       if (entry.name) main.append(text('span', entry.name, 'hi-name'));
+      if (entry.description) main.append(text('span', entry.description, 'hi-desc'));
       main.append(preview(entry));
-      row.append(main, text('span', relativeTime(entry.at), 'hi-time'));
-      if (!saved) {
+      row.append(main);
+      if (saved) row.append(placeTag(entry));
+      if (entry.source !== 'project') row.append(text('span', relativeTime(entry.at), 'hi-time'));
+      if (saved) {
+        const more = button('icon', '⋯', 'Rename, move, open the file');
+        more.setAttribute('aria-haspopup', 'menu');
+        more.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.menu.openBelow(more, this.actions(entry));
+        });
+        row.append(more);
+      } else {
         const star = button('icon', '☆', 'Save with a name');
         star.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -118,6 +140,19 @@ export class HistoryPopover {
       });
       this.body.append(row);
     }
+  }
+
+  private actions(entry: SavedQuery): MenuItem[] {
+    const project = entry.source === 'project';
+    return [
+      { label: 'Rename…', action: () => this.cb.rename(entry.id) },
+      project
+        ? { label: 'Move to My Queries', title: 'Keep it only for you and delete its file from the project', action: () => this.cb.move(entry.id) }
+        : { label: 'Move to the Project', title: 'Save it as a file in the project, shared through git', action: () => this.cb.move(entry.id) },
+      ...(project ? [{ label: 'Open File', title: entry.file, action: () => this.cb.openFile(entry.id) }] : []),
+      'separator',
+      { label: 'Delete', action: () => this.cb.remove(entry.id) },
+    ];
   }
 
   private choose(entry: SavedQuery): void {
@@ -141,6 +176,18 @@ export class HistoryPopover {
     else items[next].focus();
     e.preventDefault();
   }
+}
+
+/** Where a saved query lives: `Project` (a file in the repository) or `Me`. */
+function placeTag(q: SavedQuery): HTMLElement {
+  if (q.source !== 'project') {
+    const tag = text('span', 'Me', 'hi-place');
+    tag.title = 'Saved for you, in Mongoster';
+    return tag;
+  }
+  const tag = text('span', 'Project', 'hi-place project');
+  tag.title = [`In the project: ${q.file}`, q.connection && `Only on the connection ${q.connection}`].filter(Boolean).join('\n');
+  return tag;
 }
 
 function preview(q: QueryText): HTMLElement {

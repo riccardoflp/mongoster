@@ -69,7 +69,7 @@ export interface WorkspaceHost {
   historyUsage(): HistoryUsage;
   /** The documents recorded by a write; rejects when its record is gone. */
   historyDocuments(id: string): Promise<RecordedDocument[]>;
-  /** The saved (named) and recent queries of a collection (QueryHistory). */
+  /** The saved (named) queries of a collection, the user's (QueryHistory) and the project's (ProjectQueries, `source: 'project'`), and its recent ones. */
   queries(ref: { connectionId: string; database: string; collection: string }): { saved: SavedQuery[]; recent: SavedQuery[] };
   /** Whether the connection's Redis URL is stored (never the URL). */
   redisUrlSet(connectionId: string): Promise<boolean>;
@@ -289,7 +289,7 @@ export function workspaceTools(ctx: ToolContext, host: WorkspaceHost): McpTool[]
       name: 'list_saved_queries',
       title: 'Saved and recent queries of a collection',
       description:
-        "The queries the user saved by name in Mongoster for a collection, and the ones run recently there, newest first: filter/sort/projection or pipeline stages in mongosh syntax as written. Use it to reuse or build on the user's queries (pass them to find_documents, aggregate, open_query…).",
+        "The queries saved by name in Mongoster for a collection — those in the project's repository (files shared with the team through git, with their path) and the user's own — and the ones run recently there, newest first: filter/sort/projection or pipeline stages in mongosh syntax as written. Use it to reuse or build on the user's queries (pass them to find_documents, aggregate, open_query…).",
       inputSchema: {
         type: 'object',
         properties: { connection: connectionProp, database: databaseProp, collection: collectionProp },
@@ -307,16 +307,24 @@ export function workspaceTools(ctx: ToolContext, host: WorkspaceHost): McpTool[]
           await target(args);
           return `No saved or recent queries for ${database}.${collection} on ${info.name}.`;
         }
-        const block = (list: SavedQuery[], saved: boolean) =>
-          [...list].sort((a, b) => b.at - a.at).flatMap((q) => [saved ? `- ${JSON.stringify(q.name ?? '')}, saved ${time(q.at)}` : `- run ${time(q.at)}`, ...queryLines(q)]);
+        const project = saved.filter((q) => q.source === 'project');
+        const user = saved.filter((q) => q.source !== 'project').sort((a, b) => b.at - a.at);
+        const savedLines = (q: SavedQuery) => [
+          q.source === 'project'
+            ? `- ${JSON.stringify(q.name ?? '')}, in the project: ${q.file}${q.connection ? ` (only on the connection ${q.connection})` : ''}`
+            : `- ${JSON.stringify(q.name ?? '')}, saved for the user ${time(q.at)}`,
+          ...(q.description ? [`  description: ${oneLine(q.description)}`] : []),
+          ...queryLines(q),
+        ];
+        const counts = [project.length && `${project.length} in the project`, user.length && `${user.length} for the user`].filter(Boolean).join(', ');
         const lines = [
           `Queries of ${database}.${collection} on ${info.name}.`,
           '',
-          saved.length ? `Saved (${saved.length}):` : 'Saved: none.',
-          ...block(saved, true),
+          saved.length ? `Saved (${counts}):` : 'Saved: none.',
+          ...[...project, ...user].flatMap(savedLines),
           '',
           recent.length ? `Recent (${recent.length}, newest first):` : 'Recent: none.',
-          ...block(recent, false),
+          ...[...recent].sort((a, b) => b.at - a.at).flatMap((q) => [`- run ${time(q.at)}`, ...queryLines(q)]),
         ];
         return truncate(lines.join('\n'), MAX_OUTPUT);
       },

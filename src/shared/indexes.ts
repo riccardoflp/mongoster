@@ -82,7 +82,7 @@ export type IndexChange =
   | { kind: 'recreate'; changed: string[] };
 
 /** JSON with the keys of objects sorted: the order of options doesn't make two definitions differ. */
-function stable(v: unknown): string {
+export function stable(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(stable).join(',')}]`;
   if (isPlainObject(v)) {
     return `{${Object.keys(v)

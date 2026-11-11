@@ -539,6 +539,18 @@ body.dragging .dropzones:empty {
   background: var(--vscode-list-inactiveSelectionBackground);
 }
 
+/* References to other documents: underlined on hover, clickable with Ctrl/Cmd held. */
+.grid td.ref-link:hover {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+body.mod-down .grid td.ref-link:hover {
+  cursor: pointer;
+  text-decoration-style: solid;
+  text-decoration-color: var(--vscode-textLink-activeForeground, var(--accent));
+}
+
 .grid td.missing {
   cursor: default;
   background: repeating-linear-gradient(
@@ -856,6 +868,29 @@ button.link:hover {
   flex: none;
   color: var(--muted);
   font-size: 0.85em;
+}
+
+.hi-desc {
+  color: var(--muted);
+  font-size: 0.9em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Where a saved query lives: Me or Project. */
+.hi-place {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--muted);
+  font-size: 0.8em;
+}
+
+.hi-place.project {
+  border-color: var(--accent);
+  color: var(--vscode-textLink-foreground);
 }
 
 .history-empty {
@@ -2432,6 +2467,22 @@ body.resizing * {
 
 .context-menu button.menu-sub {
   padding-left: 24px;
+}
+
+/* An item with a submenu. */
+.context-menu button.menu-more {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.context-menu button.menu-more::after {
+  content: '▸';
+}
+
+.context-menu button[aria-expanded='true'] {
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground));
+  color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground));
 }
 
 .context-menu hr {

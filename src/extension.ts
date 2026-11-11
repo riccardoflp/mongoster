@@ -10,6 +10,8 @@ import { DEF_SCHEME, DefinitionFileSystem } from './definitionFs';
 import { Playgrounds } from './playground/playground';
 import { MonitorPanel } from './monitor';
 import { ComparePanel } from './compare';
+import { StructurePanel } from './structurePanel';
+import { DocumentHistoryPanel } from './docHistory';
 import { UsersPanel } from './users';
 import { GridFSPanel, dropBucket, uploadFiles } from './gridfs';
 import { Copier } from './copy';
@@ -20,13 +22,18 @@ import { WatchPanel, WatchScope } from './watch';
 import { SearchPanel, SearchScope } from './search';
 import { AdvisorPanel, AdvisorScope } from './advisor';
 import { DiagramPanel, DiagramScope } from './relations';
+import { RelationsCache } from './relationsAnalysis';
 import { ConnectionEditor, SaveConnection } from './connectionEditor';
 import { RedisOplog, testRedis } from './redisOplog';
 import { McpServer } from './mcpServer';
 import { MONITOR_TABS, OpenQueryArgs, WorkspaceHost } from './mcp/workspace';
 import { QueryHistory } from './queryHistory';
+import { ProjectQueries } from './projectQueries';
+import { mergeSavedQueries } from './shared/savedQueries';
 import { exportConnections, importConnections } from './connectionsTransfer';
 import { ConnectionDecorations } from './connectionColors';
+import { Scheduler } from './scheduler';
+import { ScheduledTasksPanel } from './scheduledTasks';
 import type { QueryText } from './shared/messages';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -35,6 +42,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const history = UndoHistory.init(context, connections);
   const oplog = RedisOplog.init(connections);
   const backups = new Backups(context, connections);
+  const projectQueries = ProjectQueries.init(context);
   const tree = new MongoTreeProvider(connections);
   const treeView = vscode.window.createTreeView('mongoster.connections', { treeDataProvider: tree, showCollapseAll: true });
   const documents = new DocumentFileSystem(connections);
@@ -72,8 +80,10 @@ export function activate(context: vscode.ExtensionContext): void {
       AdvisorPanel.connectionChanged(info);
       DiagramPanel.connectionChanged(info);
       ComparePanel.connectionChanged(info);
+      StructurePanel.connectionChanged(info);
       UsersPanel.connectionChanged(info);
       GridFSPanel.connectionChanged(info);
+      DocumentHistoryPanel.connectionChanged(info);
     }
   };
 
@@ -84,7 +94,9 @@ export function activate(context: vscode.ExtensionContext): void {
     historyDocuments: (id) => history.recorded(id),
     queries: (ref) => {
       const queries = new QueryHistory(context.globalState, panelKey(ref));
-      return { saved: queries.saved, recent: queries.recent };
+      const connectionName = connections.get(ref.connectionId)?.name ?? '';
+      const project = projectQueries.list({ connectionName, database: ref.database, collection: ref.collection });
+      return { saved: mergeSavedQueries(queries.saved, project), recent: queries.recent };
     },
     redisUrlSet: async (id) => !!(await connections.redisUrl(id)),
     checkRedis: async (id) => {
@@ -115,12 +127,23 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const playgrounds = new Playgrounds(context, connections);
   const decorations = new ConnectionDecorations(connections, [DOC_SCHEME, DEF_SCHEME], [playgrounds]);
+  /** Scheduled exports in CSV have the columns of the collection's tab. */
+  const scheduler = new Scheduler(context, connections, (task) => {
+    const ref = { connectionId: task.connectionId, database: task.database ?? '', collection: task.collection ?? '' };
+    return { expanded: context.globalState.get<string[]>(expandedStateKey(ref), []), layout: context.globalState.get(layoutStateKey(ref), {}) };
+  });
+
   context.subscriptions.push(
     connections,
+    connections.onDidChange(() => RelationsCache.retain((id) => connections.isConnected(id))),
     history,
     oplog,
     mcp,
+    scheduler,
     vscode.commands.registerCommand('mongoster.mcp.setup', () => mcp.setup()),
+    projectQueries,
+    vscode.commands.registerCommand('mongoster.saveQueryInProject', () => CollectionPanel.saveActiveInProject()),
+    vscode.commands.registerCommand('mongoster.chooseQueriesFolder', () => projectQueries.chooseProjectFolder()),
     vscode.commands.registerCommand('mongoster.mcp.changePort', () => mcp.changePort()),
     playgrounds,
     decorations,
@@ -200,6 +223,9 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
 
     vscode.commands.registerCommand('mongoster.showHistory', () => HistoryPanel.show(context, history)),
+    vscode.commands.registerCommand('mongoster.documentHistory', (uri?: vscode.Uri) =>
+      DocumentHistoryPanel.showEditor(context, connections, documents, uri instanceof vscode.Uri ? uri : undefined),
+    ),
 
     vscode.commands.registerCommand('mongoster.undoLast', async () => {
       const entry = await history.last();
@@ -279,8 +305,10 @@ export function activate(context: vscode.ExtensionContext): void {
         AdvisorPanel.close(node.info.id);
         DiagramPanel.close(node.info.id);
         ComparePanel.close(node.info.id);
+        StructurePanel.close(node.info.id);
         UsersPanel.close(node.info.id);
         GridFSPanel.close(node.info.id);
+        DocumentHistoryPanel.close(node.info.id);
         ConnectionEditor.close(node.info.id);
         await connections.remove(node.info.id);
         // Its operations can no longer be undone.
@@ -356,7 +384,13 @@ export function activate(context: vscode.ExtensionContext): void {
       node ? connections.disconnect(node.info.id) : undefined,
     ),
 
-    vscode.commands.registerCommand('mongoster.refresh', (node?: TreeNode) => tree.refresh(node)),
+    vscode.commands.registerCommand('mongoster.refresh', (node?: TreeNode) => {
+      // The references followed from the tables are found again when next needed.
+      if (node instanceof ConnectionNode) RelationsCache.invalidate(node.info.id);
+      else if (node instanceof DatabaseNode) RelationsCache.invalidate(node.connection.id, node.database);
+      else if (!node) RelationsCache.invalidate();
+      tree.refresh(node);
+    }),
 
     vscode.commands.registerCommand('mongoster.filterTree', () => filterTree(tree, treeView)),
 
@@ -432,6 +466,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const from = collectionTarget(node);
       const to = { ...from, collection: name };
       await moveCollectionState(context.globalState, from, to);
+      RelationsCache.invalidate(node.connection.id, node.database);
       // The open panel belongs to the old name: reopen it under the new one.
       if (CollectionPanel.close((t) => sameCollection(t, from)).length) {
         CollectionPanel.show(context, connections, documents, to);
@@ -443,6 +478,10 @@ export function activate(context: vscode.ExtensionContext): void {
       node
         ? ComparePanel.start(context, connections, documents, { connectionId: node.connection.id, database: node.database, collection: node.collection, isView: node.isView })
         : undefined,
+    ),
+
+    vscode.commands.registerCommand('mongoster.compareStructure', (node?: DatabaseNode) =>
+      StructurePanel.start(context, connections, node instanceof DatabaseNode ? { connectionId: node.connection.id, database: node.database } : undefined),
     ),
 
     vscode.commands.registerCommand('mongoster.copyCollection', (node?: CollectionNode) => {
@@ -465,6 +504,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mongoster.dropCollection', async (node?: CollectionNode) => {
       if (!node) return;
       if (!(await manager.dropCollection(node.connection, node.database, node.collection, node.isView))) return;
+      RelationsCache.invalidate(node.connection.id, node.database);
       CollectionPanel.close((t) => sameCollection(t, collectionTarget(node)));
       tree.refresh();
     }),
@@ -472,6 +512,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mongoster.dropDatabase', async (node?: DatabaseNode) => {
       if (!node) return;
       if (!(await manager.dropDatabase(node.connection, node.database))) return;
+      RelationsCache.invalidate(node.connection.id, node.database);
       CollectionPanel.close((t) => t.connectionId === node.connection.id && t.database === node.database);
       GridFSPanel.close(node.connection.id, node.database);
       tree.refresh();
@@ -535,6 +576,15 @@ export function activate(context: vscode.ExtensionContext): void {
       if (node instanceof DatabaseNode) return backups.restore(node.connection, node.database);
       if (node instanceof CollectionNode) return backups.restore(node.connection, node.database, node.collection);
       return undefined;
+    }),
+
+    vscode.commands.registerCommand('mongoster.showScheduledTasks', () => ScheduledTasksPanel.show(context, scheduler, connections)),
+
+    vscode.commands.registerCommand('mongoster.scheduleTask', (node?: ConnectionNode | DatabaseNode | CollectionNode) => {
+      if (node instanceof ConnectionNode) ScheduledTasksPanel.show(context, scheduler, connections, { connectionId: node.info.id });
+      else if (node instanceof DatabaseNode) ScheduledTasksPanel.show(context, scheduler, connections, { connectionId: node.connection.id, database: node.database });
+      else if (node instanceof CollectionNode) ScheduledTasksPanel.show(context, scheduler, connections, { connectionId: node.connection.id, database: node.database, collection: node.collection });
+      else ScheduledTasksPanel.show(context, scheduler, connections);
     }),
 
     vscode.commands.registerCommand('mongoster.importConnections', (node?: FolderNode) =>

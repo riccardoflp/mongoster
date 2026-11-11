@@ -1,0 +1,140 @@
+/* History tab of a document: monitor.css provides the base, compare.css the field differences. */
+
+.target {
+  overflow-wrap: anywhere;
+}
+
+.target .ns {
+  font-weight: 600;
+}
+
+.target .id {
+  font-family: var(--mono);
+}
+
+.target .conn {
+  color: var(--muted);
+}
+
+.window {
+  padding: 6px 10px;
+  flex: none;
+}
+
+.window:empty {
+  display: none;
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+}
+
+.more {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  flex: none;
+}
+
+body.loading .list {
+  opacity: 0.6;
+}
+
+tr.entry {
+  cursor: pointer;
+}
+
+td.time {
+  color: var(--muted);
+  width: 1%;
+}
+
+td.kind {
+  font-weight: 600;
+  font-family: var(--vscode-font-family);
+  color: var(--kind-color, var(--muted));
+  width: 1%;
+}
+
+tr.k-insert { --kind-color: var(--vscode-charts-green, #89d185); }
+tr.k-update { --kind-color: var(--vscode-charts-blue, #3794ff); }
+tr.k-replace { --kind-color: var(--vscode-charts-purple, #b180d7); }
+tr.k-delete,
+tr.k-drop { --kind-color: var(--vscode-charts-red, #f14c4c); }
+tr.k-renamed { --kind-color: var(--vscode-charts-orange, #d18616); }
+
+td.what {
+  max-width: 0;
+  width: 100%;
+  min-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+td.by-cell,
+td.state-cell {
+  width: 1%;
+}
+
+.by,
+.state {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-family: var(--vscode-font-family);
+  font-size: 0.85em;
+  color: var(--muted);
+}
+
+.by-mongoster {
+  border-color: var(--vscode-charts-blue, #3794ff);
+  color: var(--vscode-charts-blue, #3794ff);
+}
+
+.state-current {
+  border-color: var(--vscode-charts-green, #89d185);
+  color: var(--vscode-charts-green, #89d185);
+}
+
+.state-partial {
+  border-color: var(--vscode-editorWarning-foreground, #cca700);
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.unknown {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  font-weight: 600;
+  cursor: help;
+}
+
+.note {
+  display: block;
+  margin: 4px 0;
+  color: var(--muted);
+  font-family: var(--vscode-font-family);
+  white-space: normal;
+}
+
+.note.conflict,
+.note.end {
+  padding: 6px 10px;
+  margin: 0;
+}
+
+.note.conflict {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+p.empty {
+  color: var(--muted);
+  padding: 16px 10px;
+  margin: 0;
+}

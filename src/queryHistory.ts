@@ -41,9 +41,25 @@ export class QueryHistory {
   }
 
   /** Saves a query under a name; a saved query with the same name is replaced. */
-  async save(name: string, query: QueryText): Promise<void> {
-    const entry: SavedQuery = { id: newId(), name, ...normalize(query), at: Date.now() };
+  async save(name: string, query: QueryText, description?: string): Promise<void> {
+    const entry: SavedQuery = { id: newId(), name, ...normalize(query), ...(description && { description }), at: Date.now() };
     await this.state.update(this.savedKey, [entry, ...this.saved.filter((e) => e.name !== name)]);
+  }
+
+  /** A saved query by id. */
+  find(id: string): SavedQuery | undefined {
+    return this.saved.find((e) => e.id === id);
+  }
+
+  /** Gives a saved query another name; one that had that name already is replaced. */
+  async rename(id: string, name: string): Promise<void> {
+    const saved = this.saved;
+    const entry = saved.find((e) => e.id === id);
+    if (!entry) return;
+    await this.state.update(
+      this.savedKey,
+      saved.filter((e) => e.id === id || e.name !== name).map((e) => (e.id === id ? { ...e, name } : e)),
+    );
   }
 
   async remove(id: string): Promise<void> {

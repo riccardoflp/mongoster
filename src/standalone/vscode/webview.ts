@@ -210,6 +210,11 @@ onDidChangeActiveColorTheme(() => {
 });
 onShell('panelMessage', (m) => panels.get(m.id)?.webview.receive(m.message));
 
+/** The view type of the active tab when it is a webview (`activeWebviewPanelId` of the `when` clauses). */
+export function activePanelViewType(): string | undefined {
+  return [...panels.values()].find((p) => p.active && p.visible)?.viewType;
+}
+
 /** The shell says which tabs are shown and which one is active. */
 export function panelsShown(visible: Set<number>, active: number | undefined): void {
   for (const panel of panels.values()) panel.shown(visible.has(panel.id), panel.id === active);

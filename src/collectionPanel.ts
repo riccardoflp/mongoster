@@ -6,7 +6,9 @@ import { ConnectionColor, ConnectionInfo, ConnectionManager } from './connection
 import { paintTab } from './connectionColors';
 import { byId, CollectionRef, DocumentFileSystem, relaxed, restoreTypes } from './documentFs';
 import { errorMessage } from './tree';
-import { QueryHistory, sameQuery } from './queryHistory';
+import { QueryHistory } from './queryHistory';
+import { ProjectQueries } from './projectQueries';
+import { SavedQueryActions } from './savedQueryActions';
 import { parseQuery, relaxEjson, toShell } from './shared/query';
 import { parseDocuments } from './shared/formats';
 import { PipelineStage, parseStageBody } from './shared/pipeline';
@@ -14,6 +16,7 @@ import { StageError, buildPipeline, fromRelaxed, toBson, toUpdate } from './quer
 import { exportDocuments } from './transfer';
 import { UndoHistory } from './history';
 import { RedisOplog } from './redisOplog';
+import { DocumentHistoryPanel } from './docHistory';
 import { updatedFields } from './shared/oplog';
 import { CONVERT_TYPES, convertField, fieldPathError, removeField, renameError, renameField, typeCounts } from './fieldActions';
 import type { AggregateRequest, BulkRequest, FieldActionRequest, HistoryEntry, HostMessage, QueryRequest, QuerySource, QueryText, UpdateFieldRequest, WebviewMessage } from './shared/messages';
@@ -25,6 +28,9 @@ import { collectionNameError } from './manage';
 import { loadIndexes, saveIndex } from './indexes';
 import { dropSearchIndex, loadSearchIndexes, saveSearchIndex } from './searchIndexes';
 import type { ColumnLayout } from './shared/columns';
+import { RelationsCache } from './relationsAnalysis';
+import type { RelGraph } from './shared/relations';
+import { collectionReferences } from './shared/references';
 
 const { EJSON } = BSON;
 /** Documents sampled for the autocompletion of field names and values. */
@@ -111,6 +117,13 @@ export class CollectionPanel {
     }
   }
 
+  /** Asks the active collection tab to save its current query in the project (the `Save Query in the Project` command). */
+  static saveActiveInProject(): void {
+    const active = [...CollectionPanel.panels.values()].find((p) => p.panel.active);
+    if (active) active.post({ type: 'saveCurrent', place: 'project' });
+    else void vscode.window.showInformationMessage('Open the tab of a collection to save its query in the project.');
+  }
+
   /** Re-runs the current query of the collection's panel, if open (e.g. after a document was saved). */
   static refresh(ref: CollectionRef): void {
     CollectionPanel.panels.get(panelKey(ref))?.post({ type: 'refresh' });
@@ -118,10 +131,13 @@ export class CollectionPanel {
 
   private readonly panel: vscode.WebviewPanel;
   private readonly history: QueryHistory;
+  private readonly savedQueries: SavedQueryActions;
   /** Query to load once the webview is ready. */
   private pending?: { query: QueryText; explain: boolean };
   /** Tab (or the insert dialog) to show once the webview is ready. */
   private pendingMode?: 'indexes' | 'insert';
+  /** The webview asked for the references: it gets them again when they are found anew. */
+  private referencesWanted = false;
 
   private constructor(
     private readonly context: vscode.ExtensionContext,
@@ -131,6 +147,11 @@ export class CollectionPanel {
     onDispose: () => void,
   ) {
     this.history = new QueryHistory(context.globalState, panelKey(target));
+    this.savedQueries = new SavedQueryActions(context.globalState, this.history, () => ({
+      connectionName: this.target.connectionName,
+      database: this.target.database,
+      collection: this.target.collection,
+    }));
     const roots = [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')];
     this.panel = vscode.window.createWebviewPanel(
       'mongoster.collection',
@@ -142,7 +163,16 @@ export class CollectionPanel {
     this.panel.webview.html = this.html();
     this.panel.webview.onDidReceiveMessage((m: WebviewMessage) => this.onMessage(m));
     ThemeColors.attach(this.panel);
-    this.panel.onDidDispose(onDispose);
+    // The project's saved queries change when their files do (git pull, edits by hand).
+    const projectChanged = ProjectQueries.instance?.onDidChange(() => this.postHistory());
+    const references = RelationsCache.onDidUpdate((e) => {
+      if (this.referencesWanted && e.connectionId === this.target.connectionId && e.database === this.target.database) this.postReferences(e.graph);
+    });
+    this.panel.onDidDispose(() => {
+      projectChanged?.dispose();
+      references.dispose();
+      onDispose();
+    });
   }
 
   private postInit(): void {
@@ -186,21 +216,20 @@ export class CollectionPanel {
         if (this.pendingMode) this.showMode(this.pendingMode);
         this.pending = this.pendingMode = undefined;
         break;
-      case 'saveQuery': {
-        const name = await vscode.window.showInputBox({
-          title: 'Save Query',
-          prompt: `Name for this ${this.target.collection} query`,
-          value: this.history.saved.find((s) => sameQuery(s, m.query))?.name,
-          validateInput: (v) => (v.trim() ? undefined : 'Enter a name'),
-        });
-        if (!name) return;
-        await this.history.save(name.trim(), m.query);
-        this.postHistory();
+      case 'saveQuery':
+        if (await this.savedQueries.save(m.query, m.place)) this.postHistory();
         break;
-      }
       case 'removeQuery':
-        await this.history.remove(m.id);
-        this.postHistory();
+        if (await this.savedQueries.remove(m.id)) this.postHistory();
+        break;
+      case 'renameQuery':
+        if (await this.savedQueries.rename(m.id)) this.postHistory();
+        break;
+      case 'moveQuery':
+        if (await this.savedQueries.move(m.id)) this.postHistory();
+        break;
+      case 'openQueryFile':
+        await this.savedQueries.openFile(m.id);
         break;
       case 'clearHistory':
         if (
@@ -332,6 +361,9 @@ export class CollectionPanel {
       case 'deleteDocuments':
         await this.deleteDocuments(m.ids);
         break;
+      case 'documentHistory':
+        DocumentHistoryPanel.show(this.context, this.connections, this.documents, this.target, fromRelaxed(m.id));
+        break;
       case 'export':
         await exportDocuments(this.connections, this.target, m.source, { expanded: m.expanded, layout: m.layout, page: m.page, count: m.count });
         break;
@@ -339,11 +371,41 @@ export class CollectionPanel {
         await vscode.env.clipboard.writeText(m.text);
         vscode.window.setStatusBarMessage('Mongoster: copied to clipboard', 2000);
         break;
+      case 'loadReferences':
+        await this.loadReferences();
+        break;
+      case 'openReference':
+        await vscode.commands.executeCommand('mongoster.openQuery', {
+          connectionId: this.target.connectionId,
+          database: this.target.database,
+          collection: m.collection,
+          query: { filter: m.filter, sort: '', projection: '' },
+          explain: false,
+        });
+        break;
     }
   }
 
+  /**
+   * The references of the collection, from the analysis of its database: cached per database, made on
+   * the first tab that needs them (unless turned off in the settings, then only the diagram's are used).
+   */
+  private async loadReferences(): Promise<void> {
+    this.referencesWanted = true;
+    const { connectionId, database } = this.target;
+    const detect = vscode.workspace.getConfiguration('mongoster.references').get<boolean>('detect', true);
+    const graph = detect ? await RelationsCache.get(this.connections, connectionId, database) : RelationsCache.peek(connectionId, database);
+    if (graph) this.postReferences(graph);
+  }
+
+  private postReferences(graph: RelGraph): void {
+    // A view has the references of the collection it reads.
+    const source = graph.collections.find((c) => c.name === this.target.collection)?.viewOn ?? this.target.collection;
+    this.post({ type: 'references', ...collectionReferences(graph.relations, source) });
+  }
+
   private postHistory(): void {
-    this.post({ type: 'history', recent: this.history.recent, saved: this.history.saved });
+    this.post({ type: 'history', recent: this.history.recent, saved: this.savedQueries.saved() });
   }
 
   private async insertDocuments(requestId: number, text: string): Promise<void> {
@@ -1115,9 +1177,10 @@ export class CollectionPanel {
   <div id="historyPanel" class="history hidden" role="dialog" aria-label="Query history">
     <div class="history-head">
       <input id="historySearch" spellcheck="false" placeholder="Search queries">
-      <button id="saveCurrent" class="secondary" title="Save the current filter, sort and projection with a name">☆ Save current</button>
+      <button id="saveCurrent" class="secondary" title="Save the current query with a name, for you or in the project">☆ Save current</button>
     </div>
     <div class="history-body" id="historyBody"></div>
+    <div id="historyMenu" class="context-menu hidden" role="menu"></div>
   </div>
   <div class="error hidden" id="error"></div>
   <section class="schema-only schema-view" id="schemaView">
@@ -1235,6 +1298,7 @@ export class CollectionPanel {
         <button id="docExpand" class="icon" title="Expand all">⊞</button>
         <button id="docCollapse" class="icon" title="Collapse all">⊟</button>
         <button id="docCopy" class="secondary" title="Copy as mongosh, Extended JSON, JSON, YAML or an insertOne command" aria-haspopup="menu">Copy ▾</button>
+        <button id="docHistory" class="secondary not-view doc-write" title="The versions of the document from the oplog: what each write changed, and restoring one">History…</button>
         <button id="docDuplicate" class="secondary editable doc-write" title="Insert a copy without _id">Duplicate</button>
         <button id="docDelete" class="secondary editable danger doc-write">Delete</button>
         <button id="docEdit" class="primary doc-write" title="Open in an editor tab (Ctrl+S saves to the database)">Edit</button>

@@ -185,12 +185,16 @@ export class Playgrounds implements vscode.Disposable {
 
   // ---- creating and targeting
 
-  /** Opens a new playground on the connection / database / collection of a tree node, if any. */
+  /**
+   * Opens a new playground on the connection / database / collection of a tree node, if any; with
+   * `content` (a generated script), that text instead of the example.
+   */
   private async create(node?: unknown): Promise<void> {
-    const n = node as { connection?: ConnectionInfo; info?: ConnectionInfo; database?: string; collection?: string } | undefined;
+    const n = node as { connection?: ConnectionInfo; info?: ConnectionInfo; database?: string; collection?: string; content?: string } | undefined;
     const connection = n?.connection ?? n?.info;
     const database = n?.database;
     const collection = n?.collection;
+    const generated = typeof n?.content === 'string';
     const open = new Set(vscode.workspace.textDocuments.map((d) => d.uri.toString()));
     let i = 1;
     let uri: vscode.Uri;
@@ -201,7 +205,7 @@ export class Playgrounds implements vscode.Disposable {
         ? `db.${collection}`
         : `db.getCollection(${JSON.stringify(collection)})`
       : undefined;
-    const lines = [
+    const lines = generated ? [n!.content!] : [
       '// Mongoster playground: Ctrl+Enter runs the script (or the selected lines) on the connection shown above.',
       '// mongosh syntax; the value of the last expression is shown beside, print() and printjson() write to the output.',
       '',
@@ -212,8 +216,9 @@ export class Playgrounds implements vscode.Disposable {
     const doc = await vscode.workspace.openTextDocument(uri);
     const editor = await vscode.window.showTextDocument(doc, { preview: false });
     await editor.edit((e) => e.insert(new vscode.Position(0, 0), lines.join('\n')));
-    const last = doc.lineCount - 2;
-    editor.selection = new vscode.Selection(last, doc.lineAt(last).text.length, last, doc.lineAt(last).text.length);
+    const last = generated ? 0 : doc.lineCount - 2;
+    const column = generated ? 0 : doc.lineAt(last).text.length;
+    editor.selection = new vscode.Selection(last, column, last, column);
     if (connection) await this.setTarget(uri, { connectionId: connection.id, database: database ?? 'test' });
     this.updateStatus();
   }
