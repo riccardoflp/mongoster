@@ -73,7 +73,8 @@ jobs:
             release/*.AppImage
           if-no-files-found: error
 
-  # On a version tag, the files are attached to its release (a draft is created if there is none).
+  # On a version tag, the release is published with the files and the version's section of the
+  # changelog as its notes. A release that already exists, a draft too, gets the files and is published.
   release:
     name: Release
     if: startsWith(github.ref, 'refs/tags/v')
@@ -86,9 +87,31 @@ jobs:
       GH_REPO: ${{ github.repository }}
       TAG: ${{ github.ref_name }}
     steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@v4
         with:
           path: files
           merge-multiple: true
-      - run: gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --draft --verify-tag --title "$TAG"
-      - run: gh release upload "$TAG" files/* --clobber
+      - name: Take the notes from the changelog
+        run: |
+          VERSION="${TAG#v}"
+          awk -v heading="## $VERSION" '$0 == heading { found = 1; next } /^## / { found = 0 } found' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error file=CHANGELOG.md::No '## $VERSION' section in CHANGELOG.md"
+            exit 1
+          fi
+      - name: Publish the release
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" files/* --clobber
+            # Notes written by hand are kept.
+            if [ -z "$(gh release view "$TAG" --json body --jq .body)" ]; then
+              gh release edit "$TAG" --notes-file notes.md
+            fi
+            gh release edit "$TAG" --draft=false
+          else
+            gh release create "$TAG" files/* --verify-tag --title "Mongoster ${TAG#v}" --notes-file notes.md
+          fi
