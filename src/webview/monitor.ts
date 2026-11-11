@@ -1379,9 +1379,12 @@ window.addEventListener('message', (e: MessageEvent<MonitorHostMessage>) => {
       }
       if (state.logDb && !databases.includes(state.logDb)) state.logDb = '';
       fillProfileDbs();
-      setTab(state.tab);
+      setTab(m.tab ?? state.tab);
       break;
     }
+    case 'showTab':
+      setTab(m.tab);
+      break;
     case 'ops':
       if (m.requestId !== latest.ops) return;
       showError('opsError', m.error);

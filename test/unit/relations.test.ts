@@ -55,6 +55,13 @@ describe('sampleFields', () => {
     expect(field('ref').types).toEqual(['dbref']);
   });
 
+  it('marks an array of ids as holding several references', () => {
+    const found = sampleFields([{ _id: oid(1), productIds: [oid(20), oid(21)], codes: ['a', 'b'], one: oid(3) }]).fields;
+    expect(found.find((f) => f.path === 'productIds')).toMatchObject({ label: 'productIds', many: true, types: ['array', 'objectId'] });
+    expect(found.find((f) => f.path === 'codes')?.many).toBe(true);
+    expect(found.find((f) => f.path === 'one')?.many).toBe(false);
+  });
+
   it('keeps reference-like values by type, and DBRef targets', () => {
     expect(values.get('customerId')?.get('objectId')).toEqual([oid(10), oid(11)]);
     expect(values.get('items.productId')?.get('objectId')).toEqual([oid(20), oid(21)]);

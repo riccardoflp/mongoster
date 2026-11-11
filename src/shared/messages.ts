@@ -498,8 +498,13 @@ export interface ShardingStatus {
   at: number;
 }
 
+/** The sections of the server monitor. */
+export type MonitorTab = 'ops' | 'profile' | 'stats' | 'repl' | 'shard';
+
 export type MonitorHostMessage =
-  | { type: 'init'; connectionName: string; readOnly: boolean; color?: string; databases: string[] }
+  /** `tab`: the section to show, when the monitor is opened on one. */
+  | { type: 'init'; connectionName: string; readOnly: boolean; color?: string; databases: string[]; tab?: MonitorTab }
+  | { type: 'showTab'; tab: MonitorTab }
   | { type: 'ops'; requestId: number; ops?: MonitorOp[]; error?: string; at: number }
   | { type: 'killResult'; opid: number | string; ok: boolean; message?: string }
   | {

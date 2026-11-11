@@ -29,7 +29,10 @@ const PROBE_MS = 800;
 const INSTRUCTIONS = `Mongoster is the MongoDB extension open in the user's VS Code. Its tools read the connections the user saved there and never write to a database.
 Start with list_connections, then list_databases and list_collections. Call describe_collection before writing a filter or a pipeline, to use the real field names and types.
 Filters, sorts, projections and pipelines are in mongosh syntax: ObjectId("…"), ISODate("…"), NumberLong(…), /regex/i.
-find_documents and aggregate return the documents to you; open_query, open_aggregation and open_search show them to the user in a Mongoster tab, which is better when the user wants to see, browse or edit the results.`;
+find_documents and aggregate return the documents to you; open_query, open_aggregation and open_search show them to the user in a Mongoster tab, which is better when the user wants to see, browse or edit the results.
+To debug an application: watch_changes follows the writes as they happen (call it again with the resumeAfter token it returns to continue without losing any), write_history reads the recent writes from the oplog (also those to one document, by id), mongoster_writes lists the writes made from Mongoster itself.
+For slow queries and load: explain_query, slow_queries, current_operations, index_advice, collection_stats, server_status, database_stats, replica_set_status, sharding_status.
+count_documents, distinct_values, collection_options (validator, view pipeline) and describe_relations (references between collections) answer the quick questions about the data model.`;
 
 const config = () => vscode.workspace.getConfiguration('mongoster.mcp');
 const focused = () => vscode.window.state?.focused ?? true;

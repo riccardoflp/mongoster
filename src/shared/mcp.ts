@@ -17,6 +17,8 @@ export interface McpTool {
   inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[]; additionalProperties?: boolean };
   /** Only reads: opening a tab or reading data, never a write. */
   readOnly: boolean;
+  /** Returns the contents of documents: offered only with `mongoster.mcp.readDocuments`. */
+  documents?: boolean;
   run(args: Record<string, unknown>): Promise<string>;
 }
 

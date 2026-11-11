@@ -121,6 +121,8 @@ export function sampleFields(docs: unknown[]): { fields: RelField[]; values: Map
       for (const item of v) {
         if (Array.isArray(item)) continue;
         acc.types.set('array', (acc.types.get('array') ?? 0) + 1);
+        // An array of values (ids, DBRefs) holds several references; in an array of documents, their fields do.
+        if (isDbRef(item) || isEjsonWrapper(item) || bsonType(item) !== 'object') acc.many = true;
         visitValue(item, path, `${label}[]`, depth, true, seen, acc);
       }
       return;

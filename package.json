@@ -914,7 +914,7 @@
         "mongoster.mcp.enabled": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Run the MCP server that lets AI assistants (GitHub Copilot, Claude Code, Cursor…) list the connections, read the structure and the documents of the collections, and open queries, aggregations and searches in Mongoster. It listens on `127.0.0.1` only, needs an access token and never writes to a database. Run **Mongoster: Set Up MCP Server for AI Assistants…** to configure a client.",
+          "markdownDescription": "Run the MCP server that lets AI assistants (GitHub Copilot, Claude Code, Cursor…) list the connections, read the structure and the documents of the collections, follow the writes (change streams, oplog), look at slow queries, indexes and the server's state, and open queries, aggregations and searches in Mongoster. It listens on `127.0.0.1` only, needs an access token and never writes to a database. Run **Mongoster: Set Up MCP Server for AI Assistants…** to configure a client.",
           "order": 6
         },
         "mongoster.mcp.port": {
@@ -928,7 +928,7 @@
         "mongoster.mcp.readDocuments": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Let the AI read documents (the `find_documents` and `aggregate` tools). Turned off, it only sees connections, databases, collections and their structure, and opens tabs for you to look at the documents.",
+          "markdownDescription": "Let the AI read documents and field values (the `find_documents`, `aggregate`, `distinct_values`, `watch_changes`, `write_history` and `mongoster_write_details` tools). Turned off, it only sees connections, databases, collections, their structure and statistics, and opens tabs for you to look at the documents.",
           "order": 8
         }
       }

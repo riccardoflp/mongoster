@@ -2,7 +2,7 @@
 // standalone mongod, and `inject('replSetUri')`, a single-node replica set for sessions and transactions).
 // mongodb-memory-server downloads a MongoDB binary the first time; a local installation is used
 // instead when there is one: MONGOMS_SYSTEM_BINARY, or the newest MongoDB in Program Files on Windows.
-// The servers listen on the first free ports from 27110 to 27119.
+// The servers listen on the first free ports from 27110 to 27139 (test runs can go on at the same time).
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
@@ -16,7 +16,7 @@ declare module 'vitest' {
   }
 }
 
-const PORTS = Array.from({ length: 10 }, (_, i) => 27110 + i);
+const PORTS = Array.from({ length: 30 }, (_, i) => 27110 + i);
 
 function freePort(port: number): Promise<boolean> {
   return new Promise((resolve) => {

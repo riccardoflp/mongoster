@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { ThemeColors } from './themeColors';
 import { CONNECTION_COLORS, ConnectionColor, ConnectionInfo, ConnectionManager } from './connections';
 import { BucketNode, CollectionNode, ConnectionNode, DatabaseNode, FolderNode, MongoTreeProvider, TreeNode, errorMessage } from './tree';
-import { CollectionPanel, CollectionTarget, expandedStateKey, layoutStateKey, moveCollectionState, readOnlyMessage } from './collectionPanel';
+import { CollectionPanel, CollectionTarget, expandedStateKey, layoutStateKey, moveCollectionState, panelKey, readOnlyMessage } from './collectionPanel';
 import { Manager } from './manage';
 import { exportDocuments, importDocuments } from './transfer';
 import { CollectionRef, DOC_SCHEME, DocumentFileSystem } from './documentFs';
@@ -14,25 +14,19 @@ import { UsersPanel } from './users';
 import { GridFSPanel, dropBucket, uploadFiles } from './gridfs';
 import { Copier } from './copy';
 import { GenerateSource, Generator } from './generate';
-import { HistoryPanel, UndoHistory } from './history';
+import { HistoryPanel, UndoHistory, historyLimits } from './history';
 import { Backups } from './backup';
 import { WatchPanel, WatchScope } from './watch';
 import { SearchPanel, SearchScope } from './search';
 import { AdvisorPanel, AdvisorScope } from './advisor';
 import { DiagramPanel, DiagramScope } from './relations';
 import { ConnectionEditor, SaveConnection } from './connectionEditor';
-import { RedisOplog } from './redisOplog';
+import { RedisOplog, testRedis } from './redisOplog';
 import { McpServer } from './mcpServer';
+import { MONITOR_TABS, OpenQueryArgs, WorkspaceHost } from './mcp/workspace';
+import { QueryHistory } from './queryHistory';
 import { exportConnections, importConnections } from './connectionsTransfer';
 import type { QueryText } from './shared/messages';
-
-interface OpenQueryArgs {
-  connectionId: string;
-  database: string;
-  collection: string;
-  query: QueryText;
-  explain: boolean;
-}
 
 export function activate(context: vscode.ExtensionContext): void {
   ThemeColors.init(context);
@@ -82,10 +76,39 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
 
+  const workspace: WorkspaceHost = {
+    history: () => history.list(),
+    historyEnabled: () => historyLimits().enabled,
+    historyUsage: () => history.usage(),
+    historyDocuments: (id) => history.recorded(id),
+    queries: (ref) => {
+      const queries = new QueryHistory(context.globalState, panelKey(ref));
+      return { saved: queries.saved, recent: queries.recent };
+    },
+    redisUrlSet: async (id) => !!(await connections.redisUrl(id)),
+    checkRedis: async (id) => {
+      const url = await connections.redisUrl(id);
+      if (!url) return 'The Redis URL is missing: set it again in the connection.';
+      try {
+        await testRedis(url);
+        return undefined;
+      } catch (err) {
+        return errorMessage(err).split(url).join('<Redis URL>');
+      }
+    },
+    redisLastError: (id) => RedisOplog.lastError(id),
+    openWatch: (info, scope) => WatchPanel.show(context, connections, documents, info, scope),
+    openMonitor: (info, section) => MonitorPanel.show(context, connections, info, section && MONITOR_TABS[section]),
+    openQuery: async (args) => {
+      await vscode.commands.executeCommand('mongoster.openQuery', args);
+    },
+    openHistory: () => HistoryPanel.show(context, history),
+  };
   const mcp = new McpServer(context, {
     connections,
     openSearch: (info, scope, options) => SearchPanel.show(context, connections, documents, info, scope, options),
     readDocuments: () => vscode.workspace.getConfiguration('mongoster.mcp').get<boolean>('readDocuments', true),
+    workspace,
   });
   void mcp.restart();
 

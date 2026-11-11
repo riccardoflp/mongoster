@@ -44,7 +44,8 @@ export function readOnlyMessage(target: CollectionTarget): string {
   return target.locked ? `The connection ${target.connectionName} is read-only.` : 'Views are read-only.';
 }
 
-const panelKey = (ref: CollectionRef) => `${ref.connectionId}/${ref.database}/${ref.collection}`;
+/** The key of a collection's tab and of its state (queries, layout). */
+export const panelKey = (ref: CollectionRef) => `${ref.connectionId}/${ref.database}/${ref.collection}`;
 export const expandedStateKey = (ref: CollectionRef) => `mongoster.expanded.${panelKey(ref)}`;
 export const layoutStateKey = (ref: CollectionRef) => `mongoster.layout.${panelKey(ref)}`;
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **More MCP tools for AI assistants, to debug an application**, all read-only:
+  - **Writes as they happen and in the recent past**: `watch_changes` follows a collection, a database or the whole deployment with a change stream for a few seconds and returns the changes with a resume token to go on without losing any; `write_history` reads the oplog, also for one document by `_id`, with transactions expanded; `mongoster_writes` and `mongoster_write_details` list the writes made from Mongoster and the documents as they were before.
+  - **Performance**: `explain_query`, `slow_queries` (profiler or server log, grouped by query shape), `current_operations`, `index_advice` and `collection_stats`.
+  - **Deployment**: `server_status`, `database_stats`, `replica_set_status` and `sharding_status`, which say which role is missing when they can't read everything.
+  - **Data model and Mongoster's state**: `count_documents`, `distinct_values`, `collection_options`, `describe_relations`, `list_saved_queries` and `redis_oplog_status`.
+  - **Tabs**: `open_watch`, `open_monitor` (on a chosen section), `open_explain` and `open_history`.
+  - The tools that return documents or field values are offered only with `mongoster.mcp.readDocuments` on. None of them writes, kills an operation or changes the profiler.
+- The relationship diagram now calls an array of ids (`productIds: [ObjectId(…), …]`) a many-to-many relation; it was shown as many-to-one.
+- An invalid Redis URL is no longer repeated in the error message, where it could show its password.
+
 ## 0.7.0
 
 - **Insert dialog**: `Insert` (in the toolbar, or `+` on a collection in the tree) opens a dialog in the collection's tab instead of an editor tab to save: type or paste the documents and press `Insert` (`Ctrl+Enter`). It takes one document, an array (inserted with `insertMany`), JSON Lines or a pasted `insertOne(…)` / `insertMany(…)`, in mongosh syntax or Extended JSON, with autocomplete and syntax colors, and says while you type how many documents it found or what's wrong. `Template` starts from the collection's fields; errors (a duplicate `_id`, validation) show in the dialog, and when one of several documents is refused it says how many went in. `Keep open` inserts several in a row; `Open in Editor` still opens an editor tab. `Duplicate` opens the dialog with the copy.

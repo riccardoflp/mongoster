@@ -1,101 +1,55 @@
 import * as vscode from 'vscode';
-import { BSON, Document, MongoClient } from 'mongodb';
-import type { ConnectionInfo, ConnectionManager } from './connections';
+import { BSON, Document } from 'mongodb';
+import type { ConnectionInfo } from './connections';
 import type { SearchScope } from './search';
 import type { SearchOptions } from './shared/messages';
 import { McpTool, ToolError, boolArg, intArg, stringArg, truncate } from './shared/mcp';
-import { buildPipeline, toBson } from './queries';
-import { isWriteStage, textToPipeline } from './shared/pipeline';
-import { relaxEjson, toShell } from './shared/query';
 import { FieldSchema, analyzeSchema } from './shared/schema';
 import { searchIndexType } from './shared/searchIndexes';
+import {
+  COUNT_CAP,
+  MAX_OUTPUT,
+  MAX_TIME_MS,
+  ToolConnections,
+  collectionProp,
+  connectionProp,
+  databaseProp,
+  documentsText,
+  filterProp,
+  pipelineProp,
+  plural,
+  projectionProp,
+  shell,
+  sortProp,
+  toolContext,
+} from './mcp/context';
+import { changesTools } from './mcp/changes';
+import { dataTools } from './mcp/data';
+import { performanceTools } from './mcp/performance';
+import { topologyTools } from './mcp/topology';
+import { WorkspaceHost, workspaceTools } from './mcp/workspace';
+
+export { MAX_OUTPUT } from './mcp/context';
 
 /** What the tools need from the extension. */
 export interface ToolHost {
-  connections: ConnectionManager;
+  connections: ToolConnections;
   /** Opens the global search tab and starts the search. */
   openSearch(info: ConnectionInfo, scope: SearchScope, options: SearchOptions): void;
   /** `mongoster.mcp.readDocuments`: the tools that return documents are offered. */
   readDocuments(): boolean;
+  /** Mongoster's own state (undo history, saved queries, redis-oplog) and its tabs. */
+  workspace: WorkspaceHost;
 }
 
-/** Characters of output per call, so a result doesn't flood the model's context. */
-export const MAX_OUTPUT = 60_000;
 const { EJSON } = BSON;
-const MAX_TIME_MS = 30_000;
-const COUNT_CAP = 100_000;
 export const SEARCH_LIMITS = [0, 1000, 10_000, 100_000];
 
-const shell = (v: unknown, indent?: number) => toShell(relaxEjson(EJSON.serialize({ v }, { relaxed: false }).v), indent);
-const plural = (n: number, word: string) => `${n.toLocaleString('en-US')} ${word}${n === 1 ? '' : 's'}`;
-
-const connectionProp = { type: 'string', description: 'Connection name or id, from list_connections.' };
-const databaseProp = { type: 'string', description: 'Database name.' };
-const collectionProp = { type: 'string', description: 'Collection or view name.' };
-const filterProp = {
-  type: 'string',
-  description: 'Filter in mongosh syntax, e.g. { status: "active", createdAt: { $gte: ISODate("2024-01-01") }, _id: ObjectId("…") }. Empty for all documents.',
-};
-const sortProp = { type: 'string', description: 'Sort in mongosh syntax, e.g. { createdAt: -1 }.' };
-const projectionProp = { type: 'string', description: 'Projection in mongosh syntax, e.g. { name: 1, email: 1 }.' };
-const pipelineProp = {
-  type: 'string',
-  description: 'Aggregation pipeline in mongosh syntax, e.g. [ { $match: { status: "active" } }, { $group: { _id: "$city", n: { $sum: 1 } } } ]. $out and $merge are refused.',
-};
-
 export function mcpTools(host: ToolHost): McpTool[] {
-  const { connections } = host;
+  const ctx = toolContext(host.connections);
+  const { connections, connection, client, required, target, query, pipeline } = ctx;
 
-  const connection = (args: Record<string, unknown>): ConnectionInfo => {
-    const key = stringArg(args, 'connection');
-    if (!key) throw new ToolError('connection is required: use list_connections to see them.');
-    const all = connections.list();
-    const byId = all.find((c) => c.id === key);
-    if (byId) return byId;
-    const byName = all.filter((c) => c.name.toLowerCase() === key.toLowerCase());
-    if (byName.length === 1) return byName[0];
-    if (byName.length > 1) throw new ToolError(`More than one connection is named "${key}": use the id (${byName.map((c) => c.id).join(', ')}).`);
-    throw new ToolError(`No connection "${key}". Connections: ${all.map((c) => c.name).join(', ') || 'none'}.`);
-  };
-  const client = (info: ConnectionInfo): Promise<MongoClient> => connections.getClient(info.id);
-  const required = (args: Record<string, unknown>, key: string): string => {
-    const v = stringArg(args, key);
-    if (!v) throw new ToolError(`${key} is required.`);
-    return v;
-  };
-  const target = async (args: Record<string, unknown>) => {
-    const info = connection(args);
-    const database = required(args, 'database');
-    const collection = required(args, 'collection');
-    const db = (await client(info)).db(database);
-    const [found] = await db.listCollections({ name: collection }, { nameOnly: true }).toArray();
-    if (!found) throw new ToolError(`${database}.${collection} doesn't exist on ${info.name}: use list_collections.`);
-    return { info, database, collection, coll: db.collection(collection) };
-  };
-  const query = (args: Record<string, unknown>) => {
-    const text = { filter: stringArg(args, 'filter') ?? '', sort: stringArg(args, 'sort') ?? '', projection: stringArg(args, 'projection') ?? '' };
-    try {
-      return { text, filter: toBson(text.filter, 'Filter') ?? {}, sort: toBson(text.sort, 'Sort'), projection: toBson(text.projection, 'Projection') };
-    } catch (err) {
-      throw new ToolError(err instanceof Error ? err.message : String(err));
-    }
-  };
-  const pipeline = (args: Record<string, unknown>) => {
-    const text = required(args, 'pipeline');
-    try {
-      const stages = textToPipeline(text);
-      if (!stages.length) throw new ToolError('The pipeline is empty.');
-      const write = stages.find(isWriteStage);
-      if (write) throw new ToolError(`${write.op} writes to the database: Mongoster's MCP server only reads.`);
-      return { stages, pipeline: buildPipeline(stages, stages.length - 1).pipeline };
-    } catch (err) {
-      if (err instanceof ToolError) throw err;
-      throw new ToolError(`Pipeline: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
-  const documentsText = (docs: Document[]) => docs.map((d) => shell(d, 2)).join(',\n');
-
-  const tools: McpTool[] = [
+  const base: McpTool[] = [
     {
       name: 'list_connections',
       title: 'List connections',
@@ -208,6 +162,7 @@ export function mcpTools(host: ToolHost): McpTool[] {
         additionalProperties: false,
       },
       readOnly: true,
+      documents: true,
       run: async (args) => {
         const q = query(args);
         const skip = intArg(args, 'skip', 0, 0, Number.MAX_SAFE_INTEGER);
@@ -239,6 +194,7 @@ export function mcpTools(host: ToolHost): McpTool[] {
         additionalProperties: false,
       },
       readOnly: true,
+      documents: true,
       run: async (args) => {
         const p = pipeline(args);
         const limit = intArg(args, 'limit', 20, 1, 100);
@@ -360,7 +316,8 @@ export function mcpTools(host: ToolHost): McpTool[] {
       },
     },
   ];
-  return host.readDocuments() ? tools : tools.filter((t) => t.name !== 'find_documents' && t.name !== 'aggregate');
+  const tools = [...base, ...changesTools(ctx), ...dataTools(ctx), ...performanceTools(ctx), ...topologyTools(ctx), ...workspaceTools(ctx, host.workspace)];
+  return host.readDocuments() ? tools : tools.filter((t) => !t.documents);
 }
 
 /** Fields as lines: `- address.city: string 98%, null 2% (present in 100%)`. */

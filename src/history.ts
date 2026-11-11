@@ -381,6 +381,15 @@ export class UndoHistory implements vscode.Disposable {
     return (EJSON.parse(data.toString('utf8'), { relaxed: false }) as { docs: Recorded[] }).docs;
   }
 
+  /** The documents an operation recorded (before: null for those it inserted), for the MCP server. */
+  async recorded(id: string): Promise<Recorded[]> {
+    await this.loaded;
+    const entry = this.entries.find((e) => e.id === id);
+    if (!entry) throw new Error('This operation is no longer in the undo history.');
+    if (entry.undone) throw new Error('This operation was already undone.');
+    return this.read(entry);
+  }
+
   private async open(id: string): Promise<{ entry: HistoryEntry; where: string; coll: Collection; docs: Recorded[] }> {
     await this.loaded;
     const entry = this.entries.find((e) => e.id === id);

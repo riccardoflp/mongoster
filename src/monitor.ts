@@ -9,6 +9,7 @@ import type {
   CollectionStats,
   DatabaseStats,
   MonitorHostMessage,
+  MonitorTab,
   MonitorOp,
   MonitorViewMessage,
   OplogOp,
@@ -51,14 +52,21 @@ async function inBatches<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise
 export class MonitorPanel {
   private static readonly panels = new Map<string, MonitorPanel>();
   private readonly panel: vscode.WebviewPanel;
+  /** The section to show first, sent with init. */
+  private initialTab?: MonitorTab;
 
-  static show(context: vscode.ExtensionContext, connections: ConnectionManager, info: ConnectionInfo): void {
+  /** Opens the monitor of a connection, on the section `tab` when given. */
+  static show(context: vscode.ExtensionContext, connections: ConnectionManager, info: ConnectionInfo, tab?: MonitorTab): void {
     const existing = MonitorPanel.panels.get(info.id);
     if (existing) {
       existing.panel.reveal();
+      if (tab) existing.post({ type: 'showTab', tab });
       return;
     }
-    MonitorPanel.panels.set(info.id, new MonitorPanel(context, connections, info));
+    const panel = new MonitorPanel(context, connections, info);
+    // Sent with init: a message posted before the webview is ready would be lost.
+    panel.initialTab = tab;
+    MonitorPanel.panels.set(info.id, panel);
   }
 
   /** Name, color and read-only changes apply to the open monitor. */
@@ -107,7 +115,9 @@ export class MonitorPanel {
     } catch {
       // Shown by the individual sections.
     }
-    this.post({ type: 'init', connectionName: this.info.name, readOnly: !!this.info.readOnly, color: this.info.color, databases });
+    const tab = this.initialTab;
+    this.initialTab = undefined;
+    this.post({ type: 'init', connectionName: this.info.name, readOnly: !!this.info.readOnly, color: this.info.color, databases, ...(tab && { tab }) });
   }
 
   private async receive(m: MonitorViewMessage): Promise<void> {

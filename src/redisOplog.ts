@@ -30,7 +30,8 @@ export function parseRedisUrl(url: string): { host: string; port: number; tls: b
   try {
     parsed = new URL(/^[a-z]+:\/\//i.test(url) ? url : `redis://${url}`);
   } catch {
-    throw new Error(`Invalid Redis URL: ${url}`);
+    // Not the URL itself: it can hold the password.
+    throw new Error('Invalid Redis URL');
   }
   if (parsed.protocol !== 'redis:' && parsed.protocol !== 'rediss:') throw new Error('The Redis URL must start with redis:// or rediss://');
   if (!parsed.hostname) throw new Error('The Redis URL has no host');
@@ -274,7 +275,14 @@ export class RedisOplog implements vscode.Disposable, OplogQueue {
   private readonly redis = new Map<string, { url: string; conn: Promise<RedisConnection> }>();
   private readonly queues = new Map<string, Promise<void>>();
   private readonly warned = new Map<string, number>();
+  /** The last error publishing the writes of each connection, for the MCP server. */
+  private readonly lastErrors = new Map<string, { time: number; message: string }>();
   private readonly disposables: vscode.Disposable[] = [];
+
+  /** The last error publishing the writes of a connection since Mongoster started. */
+  static lastError(connectionId: string): { time: number; message: string } | undefined {
+    return RedisOplog.current?.lastErrors.get(connectionId);
+  }
 
   static init(connections: ConnectionManager): RedisOplog {
     RedisOplog.current = new RedisOplog(connections);
@@ -352,6 +360,7 @@ export class RedisOplog implements vscode.Disposable, OplogQueue {
 
   private warn(id: string, err: unknown): void {
     const now = Date.now();
+    this.lastErrors.set(id, { time: now, message: errorText(err) });
     if (now - (this.warned.get(id) ?? 0) < WARN_EVERY) return;
     this.warned.set(id, now);
     const name = this.connections.get(id)?.name ?? 'the connection';
