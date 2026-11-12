@@ -1,0 +1,101 @@
+# Stored data
+
+Everything Mongoster keeps between runs. What a version writes, the next version must read: these keys and files are
+already on users' machines, so a change to any of them keeps reading the old form (R15). Paths per product are in
+[05-platform.md](05-platform.md#where-data-lives).
+
+## What is stored
+
+### Secrets
+
+In the secret storage (VS Code's `SecretStorage`; in the desktop app `secrets.json`, see
+[05-platform.md](05-platform.md#where-data-lives)). Never in `globalState`, settings or files Mongoster writes without
+being asked for passwords.
+
+| Key | Holds | Written by | Deleted |
+| --- | --- | --- | --- |
+| `mongoster.uri.<id>` | The connection string, with its credentials | `connection.secrets` | when the connection is removed |
+| `mongoster.options.<id>` | TLS and SSH options as JSON: certificate files' content, keys, passwords, passphrases | `connection.secrets` | when TLS and SSH are both cleared, or the connection is removed |
+| `mongoster.redis.<id>` | The Redis URL for redis-oplog, with its password | `connection.secrets` | when redis-oplog is turned off, or the connection is removed |
+| `mongoster.mcp.token` | The MCP server's access token | `mcp.access-token` | replaced by `Generate a new access token` |
+
+### Small state, in `globalState`
+
+| Key | Holds | May be lost? |
+| --- | --- | --- |
+| `mongoster.connections` | The list of connections: id, name, folder, color, read-only, no undo history, SSH label, TLS flag, redis-oplog settings without the URL (`ConnectionInfo`) | **No**: the user's connections |
+| `mongoster.knownHosts` | The SSH host keys the user confirmed | No: losing it asks again, which is safe but surprising |
+| `mongoster.history.<connection>/<database>/<collection>` | The last 50 queries run on a collection | Yes |
+| `mongoster.saved.<connection>/<database>/<collection>` | The queries saved *for me* | **No** |
+| `mongoster.layout.<connection>/<database>/<collection>` | The columns' layout: hidden, order, widths, pinned | Yes |
+| `mongoster.expanded.<connection>/<database>/<collection>` | The expanded nested columns | Yes |
+| `mongoster.playgroundTargets` | The connection and database of each playground file | Yes |
+| `mongoster.backupFolder` | The last folder used for a backup | Yes |
+| `mongoster.savedQueries.lastPlace` | *For me* or *In the project*, offered first | Yes |
+| `mongoster.savedQueries.projectFolder` | The desktop app's project folder for saved queries | No |
+
+The four keys of a collection follow its rename (`moveCollectionState` in `src/collectionPanel.ts`). They are not
+deleted when the collection or its database is dropped, nor when the connection is removed: they stay in
+`globalState`, and come back if a collection of the same name is created again (RS4).
+
+### Files of Mongoster's own
+
+| Path | Format | Written | May be lost? |
+| --- | --- | --- | --- |
+| `<global storage>/history/index.json` | JSON array of `HistoryEntry`: id, time, connection, target, label, counts, size | atomically (a `.tmp` beside, then rename) after each operation and each pruning | **No**: see below |
+| `<global storage>/history/<id>.json.gz` | gzip of canonical Extended JSON `{ docs: [...] }`: the documents as they were (only `_id` for inserts) | once, when the operation is recorded | Yes, one by one: that operation can no longer be undone |
+| `<global storage>/scheduledTasks/tasks.json` | JSON array of `ScheduledTask` | atomically, under the lock of `src/fileLock.ts` | **No**: the user's tasks |
+| `<global storage>/scheduledTasks/<id>.json` | JSON `TaskState`: the last scheduled time handled, the run log (last 20 runs), the outputs written | atomically | Yes, losing the log and the outputs that retention deletes |
+| `<global storage>/scheduledTasks/<id>.lock`, `<id>.cancel` | the lock of a run, the request to cancel it | by the window running the task | Yes |
+
+### Files in the user's places
+
+| Path | Format | Promise |
+| --- | --- | --- |
+| `.mongoster/queries/<database>/<collection>/<name>.json` (or `mongoster.savedQueries.folder`) | JSON: `name`, `description`, `database`, `collection`, optional `connection`, `filter` / `sort` / `projection` or `pipeline` in mongosh syntax, text on several lines as an array of lines | Shared through git by teams: other versions of Mongoster read and write the same files; invalid ones are skipped with a warning and `Open File` (D15) |
+| Backups: `.agz`, `.archive`, folders of `.bson` and `.metadata.json` (gzipped or not) | mongodump's formats | Readable by `mongorestore` and from `mongodump` ([D10](08-decisions.md#d10--backups-in-mongodumps-formats-written-by-mongoster)) |
+| Exports: JSON, JSON Lines (canonical Extended JSON), CSV with a UTF-8 BOM | as `mongoexport` writes them, for JSON Lines | Importable again by Mongoster and `mongoimport` |
+| Connection files: Mongoster's JSON, Compass's JSON, lists of connection strings | `src/shared/connectionsFile.ts` | Compass reads Mongoster's Compass export, passwords included when encrypted with a passphrase |
+
+### The desktop app
+
+Besides the equivalents above, in its folder: `secrets.json`, the settings as `settings.json`, `globalState` as a JSON
+file, `window.json` (the window's bounds), written atomically by `JsonFile` in `src/standalone/vscode/storage.ts`.
+
+## Versions
+
+None of Mongoster's own formats carries a version number today. Reading relies on the shape: `index.json` must be an
+array, `tasks.json` must be an array, a saved query file must have its fields. Adding a version field is open question
+[Q3](08-decisions.md#open-questions).
+
+What happens to a file that cannot be read:
+
+| File | When it cannot be read | Consequence |
+| --- | --- | --- |
+| `history/index.json` | `load` in `src/history.ts` treats it as empty, then prunes with `orphans`: every `*.json.gz` without an entry is deleted | **The whole undo history is deleted, without a warning** (RS1 in [13-risks.md](13-risks.md)) |
+| `scheduledTasks/tasks.json` | `readTasks` in `src/scheduler.ts` returns no tasks; the next change to a task writes the list with only that change | **Every other task is lost at the next change, without a warning** (RS2) |
+| `scheduledTasks/<id>.json` | read as an empty state | The run log and the list of outputs are forgotten; retention no longer knows the older outputs, which then stay |
+| A saved query file | skipped, with a warning and `Open File` | Safe |
+| `secrets.json` (desktop app), a value that cannot be decrypted | read as missing | The connection asks for nothing and fails to connect (T2) |
+
+## Migrations
+
+None has been needed so far. The rule for the first one (R15.1): the code that reads the new form also reads the old
+one and rewrites it in the new form on the next write; a test reads a file recorded from the old version; the change
+is a proposal ([proposals/](proposals/README.md)) when it touches files users share (saved queries, backups).
+
+## How files are written
+
+- Atomically: write a temporary file beside, then rename (`writeAtomic` in `src/scheduler.ts`, `writeIndex` in
+  `src/history.ts`, `JsonFile` in the desktop app). On Windows a rename retries for a moment while another window
+  reads the file.
+- Shared between VS Code windows: the scheduled tasks, under the lock of `src/fileLock.ts`. The undo history is one
+  folder for all windows, but each window keeps its own list of operations in memory and rewrites `index.json` from
+  it, without a lock: two windows writing in turn can drop each other's entries, and the next start's pruning then
+  deletes the files of the dropped ones (RS3).
+
+## What never changes
+
+The names of the `mongoster.*` settings, of the `globalState` and secret keys above, of the saved query files and their
+fields, and the formats of backups and exports. Renaming any of them is a decision, with the code that reads the old
+name.

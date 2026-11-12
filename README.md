@@ -314,4 +314,4 @@ npm install
 npm run build
 ```
 
-Press **F5** in VS Code ("Run Mongoster") to open an Extension Development Host window, or run `npm run app` for the desktop app. Building, testing and releasing are described in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md), and how the code is organized in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Press **F5** in VS Code ("Run Mongoster") to open an Extension Development Host window, or run `npm run app` for the desktop app. Building, testing and releasing are described in [docs/06-testing.md](docs/06-testing.md), and how the code is organized in [docs/02-architecture.md](docs/02-architecture.md); [docs/](docs/README.md) has the rest of the documentation for contributors.

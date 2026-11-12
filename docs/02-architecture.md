@@ -1,6 +1,65 @@
 # Architecture
 
-How Mongoster's code is organized, what talks to what, and where each feature lives. For building, testing and releasing see [DEVELOPMENT.md](DEVELOPMENT.md); for the rules to follow when changing the code see [CLAUDE.md](../CLAUDE.md).
+How Mongoster's code is organized, what talks to what, and where each feature lives. For building, testing and releasing see [06-testing.md](06-testing.md); for the rules to follow when changing the code see [03-code-rules.md](03-code-rules.md) and [AGENTS.md](../AGENTS.md).
+
+## Context
+
+*C4 level 1: who and what Mongoster talks to.* The boxes in **Not trusted** send Mongoster data it must not run or
+believe blindly; [10-security.md](10-security.md) starts from this picture.
+
+```mermaid
+flowchart LR
+  user([Person: developer or database administrator])
+  ai([Person's AI assistant<br/>Copilot, Claude Code, Cursor])
+  subgraph host [The user's machine]
+    mongoster[Mongoster<br/>VS Code extension or Electron app, TypeScript]
+    secrets[(Secret storage<br/>VS Code SecretStorage or safeStorage)]
+    files[(Files<br/>backups, exports, imports, saved queries, undo history)]
+  end
+  subgraph untrusted [Not trusted]
+    mongo[MongoDB deployment<br/>standalone, replica set, sharded, Atlas]
+    ssh[SSH server<br/>bastion]
+    redis[Redis<br/>for redis-oplog]
+    mongot[mongot<br/>Atlas Search]
+  end
+  user -->|clicks, keys, mongosh text| mongoster
+  ai -->|MCP over HTTP on 127.0.0.1, bearer token| mongoster
+  mongoster -->|connection strings, passwords, token| secrets
+  mongoster -->|reads and writes| files
+  mongoster -->|MongoDB wire protocol, TLS optional| mongo
+  mongoster -->|SSH tunnel, host key checked| ssh
+  ssh -->|forwarded port| mongo
+  mongoster -->|RESP, PUBLISH events| redis
+  mongo -->|search index commands| mongot
+```
+
+## Containers
+
+*C4 level 2: the pieces that run separately, and what passes between them.*
+
+```mermaid
+flowchart TB
+  subgraph vscode [In VS Code]
+    exthost[Extension host<br/>Node: src/extension.ts and the features]
+    webviews[Webviews<br/>one browser sandbox per tab: src/webview]
+    mcp[MCP server<br/>inside the host: src/mcpServer.ts, 127.0.0.1:37017]
+  end
+  subgraph app [In the desktop app]
+    main[Main process<br/>Node: the same code, vscode = src/standalone/vscode]
+    window[Window<br/>renderer: src/standalone/shell, Monaco]
+    frames[Webview frames<br/>the same src/webview]
+  end
+  exthost -->|postMessage: HostMessage / ViewMessage, relaxed Extended JSON| webviews
+  main -->|IPC: src/standalone/protocol.ts| window
+  window --> frames
+  exthost --- mcp
+  main --- mcp2[MCP server<br/>the same code, its own token]
+  exthost -->|MongoDB driver| db[(MongoDB)]
+  main -->|MongoDB driver| db
+```
+
+Levels 1 and 2 change rarely: update them in the commit that adds an external system or a running piece. Level 3 is
+the layering below and the code map; level 4 is the code.
 
 ## The four places code runs
 
@@ -203,4 +262,4 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `media/controls.css` – checkboxes, radios and selects in the theme's colors; every tab loads it last
 - `media/connection/*.svg` – the leaf icon in each connection color, dark and light
 - `media/mongoster.svg` (activity bar and uncolored tabs), `media/collection.svg` (uncolored collection tabs), `media/icon.png` / `media/icon.svg` (Marketplace icon), `build/icon.png` (the app's icon)
-- `test/unit/`, `test/integration/`, `test/stubs/vscode.ts` – see [DEVELOPMENT.md](DEVELOPMENT.md#tests)
+- `test/unit/`, `test/integration/`, `test/stubs/vscode.ts` – see [06-testing.md](06-testing.md#tests)

@@ -1,6 +1,6 @@
 # Development
 
-Building, running, testing and releasing Mongoster. For how the code is organized see [ARCHITECTURE.md](ARCHITECTURE.md); for the rules to follow when changing it see [CLAUDE.md](../CLAUDE.md).
+Building, running, testing and releasing Mongoster. For how the code is organized see [02-architecture.md](02-architecture.md); for the rules to follow when changing it see [03-code-rules.md](03-code-rules.md) and [AGENTS.md](../AGENTS.md).
 
 ## Setup
 
@@ -35,7 +35,7 @@ The tests use [Vitest](https://vitest.dev), with two projects in `vitest.config.
 
 To run one file: `npx vitest run --project unit test/unit/query.test.ts` (or `--project integration`).
 
-Modules that import `vscode` get the stub in `test/stubs/vscode.ts`, which only has the classes they extend or create when loaded. Code that needs VS Code to do something isn't unit-testable: keep the logic in a module without a `vscode` import (see [ARCHITECTURE.md](ARCHITECTURE.md#layering-rules)).
+Modules that import `vscode` get the stub in `test/stubs/vscode.ts`, which only has the classes they extend or create when loaded. Code that needs VS Code to do something isn't unit-testable: keep the logic in a module without a `vscode` import (see [02-architecture.md](02-architecture.md#layering-rules)).
 
 Redis isn't needed: the redis-oplog tests check the events given to an `OplogSink`.
 
@@ -46,6 +46,27 @@ MONGOSTER_SEARCH_URI="mongodb://…" npx vitest run --project integration test/i
 ```
 
 They create, change and drop indexes in the `mongoster_search` database, which they drop at the end.
+
+## From a card to a test
+
+Each card of [features/](features/README.md) ends with acceptance lines. A line becomes a test in the project that can
+check it: a pure decision in `test/unit/`, anything that talks to MongoDB in `test/integration/`. The card's **Tested
+by** line names the tests; a card whose lines have no test says *none*, and that is a gap listed in
+[13-risks.md](13-risks.md). New tests start their name with the card's identifier
+(`it('document.delete-many: refuses on a read-only connection', …)`), so that a search finds them from the card.
+
+## What no test reaches
+
+The webviews and the host classes that call VS Code have no automated tests: the stub of `test/stubs/vscode.ts` only
+lets modules load. Before a release, check by hand, in the extension and in the desktop app, in a dark and a light
+theme:
+
+- every write of the riskiest areas once, on a read-only connection (refused) and on a writable one (written,
+  recorded in the undo history, undone);
+- a connection with TLS, one with an SSH tunnel (first connection: the host key is asked), one with redis-oplog;
+- the MCP server from one client (Claude Code or Copilot), with `mongoster.mcp.readDocuments` on and off;
+- a scheduled task that runs, one that is missed and runs at start, and the retention deleting only its own files;
+- the desktop app's installer on each system.
 
 ## Packaging
 
