@@ -152,7 +152,11 @@ describe('due and missed runs', () => {
 });
 
 describe('file names', () => {
-  const date = new Date(2026, 9, 8, 16, 45, 12);
+  // Built once TZ is set: when the file is loaded it is still the system's time zone (UTC on the CI).
+  let date: Date;
+  beforeAll(() => {
+    date = new Date(2026, 9, 8, 16, 45, 12);
+  });
 
   it('expands the placeholders, as Back Up names its files by default', () => {
     expect(expandPattern(DEFAULT_PATTERN, date, { name: 'shop', connection: 'Local' })).toBe('shop_2026-10-08_16-45-12');
