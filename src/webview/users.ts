@@ -1,6 +1,7 @@
 // Users and roles tab: lists, forms to create users and roles, passwords, granting and revoking roles.
 import type { RoleEntry, RoleRef, UserEntry, UsersHostMessage, UsersViewMessage } from '../shared/messages';
 import { prettyShell } from '../shared/query';
+import { paintStripe } from './stripe';
 
 type Tab = 'users' | 'roles';
 
@@ -556,8 +557,7 @@ window.addEventListener('message', (e: MessageEvent<UsersHostMessage>) => {
       readOnly = m.readOnly;
       me = m.me;
       document.body.classList.toggle('locked', readOnly);
-      if (m.color) document.body.dataset.color = m.color;
-      else delete document.body.dataset.color;
+      paintStripe(document.body, m.color);
       el('title').textContent = m.connectionName;
       if (readOnly) {
         const badge = span('read-only', 'badge');

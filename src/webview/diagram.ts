@@ -2,6 +2,7 @@
 // field to the collection it points to. Boxes can be dragged, the view panned and zoomed.
 import type { DiagramHostMessage, DiagramViewMessage } from '../shared/messages';
 import { Box, HEAD_H, RelCollection, RelGraph, Relation, ROW_H, describe, edgePath, layout, rowLabel, rowY, shownFields, toMermaid } from '../shared/relations';
+import { paintStripe } from './stripe';
 
 interface State {
   sample: number;
@@ -343,8 +344,7 @@ window.addEventListener('message', (e: MessageEvent<DiagramHostMessage>) => {
       database = m.database;
       focus = m.focus;
       el('title').textContent = `Relationship Diagram · ${m.database} · ${m.connectionName}`;
-      if (m.color) document.body.dataset.color = m.color;
-      else delete document.body.dataset.color;
+      paintStripe(document.body, m.color);
       if (first) analyze();
       else if (focus && boxes.has(focus)) {
         select({ collection: focus });

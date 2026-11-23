@@ -14,6 +14,7 @@
 import { createCipheriv, createDecipheriv, pbkdf2, randomBytes, randomUUID } from 'crypto';
 import type { CollectionColor, ConnectionColor } from '../connections';
 import { readCollectionColors } from './collectionColors';
+import { type PresetColor, nearestPreset, readColor } from './colors';
 import type { SshOptions, TlsOptions } from '../transport';
 import type { RedisOplogSettings } from './oplog';
 
@@ -50,7 +51,6 @@ export class PassphraseError extends Error {}
 const MONGOSTER_TYPE = 'Mongoster Connections';
 const COMPASS_TYPE = 'Compass Connections';
 const FILE_VERSION = 1;
-const COLORS: readonly ConnectionColor[] = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'];
 
 // ---- connection strings
 
@@ -195,43 +195,51 @@ function missingSecrets(c: PortableConnection): string[] {
 // ---- colors
 
 /** Compass's color codes (use-connection-color.ts): Green, Teal, Blue, Iris, Purple, Red, Pink, Orange, Yellow, Gray. */
-const FROM_COMPASS: Record<string, ConnectionColor | undefined> = {
+const FROM_COMPASS: Record<string, PresetColor> = {
   color1: 'green',
-  color2: 'green',
+  color2: 'teal',
   color3: 'blue',
-  color4: 'blue',
+  color4: 'indigo',
   color5: 'purple',
   color6: 'red',
-  color7: 'purple',
+  color7: 'pink',
   color8: 'orange',
   color9: 'yellow',
-  color10: undefined,
-  teal: 'green',
-  iris: 'blue',
-  pink: 'purple',
+  color10: 'gray',
+  iris: 'indigo',
 };
-const TO_COMPASS: Record<ConnectionColor, string> = { red: 'color6', orange: 'color8', yellow: 'color9', green: 'color1', blue: 'color3', purple: 'color5' };
-const HUES: Record<ConnectionColor, number> = { red: 0, orange: 30, yellow: 55, green: 125, blue: 215, purple: 280 };
+/** Brown has no Compass code: it goes as orange. */
+const TO_COMPASS: Record<PresetColor, string> = {
+  red: 'color6',
+  orange: 'color8',
+  yellow: 'color9',
+  green: 'color1',
+  blue: 'color3',
+  purple: 'color5',
+  pink: 'color7',
+  teal: 'color2',
+  indigo: 'color4',
+  brown: 'color8',
+  gray: 'color10',
+};
 
-/** The closest of Mongoster's colors to a Compass color code, a color name or a hex color (older Compass). */
-export function colorFrom(value: unknown): ConnectionColor | undefined {
+/**
+ * The color of a connection in a file: a preset name, a Compass color code or name, or a hex color (older Compass,
+ * or a custom color in Mongoster's own format). A hex color is kept as a custom color with `keepCustom`, otherwise
+ * taken to its nearest preset.
+ */
+export function colorFrom(value: unknown, keepCustom = false): ConnectionColor | undefined {
   if (typeof value !== 'string') return undefined;
   const v = value.trim().toLowerCase();
-  if ((COLORS as readonly string[]).includes(v)) return v as ConnectionColor;
   if (v in FROM_COMPASS) return FROM_COMPASS[v];
-  const hex = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/.exec(v)?.[1];
-  if (!hex) return undefined;
-  const full = hex.length === 3 ? hex.replace(/./g, '$&$&') : hex;
-  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255);
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  // Grays have no color.
-  if (max - min < 0.12) return undefined;
-  const d = max - min;
-  const hue = (max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60;
-  const h = (hue + 360) % 360;
-  const distance = (c: ConnectionColor) => Math.min(Math.abs(h - HUES[c]), 360 - Math.abs(h - HUES[c]));
-  return COLORS.reduce((best, c) => (distance(c) < distance(best) ? c : best));
+  const color = readColor(v);
+  if (!color) return undefined;
+  return keepCustom ? color : nearestPreset(color);
+}
+
+/** The Compass code of a color, a custom one by its nearest preset. */
+export function compassColor(color: ConnectionColor): string {
+  return TO_COMPASS[nearestPreset(color)];
 }
 
 // ---- encryption, as Compass's Encrypter / Decrypter
@@ -489,7 +497,7 @@ async function fromMongoster(entry: Json, decrypter: Decrypter | undefined): Pro
   if (secrets === 'locked') notes.push('passwords not imported (encrypted)');
   const c: PortableConnection = { name: str(entry.name)?.trim() || hostOf(uri), uri: s.password ? withPassword(uri, s.password) : uri, notes };
   if (str(entry.folder)?.trim()) c.folder = str(entry.folder)!.trim();
-  const color = colorFrom(entry.color);
+  const color = colorFrom(entry.color, true);
   if (color) c.color = color;
   const collectionColors = readCollectionColors(entry.collectionColors);
   if (collectionColors) c.collectionColors = collectionColors;
@@ -587,7 +595,7 @@ export async function serializeConnections(list: PortableConnection[], format: C
 
       const entry: Json = {
         id: randomUUID(),
-        favorite: { name: c.name, ...(c.color && { color: TO_COMPASS[c.color] }) },
+        favorite: { name: c.name, ...(c.color && { color: compassColor(c.color) }) },
         savedConnectionType: 'favorite',
         connectionOptions: { connectionString: uri, ...(tunnel && { sshTunnel: tunnel }) },
       };

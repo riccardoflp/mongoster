@@ -56,9 +56,7 @@ export class Webview {
 
   /** The URL a file of the app has inside a webview; files elsewhere aren't served. */
   asWebviewUri(resource: Uri): Uri {
-    const relative = path.relative(runtime().appRoot, resource.fsPath);
-    if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error(`Not a file of the app: ${resource.fsPath}`);
-    return Uri.from({ scheme: APP_PROTOCOL, authority: RESOURCE_HOST, path: `/${relative.split(path.sep).join('/')}` });
+    return appResourceUri(resource);
   }
 
   receive(message: unknown): void {
@@ -84,7 +82,7 @@ export class WebviewPanel {
   viewColumn: ViewColumn | undefined;
   private name: string;
   private icon: IconPath | undefined;
-  private color: ThemeColor | undefined;
+  private color: ThemeColor | string | undefined;
   private disposed = false;
   private readonly disposeEmitter = new EventEmitter<void>();
   private readonly stateEmitter = new EventEmitter<WebviewPanelOnDidChangeViewStateEvent>();
@@ -126,15 +124,18 @@ export class WebviewPanel {
     return icon && this.webview.asWebviewUri(icon).toString();
   }
 
-  /** The app's own: the color of a line above the tab (Mongoster gives the tabs of a connection its color). */
-  get tabColor(): ThemeColor | undefined {
+  /**
+   * The app's own: the color of a line above the tab (Mongoster gives the tabs of a connection its color), a theme
+   * color or a CSS color (a custom color, D17).
+   */
+  get tabColor(): ThemeColor | string | undefined {
     return this.color;
   }
 
-  set tabColor(value: ThemeColor | undefined) {
-    if (value?.id === this.color?.id) return;
+  set tabColor(value: ThemeColor | string | undefined) {
+    if (cssOf(value) === cssOf(this.color)) return;
     this.color = value;
-    if (this.webview.announced) post({ type: 'panelUpdate', id: this.id, color: value ? cssColor(value) : '' });
+    if (this.webview.announced) post({ type: 'panelUpdate', id: this.id, color: cssOf(value) ?? '' });
   }
 
   reveal(viewColumn?: ViewColumn, preserveFocus?: boolean): void {
@@ -192,7 +193,7 @@ export function createWebviewPanel(
       id,
       title: panel.title,
       icon: panel.iconUrl(),
-      color: panel.tabColor && cssColor(panel.tabColor),
+      color: cssOf(panel.tabColor),
       src: panel.webview.src(),
       column: column(show.viewColumn),
       preserveFocus: !!show.preserveFocus,
@@ -226,6 +227,18 @@ export function panelsShown(visible: Set<number>, active: number | undefined): v
 export function panelOfHost(host: string): number | undefined {
   const m = /^view-(\d+)$/.exec(host);
   return m ? Number(m[1]) : undefined;
+}
+
+/** The URL of a file of the app, as the webviews and the shell load it; files elsewhere aren't served. */
+export function appResourceUri(resource: Uri): Uri {
+  const relative = path.relative(runtime().appRoot, resource.fsPath);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error(`Not a file of the app: ${resource.fsPath}`);
+  return Uri.from({ scheme: APP_PROTOCOL, authority: RESOURCE_HOST, path: `/${relative.split(path.sep).join('/')}` });
+}
+
+/** A tab's color as CSS: a theme color's variable, or the CSS color it already is. */
+function cssOf(color: ThemeColor | string | undefined): string | undefined {
+  return typeof color === 'string' ? color : color && cssColor(color);
 }
 
 export function isResourceHost(host: string): boolean {

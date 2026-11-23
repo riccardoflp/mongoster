@@ -105,22 +105,28 @@ describe('TLS options', () => {
 describe('colorFrom', () => {
   it("maps Compass's color codes and names", () => {
     expect(colorFrom('color1')).toBe('green');
-    expect(colorFrom('color2')).toBe('green');
+    expect(colorFrom('color2')).toBe('teal');
+    expect(colorFrom('color4')).toBe('indigo');
+    expect(colorFrom('color7')).toBe('pink');
+    expect(colorFrom('iris')).toBe('indigo');
     expect(colorFrom('color3')).toBe('blue');
     expect(colorFrom('color6')).toBe('red');
     expect(colorFrom('color8')).toBe('orange');
     expect(colorFrom('color9')).toBe('yellow');
-    expect(colorFrom('color10')).toBeUndefined();
-    expect(colorFrom('teal')).toBe('green');
-    expect(colorFrom('pink')).toBe('purple');
+    expect(colorFrom('color10')).toBe('gray');
+    expect(colorFrom('teal')).toBe('teal');
+    expect(colorFrom('pink')).toBe('pink');
   });
 
-  it("keeps Mongoster's colors, maps hex colors to the closest hue and grays to none", () => {
+  it("keeps Mongoster's colors, maps hex colors to the closest preset, or keeps them as custom colors", () => {
     expect(colorFrom(' Blue ')).toBe('blue');
     expect(colorFrom('#ff0000')).toBe('red');
     expect(colorFrom('#00f')).toBe('blue');
     expect(colorFrom('ffa500')).toBe('orange');
-    expect(colorFrom('#808080')).toBeUndefined();
+    expect(colorFrom('#808080')).toBe('gray');
+    expect(colorFrom('#12ABEF', true)).toBe('#12abef');
+    expect(colorFrom('#00f', true)).toBe('#0000ff');
+    expect(colorFrom('pink', true)).toBe('pink');
     expect(colorFrom('#xyz')).toBeUndefined();
     expect(colorFrom(3)).toBeUndefined();
     expect(colorFrom(undefined)).toBeUndefined();

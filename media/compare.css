@@ -22,13 +22,6 @@
   border-radius: 3px;
 }
 
-.side[data-color='red'] { --conn-color: var(--vscode-charts-red, #f14c4c); }
-.side[data-color='orange'] { --conn-color: var(--vscode-charts-orange, #d18616); }
-.side[data-color='yellow'] { --conn-color: var(--vscode-charts-yellow, #cca700); }
-.side[data-color='green'] { --conn-color: var(--vscode-charts-green, #89d185); }
-.side[data-color='blue'] { --conn-color: var(--vscode-charts-blue, #3794ff); }
-.side[data-color='purple'] { --conn-color: var(--vscode-charts-purple, #b180d7); }
-
 .side-label {
   color: var(--muted);
   font-size: 0.85em;

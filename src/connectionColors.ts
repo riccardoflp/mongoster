@@ -4,6 +4,7 @@
 import * as vscode from 'vscode';
 import type { ConnectionColor, ConnectionManager } from './connections';
 import { colorOf } from './shared/collectionColors';
+import { cssColorOf, isPreset, nearestPreset, themeColorId } from './shared/colors';
 
 /** The scheme of the URI a connection's tree node carries, so that its name takes the connection's color. */
 export const CONNECTION_SCHEME = 'mongoster-connection';
@@ -12,25 +13,32 @@ export function connectionUri(connectionId: string): vscode.Uri {
   return vscode.Uri.from({ scheme: CONNECTION_SCHEME, path: `/${connectionId}` });
 }
 
-/** The theme color of a connection color: the same one the icons in the tree take. */
+/**
+ * The theme color of a connection color: the same one the icons in the tree take. VS Code takes only theme colors
+ * there, so a custom color is its nearest preset (D17).
+ */
 export function themeColorOf(color: ConnectionColor): vscode.ThemeColor {
-  return new vscode.ThemeColor(`charts.${color}`);
+  return new vscode.ThemeColor(themeColorId(color));
 }
 
-/** The icon of a connection's tabs: Mongoster's leaf in the connection's color, or `fallback` without a color. */
+/**
+ * The icon of a connection's tabs: Mongoster's leaf in the connection's color (a custom color's nearest preset), or
+ * `fallback` without a color.
+ */
 export function tabIcon(extensionUri: vscode.Uri, color: ConnectionColor | undefined, fallback = 'mongoster.svg'): vscode.Uri | { light: vscode.Uri; dark: vscode.Uri } {
   if (!color) return vscode.Uri.joinPath(extensionUri, 'media', fallback);
-  const icon = (kind: 'light' | 'dark') => vscode.Uri.joinPath(extensionUri, 'media', 'connection', `${color}-${kind}.svg`);
+  const icon = (kind: 'light' | 'dark') => vscode.Uri.joinPath(extensionUri, 'media', 'connection', `${nearestPreset(color)}-${kind}.svg`);
   return { light: icon('light'), dark: icon('dark') };
 }
 
 /**
  * Gives a tab of a connection the connection's color: its icon, and in the desktop app a line above the
- * tab too (`tabColor` is the app's own: VS Code has nothing like it and doesn't look at it).
+ * tab too (`tabColor` is the app's own: VS Code has nothing like it and doesn't look at it). The line takes a
+ * custom color exactly, as a CSS color.
  */
 export function paintTab(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, color: ConnectionColor | undefined, fallback?: string): void {
   panel.iconPath = tabIcon(extensionUri, color, fallback);
-  (panel as { tabColor?: vscode.ThemeColor }).tabColor = color ? themeColorOf(color) : undefined;
+  (panel as { tabColor?: vscode.ThemeColor | string }).tabColor = !color ? undefined : isPreset(color) ? themeColorOf(color) : cssColorOf(color);
 }
 
 /** Something else whose files belong to a connection, such as a playground and the connection it runs on. */

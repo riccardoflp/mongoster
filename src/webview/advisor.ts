@@ -4,6 +4,7 @@ import './tokenColors';
 import type { Advice, AdvisorIndex, AdvisorQuery } from '../shared/advisor';
 import type { AdvisorHostMessage, AdvisorReport, AdvisorViewMessage } from '../shared/messages';
 import { toShell } from '../shared/query';
+import { paintStripe } from './stripe';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: AdvisorViewMessage): void;
@@ -252,8 +253,7 @@ window.addEventListener('message', (e: MessageEvent<AdvisorHostMessage>) => {
       readOnly = m.readOnly;
       el('title').textContent = `Index Advisor · ${m.collection ? `${m.database}.${m.collection}` : (m.database ?? 'every database')} · ${m.connectionName}`;
       el('locked').classList.toggle('hidden', !readOnly);
-      if (m.color) document.body.dataset.color = m.color;
-      else delete document.body.dataset.color;
+      paintStripe(document.body, m.color);
       if (first) analyze();
       else render();
       break;

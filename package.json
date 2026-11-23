@@ -30,6 +30,58 @@
     "onStartupFinished"
   ],
   "contributes": {
+    "colors": [
+      {
+        "id": "mongoster.color.pink",
+        "description": "The pink preset color of connections and collections: their icons in the tree, their tabs and the names of their editor tabs.",
+        "defaults": {
+          "dark": "#f075b5",
+          "light": "#c2185b",
+          "highContrast": "#f075b5",
+          "highContrastLight": "#c2185b"
+        }
+      },
+      {
+        "id": "mongoster.color.teal",
+        "description": "The teal preset color of connections and collections: their icons in the tree, their tabs and the names of their editor tabs.",
+        "defaults": {
+          "dark": "#4ec9b0",
+          "light": "#00897b",
+          "highContrast": "#4ec9b0",
+          "highContrastLight": "#00897b"
+        }
+      },
+      {
+        "id": "mongoster.color.indigo",
+        "description": "The indigo preset color of connections and collections: their icons in the tree, their tabs and the names of their editor tabs.",
+        "defaults": {
+          "dark": "#8c9eff",
+          "light": "#3949ab",
+          "highContrast": "#8c9eff",
+          "highContrastLight": "#3949ab"
+        }
+      },
+      {
+        "id": "mongoster.color.brown",
+        "description": "The brown preset color of connections and collections: their icons in the tree, their tabs and the names of their editor tabs.",
+        "defaults": {
+          "dark": "#c8956b",
+          "light": "#8d6e63",
+          "highContrast": "#c8956b",
+          "highContrastLight": "#8d6e63"
+        }
+      },
+      {
+        "id": "mongoster.color.gray",
+        "description": "The gray preset color of connections and collections: their icons in the tree, their tabs and the names of their editor tabs.",
+        "defaults": {
+          "dark": "#a6a6a6",
+          "light": "#6e6e6e",
+          "highContrast": "#a6a6a6",
+          "highContrastLight": "#6e6e6e"
+        }
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {

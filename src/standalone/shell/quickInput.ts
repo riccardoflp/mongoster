@@ -84,6 +84,7 @@ export function showQuickPick(request: QuickPickRequest): void {
           check.checked = checked.has(index);
           row.append(check);
         }
+        if (item.icon) row.append(h('img', { class: 'quick-icon', src: item.icon, alt: '' }));
         const text = h('div', { class: 'quick-item-text' }, h('div', { class: 'quick-item-line' }, h('span', { class: 'quick-label' }, label(item.label)), item.description ? h('span', { class: 'quick-description' }, item.description) : undefined));
         if (item.detail) text.append(h('div', { class: 'quick-detail' }, item.detail));
         row.append(text);

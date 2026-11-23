@@ -16,18 +16,19 @@ Gives one collection its own color, which takes the place of the connection's fo
 
 - **Kind**: Operation
 - **Function**: `src/extension.ts › activate` (the `mongoster.setCollectionColor` handler), then `updateConnection`
-- **Implemented in**: `src/shared/collectionColors.ts` (`collectionColorChoices`, `ownColorOf`, `setCollectionColor`,
-  `namespaceOf`, `bucketCollection`); `src/extension.ts › changeCollectionColors`; `src/connections.ts ›
-  ConnectionManager.update`
+- **Implemented in**: `src/shared/collectionColors.ts` (`ownColorOf`, `setCollectionColor`, `namespaceOf`,
+  `bucketCollection`); `src/shared/colors.ts › colorChoices`; `src/extension.ts` (`askColor`,
+  `changeCollectionColors`); `src/connections.ts › ConnectionManager.update`
 - **Entry points**: `mongoster.setCollectionColor` (**Set Color…**), the context menu of a collection, a view or a
   GridFS bucket. Hidden from the Command Palette (`when: false`); with no argument it does nothing.
 - **Offered when**: `viewItem =~ /^(collection|view|bucket)/`, read-only connections included.
 - **Asks**: a quick pick **Color of <collection or bucket>**, placeholder **Shown on its tree icon, its tab and its
-  documents' tabs, instead of the color of <connection>**, with **Red**, **Orange**, **Yellow**, **Green**, **Blue**,
-  **Purple** (each after a colored circle), **None** and **Connection's Color**, described with the connection's
-  color (or **none**); the current choice is described **current** (**Connection's Color** when the collection has
-  no color of its own).
-- **Writes**: `collectionColors` of the connection in `mongoster.connections`: the color, or `none`, under
+  documents' tabs, instead of the color of <connection>**, with the eleven presets of `connection.set-color` (each
+  with the leaf in its color), **None**, **Connection's Color**, described with the connection's color (or **none**),
+  and **Custom Color…** (`connection.custom-color`); the current choice is described **current** (**Connection's
+  Color** when the collection has no color of its own).
+- **Writes**: `collectionColors` of the connection in `mongoster.connections`: the preset name, the custom `#rrggbb`
+  or `none`, under
   `<database>.<collection>`, or under `<database>.<bucket>.files` for a bucket; **Connection's Color** removes the
   entry, and the last entry removes the field.
 - **Danger**: None.
@@ -36,9 +37,9 @@ Gives one collection its own color, which takes the place of the connection's fo
 - **After**: the tree, the decorations and the open tabs of the connection change at once, as for
   `connection.set-color`.
 - **Uses**: `tree.color-of-collection`.
-- **Tested by**: `test/unit/collectionColors.test.ts › 'the choices of Set Color… on a collection' › "offers the six
-  colors, None and Connection's Color described with the connection's"`, `› 'marks the current choice, and a
-  connection without a color'`; `› 'the color of a collection' › 'sets a color, and removes it to follow the
+- **Tested by**: `test/unit/collectionColors.test.ts › 'the choices of Set Color… on a collection' › "offers the
+  presets, None, Connection's Color described with the connection's, and Custom Color…"`, `› 'marks the current
+  choice: none, a preset, or a custom color'`; `› 'the color of a collection' › 'sets a color, and removes it to follow the
   connection again'`, `› 'keys a collection by its namespace, and a bucket by its .files collection'`. The handler
   itself: *none*.
 
@@ -68,8 +69,9 @@ The rule every surface of a collection follows: its own color, none, or its conn
 
 Rules:
 
-- Input: the connection (its `color` and `collectionColors`), the database and the collection. Output: one of the six
-  colors, or none.
+- Input: the connection (its `color` and `collectionColors`), the database and the collection. Output: a preset, a custom
+  color, or none; where VS Code takes only theme colors a custom color shows as its nearest preset
+  (`connection.nearest-preset`).
 - The collection's entry wins: a color gives that color, `none` gives none even in a colored connection. Without an
   entry the connection's color applies, as before collections had colors.
 - A bucket looks up its `<bucket>.files` collection.

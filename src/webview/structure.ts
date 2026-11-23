@@ -4,6 +4,7 @@ import type { FieldDiff } from '../shared/compare';
 import type { StructureHostMessage, StructureSide, StructureViewMessage } from '../shared/messages';
 import { prettyShell } from '../shared/query';
 import { StructureCounts, StructureDiff, StructureKind, diffTitle, stepLines, structureScript } from '../shared/structure';
+import { paintStripe } from './stripe';
 
 declare function acquireVsCodeApi(): { postMessage(m: StructureViewMessage): void; getState(): Partial<State> | undefined; setState(s: State): void };
 
@@ -103,8 +104,7 @@ function renderSides(): void {
     const s = sides[side];
     const box = el(`${side}Side`);
     box.replaceChildren();
-    if (s.color) box.dataset.color = s.color;
-    else delete box.dataset.color;
+    paintStripe(box, s.color);
     box.append(span(side === 'left' ? 'Left · model' : 'Right · changed by the script', 'side-label'), span(s.database, 'side-ns'), span(s.connectionName, 'side-conn'));
     if (s.readOnly) {
       const b = span('read-only', 'badge');

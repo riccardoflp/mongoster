@@ -1,6 +1,7 @@
-# 0001 — The color of a collection
+# 0001 — The color of a collection, more colors and a color picker
 
-**Status**: accepted (D16)
+**Status**: revision 1 (the color of a collection) accepted (D16); revision 2 (more colors and a color picker) accepted
+(D17)
 
 ## Summary
 
@@ -116,3 +117,117 @@ without the field imports as today; an older Mongoster reading a newer export ig
 
 - Should a watch tab on a single collection take the collection's color? Proposed: no for now, it belongs to the
   watch area.
+
+## Revision 2 — More preset colors and a color picker
+
+Asked by the user after revision 1 was accepted: more preset colors, and a color picker, for connections as well as
+collections.
+
+### Summary
+
+Five more presets, **Pink**, **Teal**, **Indigo**, **Brown** and **Gray**, eleven in all: four are the Compass colors
+Mongoster lacked, so Compass's connections now import and export with their own color. And **Custom Color…**, the
+last choice of both `Set Color…` quick picks, opens a small **Choose a Color** tab with the system's color picker
+(`<input type="color">`), a `#rrggbb` field, the eleven presets and a preview; **Apply** saves the color and closes
+the tab. A custom color is exact wherever Mongoster draws it itself (the stripe at the top of its tabs, the desktop
+app's line above them, the dot in the scheduled tasks); where VS Code only takes a theme color (the icons and names in
+the tree, the tab icons, the names of editor tabs) it shows as the nearest of the eleven presets.
+
+### Why
+
+Six colors are few when a user has many connections (one per customer, per environment) or wants a collection to
+stand apart from its connection. Compass users bring teal, iris, pink and gray connections, which today become green,
+blue, purple and no color.
+
+### What changes for the user
+
+- `connection.set-color` and `tree.set-collection-color`: eleven presets and **Custom Color…**; the items show the
+  leaf in their color instead of an emoji circle (only six colors have one).
+- A new card `connection.custom-color` (the **Choose a Color** tab, View) and `connection.nearest-preset`
+  (Derivation: the preset a custom color shows as where only theme colors are taken).
+- `connection.color-from-compass`: `color2`/`teal` → **Teal**, `color4`/`iris` → **Indigo**, `color7`/`pink` →
+  **Pink**, `color10` → **Gray** (no color before); export writes those codes back; a custom color is written as the
+  nearest Compass code. A hex color in a Compass or Mongoster file is kept as a custom color in Mongoster's own
+  format, and still taken to the nearest preset from Compass's.
+- `connection.write-file`, `connection.read-file`: `color` and the values of `collectionColors` may be a preset name
+  or `#rrggbb`.
+- README (Connections › Color), a bullet in `## Unreleased`, glossary (*color*, *preset*, *custom color*).
+
+### Design
+
+**The colors.** A color is a preset name or a custom `#rrggbb` (lower case, six digits):
+`type Color = PresetColor | HexColor`. The six old presets stay the theme's `charts.<name>`; the five new
+ones are contributed in `package.json` › `contributes.colors` as `mongoster.color.<name>`, with dark, light and high
+contrast defaults chosen to read on both (pink `#f075b5` / `#c2185b`, teal `#4ec9b0` / `#00897b`, indigo `#8c9eff` /
+`#3949ab`, brown `#c8956b` / `#8d6e63`, gray `#a6a6a6` / `#6e6e6e`), so a theme can change them like any color.
+`themeColorOf(color)` becomes: a preset's theme color, or for a custom color its nearest preset's. Pure parts go in
+`src/shared/colors.ts` (no vscode): the list of presets, `isColor`, `normalizeHex` (`#abc` → `#aabbcc`),
+`nearestPreset(hex)` (by hue, as `colorFrom` does today; grays below a saturation go to **Gray**), and
+`cssColorOf(color)` (`var(--vscode-charts-red, #f14c4c)`, `var(--vscode-mongoster-color-pink, #f075b5)` or the hex).
+`colorFrom` in `connectionsFile.ts` uses them.
+
+**Surfaces.**
+
+| Where | Preset | Custom color |
+| --- | --- | --- |
+| Tree: connection's icon and name, icons below it | its theme color | nearest preset |
+| Names of editor tabs (documents, definitions, playgrounds) | its theme color | nearest preset |
+| Tab icons (the leaf) | `media/connection/<name>-light|dark.svg`, five new pairs | nearest preset's leaf |
+| Stripe at the top of a tab's content, the dot of scheduled tasks | the theme's variable | exact |
+| Desktop app: the line above a tab (`tabColor`) | the theme's variable | exact |
+
+The webviews stop listing the colors in CSS (`body[data-color='red'] { --conn-color: … }` in `webview.css`,
+`monitor.css`, `compare.css`, `playground.css`, `scheduledTasks.css`): the host still sends `color`, and one helper
+of `src/webview/` sets `--conn-color` to `cssColorOf(color)` (CSSOM, allowed by the CSP) and `data-color` for the
+rules that test whether there is a color. `tabColor` in the desktop app accepts a CSS color string besides a
+`ThemeColor` (it is the app's own property). Exact tab icons for custom colors were left out: VS Code would need an
+SVG written per color in global storage, and the desktop app serves icons only from `dist/` and `media/`.
+
+**The quick picks.** Both `Set Color…` list the eleven presets with `iconPath` set to their leaf (light and dark),
+then **None** (connection: no color; collection: plain), for a collection **Connection's Color**, then **Custom
+Color…** (described with the current custom color when there is one). The desktop app's quick input learns to draw
+an item's `iconPath` (`src/standalone/vscode/ui.ts`, `src/standalone/shell/quickInput.ts`).
+
+**The Choose a Color tab** (`src/colorPicker.ts`, `src/webview/colorPicker.ts`, `media/colorPicker.css`, following
+*A new tab* of AGENTS.md: messages `ColorPickerHostMessage` / `ColorPickerViewMessage`, a bundle entry and a
+`.vscodeignore` line). One tab at a time, titled **Color of <name>**, painted with the color being chosen. It shows
+the native color input, a `#rrggbb` field kept in step with it (an invalid value disables **Apply** and says
+**Enter a color as #rrggbb**), the eleven presets as swatches, a preview of the stripe and of the leaf as it will
+look where only presets are taken (**Shown as <preset> in the tree and on tab icons**), and **Apply** / **Cancel**.
+`Set Color…` waits for it like a quick pick: **Apply** writes through `updateConnection` (connection) or
+`changeCollectionColors` (collection), closing the tab or **Cancel** writes nothing. Its host part is a function
+`pickCustomColor(context, title, current): Promise<string | undefined>`.
+
+**Old form (11-data.md).** The old six names keep their meaning; nothing is migrated. A list written by an older
+version reads as before. An older version reading a newer list with a new preset or a hex shows the connection
+without a color (its icon path for an unknown name is missing: the tab falls back to an empty icon), and keeps the
+value when it rewrites the entry; that is the downgrade cost. An older Mongoster importing a newer export maps a hex
+to its nearest old preset (`colorFrom` already reads hex) and drops a new preset name.
+
+### Alternatives
+
+- **Exact custom colors everywhere** with SVGs generated per color in global storage (tab icons) and codicon SVGs
+  copied from `@vscode/codicons` and colored (tree icons), plus a route of the desktop app's protocol for them.
+  Names in the tree and editor tabs still cannot: `FileDecoration` takes only theme colors. Much more for icons
+  16 pixels wide; can come later without changing the data.
+- **Only an input box for `#rrggbb`** instead of the tab: cheaper (no new tab), but it is not the color picker the
+  user asked for.
+- **Custom colors contributed as theme colors**: `contributes.colors` is fixed in `package.json`; a user's colors
+  cannot be added at run time.
+- **More presets (cyan, lime, magenta…)**: they come too close to blue, green and purple to tell apart at 16 pixels
+  in both themes; the picker covers the rest.
+- **Emoji circles in the quick pick**: Unicode has circles for seven colors only (no pink, teal, indigo, gray).
+
+### Costs
+
+- A new tab (four files, a bundle entry) for a rarely used dialog.
+- The CSS of five webviews and the message handler of each tab that draws a stripe change (one line each); the
+  collection tab's webview is touched in its `init` handler only.
+- The desktop app: `contributes.colors` must be read into its theme's CSS variables (`--vscode-mongoster-color-*`),
+  since `cssColor` maps theme colors to variables; quick pick items draw `iconPath`; `tabColor` takes a string.
+- Downgrading Mongoster loses the display of new presets and custom colors, not the values.
+- `src/shared/connectionsFile.ts` (`colorFrom`, `TO_COMPASS`, the Mongoster entry's color) changes again.
+
+### Open questions
+
+- Should **Custom Color…** also remember the last few custom colors as swatches in the tab? Proposed: no, for now.

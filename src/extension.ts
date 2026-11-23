@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ThemeColors } from './themeColors';
-import { CONNECTION_COLORS, ConnectionColor, ConnectionInfo, ConnectionManager } from './connections';
+import { CollectionColor, ConnectionColor, ConnectionInfo, ConnectionManager } from './connections';
 import { BucketNode, CollectionNode, ConnectionNode, DatabaseNode, FolderNode, MongoTreeProvider, TreeNode, errorMessage } from './tree';
 import { CollectionPanel, CollectionTarget, expandedStateKey, layoutStateKey, moveCollectionState, panelKey, readOnlyMessage } from './collectionPanel';
 import { Manager } from './manage';
@@ -31,8 +31,10 @@ import { QueryHistory } from './queryHistory';
 import { ProjectQueries } from './projectQueries';
 import { mergeSavedQueries } from './shared/savedQueries';
 import { exportConnections, importConnections } from './connectionsTransfer';
-import { ConnectionDecorations } from './connectionColors';
-import { COLOR_EMOJI, CollectionColors, bucketCollection, collectionColorChoices, dropCollectionColors, namespaceOf, ownColorOf, renameCollectionColor, setCollectionColor } from './shared/collectionColors';
+import { ConnectionDecorations, tabIcon } from './connectionColors';
+import { CollectionColors, bucketCollection, dropCollectionColors, namespaceOf, ownColorOf, renameCollectionColor, setCollectionColor } from './shared/collectionColors';
+import { type ColorChoiceValue, colorChoices } from './shared/colors';
+import { pickCustomColor } from './colorPicker';
 import { Scheduler } from './scheduler';
 import { ScheduledTasksPanel } from './scheduledTasks';
 import type { QueryText } from './shared/messages';
@@ -93,6 +95,22 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!info) return;
     const colors = change(info.collectionColors);
     if (colors !== info.collectionColors) await updateConnection(connectionId, { collectionColors: colors });
+  };
+
+  /**
+   * The quick pick of `Set Color…`, then the Choose a Color tab for `Custom Color…`: what was chosen, or undefined
+   * when either was dismissed.
+   */
+  const askColor = async (
+    title: string,
+    placeHolder: string,
+    current: CollectionColor | undefined,
+    collection?: { connectionColor: ConnectionColor | undefined },
+  ): Promise<Exclude<ColorChoiceValue, 'custom'> | undefined> => {
+    const items = colorChoices(current, collection).map((c) => ({ ...c, ...(c.icon && { iconPath: tabIcon(context.extensionUri, c.icon) }) }));
+    const pick = await vscode.window.showQuickPick(items, { title, placeHolder });
+    if (!pick || pick.value !== 'custom') return pick?.value as Exclude<ColorChoiceValue, 'custom'> | undefined;
+    return pickCustomColor(context, title, current && current !== 'none' ? current : collection?.connectionColor);
   };
 
   const workspace: WorkspaceHost = {
@@ -197,15 +215,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('mongoster.setColor', async (node?: ConnectionNode) => {
       if (!node) return;
-      const items = [
-        ...CONNECTION_COLORS.map((color) => ({ label: `${COLOR_EMOJI[color]} ${capitalize(color)}`, color: color as ConnectionColor | undefined })),
-        { label: '⚪ None', color: undefined },
-      ].map((i) => ({ ...i, description: i.color === node.info.color ? 'current' : undefined }));
-      const pick = await vscode.window.showQuickPick(items, {
-        title: `Color of ${node.info.name}`,
-        placeHolder: 'Shown on the tree icon and as a stripe on its collection tabs, e.g. red for production',
-      });
-      if (pick) await updateConnection(node.info.id, { color: pick.color });
+      const info = connections.get(node.info.id) ?? node.info;
+      const pick = await askColor(`Color of ${info.name}`, 'Shown on the tree icon and as a stripe on its tabs, e.g. red for production', info.color);
+      if (pick) await updateConnection(info.id, { color: pick === 'none' || pick === 'connection' ? undefined : pick });
     }),
 
     vscode.commands.registerCommand('mongoster.setCollectionColor', async (node?: CollectionNode | BucketNode) => {
@@ -213,11 +225,15 @@ export function activate(context: vscode.ExtensionContext): void {
       const info = connections.get(node.connection.id);
       if (!info) return;
       const [name, collection] = node instanceof BucketNode ? [node.bucket, bucketCollection(node.bucket)] : [node.collection, node.collection];
-      const pick = await vscode.window.showQuickPick(collectionColorChoices(info.color, ownColorOf(info, node.database, collection)), {
-        title: `Color of ${name}`,
-        placeHolder: `Shown on its tree icon, its tab and its documents' tabs, instead of the color of ${info.name}`,
-      });
-      if (pick) await changeCollectionColors(info.id, (colors) => setCollectionColor(colors, namespaceOf(node.database, collection), pick.color));
+      const pick = await askColor(
+        `Color of ${name}`,
+        `Shown on its tree icon, its tab and its documents' tabs, instead of the color of ${info.name}`,
+        ownColorOf(info, node.database, collection),
+        { connectionColor: info.color },
+      );
+      if (!pick) return;
+      const color: CollectionColor | undefined = pick === 'connection' ? undefined : pick;
+      await changeCollectionColors(info.id, (colors) => setCollectionColor(colors, namespaceOf(node.database, collection), color));
     }),
 
     vscode.commands.registerCommand('mongoster.setReadOnly', (node?: ConnectionNode) =>
@@ -661,7 +677,6 @@ function sameCollection(a: CollectionRef, b: CollectionRef): boolean {
   return a.connectionId === b.connectionId && a.database === b.database && a.collection === b.collection;
 }
 
-const capitalize = (s: string) => s[0].toUpperCase() + s.slice(1);
 
 async function addConnection(connections: ConnectionManager, folder?: string): Promise<void> {
   const answer = await askConnection(connections);

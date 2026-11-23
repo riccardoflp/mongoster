@@ -2,6 +2,7 @@
 // diff of updates and replacements.
 import type { WatchEvent, WatchHostMessage, WatchOptions, WatchState, WatchViewMessage } from '../shared/messages';
 import { isEjsonWrapper, isPlainObject, prettyShell, toShell } from '../shared/query';
+import { paintStripe } from './stripe';
 
 const CATEGORIES = ['insert', 'update', 'replace', 'delete', 'other'] as const;
 type Category = (typeof CATEGORIES)[number];
@@ -367,8 +368,7 @@ window.addEventListener('message', (e: MessageEvent<WatchHostMessage>) => {
       readOnly = m.readOnly;
       const where = m.collection ? `${m.database}.${m.collection}` : (m.database ?? 'all databases');
       el('title').textContent = `${m.connectionName} › ${where}`;
-      if (m.color) document.body.dataset.color = m.color;
-      else delete document.body.dataset.color;
+      paintStripe(document.body, m.color);
       const pi = el('preImages');
       pi.replaceChildren();
       pi.classList.toggle('hidden', m.preImages === undefined);

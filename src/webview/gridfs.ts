@@ -2,6 +2,7 @@
 // rename and delete them.
 import type { GridFSHostMessage, GridFSViewMessage, GridFile, GridSort } from '../shared/messages';
 import { prettyShell, toShell } from '../shared/query';
+import { paintStripe } from './stripe';
 
 interface State {
   search: string;
@@ -216,8 +217,7 @@ window.addEventListener('message', (e: MessageEvent<GridFSHostMessage>) => {
     case 'init':
       readOnly = m.readOnly;
       document.body.classList.toggle('locked', readOnly);
-      if (m.color) document.body.dataset.color = m.color;
-      else delete document.body.dataset.color;
+      paintStripe(document.body, m.color);
       el('title').replaceChildren(`${m.connectionName} › ${m.database} › `, Object.assign(document.createElement('strong'), { textContent: m.bucket }));
       if (readOnly) el('title').append(' ', Object.assign(document.createElement('span'), { className: 'badge', textContent: 'read-only', title: "The connection is read-only: files can't be uploaded, renamed or deleted" }));
       load();

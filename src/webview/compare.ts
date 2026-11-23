@@ -4,6 +4,7 @@ import type { CompareCounts, CompareOptions, DiffKind, FieldDiff } from '../shar
 import { fieldsSummary, parseIgnore } from '../shared/compare';
 import type { CompareEntry, CompareHostMessage, CompareSide, CompareViewMessage } from '../shared/messages';
 import { prettyShell, toShell } from '../shared/query';
+import { paintStripe } from './stripe';
 
 declare function acquireVsCodeApi(): { postMessage(m: CompareViewMessage): void; getState(): Partial<State> | undefined; setState(s: State): void };
 
@@ -94,8 +95,7 @@ function renderSides(): void {
     const s = sides[side];
     const box = el(`${side}Side`);
     box.replaceChildren();
-    if (s.color) box.dataset.color = s.color;
-    else delete box.dataset.color;
+    paintStripe(box, s.color);
     box.append(span(side === 'left' ? 'Left' : 'Right', 'side-label'), span(`${s.database}.${s.collection}`, 'side-ns'), span(s.connectionName, 'side-conn'));
     if (s.readOnly) {
       const b = span('read-only', 'badge');

@@ -143,6 +143,14 @@ const contexts = await Promise.all([
   }),
   esbuild.context({
     ...common,
+    entryPoints: ['src/webview/colorPicker.ts'],
+    outfile: 'dist/colorPicker.js',
+    platform: 'browser',
+    format: 'iife',
+    target: 'es2020',
+  }),
+  esbuild.context({
+    ...common,
     entryPoints: ['src/webview/docHistory.ts'],
     outfile: 'dist/docHistory.js',
     platform: 'browser',

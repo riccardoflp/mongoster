@@ -334,20 +334,22 @@ Acceptance:
 
 ### `connection.set-color` — Set the color of a connection
 
-Marks everything of a connection with one of six colors, for example red for production.
+Marks everything of a connection with one of eleven preset colors or a custom one, for example red for production.
 
 - **Kind**: Operation
 - **Function**: `src/extension.ts › activate` (the `mongoster.setColor` handler), then `updateConnection`
-- **Implemented in**: `src/connections.ts` (`CONNECTION_COLORS`, `ConnectionManager.update`),
-  `src/connectionColors.ts` (`ConnectionDecorations`, `paintTab`, `tabIcon`, `themeColorOf`, `connectionUri`),
-  `src/tree.ts` (`ConnectionNode`, `connectionIcon`), `media/connection/*.svg`
+- **Implemented in**: `src/shared/colors.ts` (`PRESET_COLORS`, `colorChoices`), `src/extension.ts › askColor`,
+  `src/connections.ts › ConnectionManager.update`, `src/connectionColors.ts` (`ConnectionDecorations`, `paintTab`,
+  `tabIcon`, `themeColorOf`, `connectionUri`), `src/tree.ts` (`ConnectionNode`, `connectionIcon`),
+  `src/webview/stripe.ts`, `media/connection/*.svg`, `package.json › contributes.colors`
 - **Entry points**: `mongoster.setColor` (**Set Color…**), a connection's context menu. Hidden from the Command Palette
   (`when: false`); with no argument it does nothing.
 - **Offered when**: `viewItem =~ /^connection/`.
-- **Asks**: a quick pick **Color of <name>**, placeholder **Shown on the tree icon and as a stripe on its collection
-  tabs, e.g. red for production**, with **Red**, **Orange**, **Yellow**, **Green**, **Blue**, **Purple** (each after a
-  colored circle) and **None**; the current one is described **current**.
-- **Writes**: `color` of the connection in `mongoster.connections` (removed for **None**).
+- **Asks**: a quick pick **Color of <name>**, placeholder **Shown on the tree icon and as a stripe on its tabs, e.g.
+  red for production**, with **Red**, **Orange**, **Yellow**, **Green**, **Blue**, **Purple**, **Pink**, **Teal**,
+  **Indigo**, **Brown**, **Gray** (each with the leaf in its color), **None** and **Custom Color…**
+  (`connection.custom-color`); the current one is described **current**.
+- **Writes**: `color` of the connection in `mongoster.connections`: a preset name or `#rrggbb` (removed for **None**).
 - **Danger**: None.
 - **Read-only**: Allowed, because it writes nothing to the database.
 - **Undo**: Cannot be undone from the undo history; choose the previous color again.
@@ -356,7 +358,8 @@ Marks everything of a connection with one of six colors, for example red for pro
   and the definitions of a colored connection'`, `› 'leaves alone connections without a color, unknown ones and other
   files'`, `› 'colors the files another source ties to a connection, such as playgrounds'`, `› 'tells the decorations
   changed only when a name or a color changed'`; `› 'tab icons' › "takes the leaf in the connection's color, for light
-  and dark themes"`, `› 'keeps the usual icon without a color'`.
+  and dark themes"`, `› 'keeps the usual icon without a color'`; `test/unit/colors.test.ts › 'the choices of Set
+  Color… on a connection' › 'offers the presets with their leaves, None and Custom Color…'`.
 - **Differs**: the README says the color applies right away to open tabs, but the playground result tab is not among
   the tabs `updateConnection` tells (`src/extension.ts:73-88`): it takes the color at its next run
   (`src/playground/resultPanel.ts:42`).
@@ -364,17 +367,52 @@ Marks everything of a connection with one of six colors, for example red for pro
 Acceptance:
 
 - [ ] Dismissing the quick pick changes nothing.
-- [ ] The connection's icon and name in the tree take the theme color `charts.<color>`; the icons of its databases,
-      collections and buckets take it too, their names do not.
+- [ ] The connection's icon and name in the tree take the preset's theme color (`charts.<color>` or
+      `mongoster.color.<color>`, a custom color's nearest preset: `connection.nearest-preset`); the icons of its
+      databases, collections and buckets take it too, their names do not.
 - [ ] A collection, view or bucket with a color of its own (`tree.set-collection-color`) keeps it: its icon, tabs and
       editor tabs follow `tree.color-of-collection`, not the connection's color.
 - [ ] The tabs of the connection take the leaf icon `media/connection/<color>-light.svg` / `-dark.svg`; without a
       color they keep `media/mongoster.svg` (or `media/collection.svg` for collection tabs).
 - [ ] The names of the editor tabs of its documents (`mongoster://`), definitions (`mongoster-def://`) and
       playgrounds take the color, with the connection's name as tooltip.
-- [ ] In the desktop app the tabs also get a line of the color above them (`tabColor`).
+- [ ] In the desktop app the tabs also get a line of the color above them (`tabColor`), a custom color exactly.
+- [ ] The stripe at the top of the tabs' content takes the color, a custom color exactly.
+- [ ] Dismissing the Choose a Color tab of **Custom Color…** changes nothing.
 - [ ] Decorations are refreshed only when a connection's name or color changes, not when it connects.
 - [ ] (differs) An open playground result tab takes the new color at once.
+
+### `connection.custom-color` — Choose a custom color
+
+The **Choose a Color** tab, opened by **Custom Color…** of `connection.set-color` and `tree.set-collection-color`:
+a color of the user's own, as `#rrggbb`.
+
+- **Kind**: View
+- **Function**: `src/colorPicker.ts › pickCustomColor`
+- **Implemented in**: `src/webview/colorPicker.ts`, `media/colorPicker.css`; `src/shared/messages.ts`
+  (`ColorPickerHostMessage`, `ColorPickerViewMessage`); `src/extension.ts › askColor`; `src/shared/colors.ts`
+  (`readColor`, `nearestPreset`, `cssColorOf`)
+- **Entry points**: **Custom Color…**, the last item of both `Set Color…` quick picks, described with the custom color
+  in use and **current**.
+- **Asks**: a tab titled **Color of <name>**, painted with the color being chosen: the system's color picker, a field
+  for `#rrggbb` (`#rgb` and a preset name are taken too), the eleven presets as swatches, a preview of the stripe and
+  a line saying which preset the tree and the tab icons show (**Shown as <preset> in the tree, on tab icons and on
+  the names of editor tabs, which take only the presets.**), **Apply** and **Cancel**.
+- **Writes**: nothing itself; **Apply** hands the color to the command that opened it, which writes it as its card
+  says.
+- **Refuses**: **Apply** is disabled while the field is not a color, with **Enter a color as #rrggbb**.
+- **Tested by**: `test/unit/colors.test.ts › 'presets and custom colors' › 'reads a preset name or a hex color, and
+  refuses anything else'`. The tab itself: *none*.
+
+Acceptance:
+
+- [ ] It starts on the color in use (a custom color, or a preset), else the connection's color for a collection,
+      else blue.
+- [ ] The color picker and the field follow each other; a swatch chooses the preset itself (a theme color), not its
+      hex value.
+- [ ] **Apply** or `Enter` in the field saves and closes the tab; **Cancel**, `Escape` or closing the tab saves
+      nothing. Opening another one closes the first, which saves nothing.
+- [ ] It works the same in the desktop app.
 
 ### `connection.move-to-folder` — Move a connection to a folder
 
@@ -896,7 +934,8 @@ Rules:
   (**A list of connection strings can't be encrypted**).
 - **Mongoster**: `{ "type": "Mongoster Connections", "version": 1, "secrets": "removed" | "included" | "encrypted",
   "connections": [...] }`, two-space indented; each entry has `name`, `uri`, and when set `folder`, `color`,
-  `collectionColors`, `readOnly`, `noHistory`, `tls`, `ssh`, `redisOplog` (`url` plus the settings). The secrets taken out are the
+  `collectionColors`, `readOnly`, `noHistory`, `tls`, `ssh`, `redisOplog` (`url` plus the settings); `color` and the values of
+  `collectionColors` are a preset name or a custom `#rrggbb`. The secrets taken out are the
   password of the connection string, `tls.certificateKeyFilePassword`, `ssh.password`, `ssh.passphrase` and the
   password of the Redis URL; `include` puts them back in place, `encrypt` writes them as one `secrets` string per
   entry (`{"secrets":{ password, tlsCertificateKeyFilePassword, sshPassword, sshPassphrase, redisPassword }}`
@@ -1000,26 +1039,64 @@ Examples:
 ### `connection.color-from-compass` — The closest color of a Compass connection
 
 - **Kind**: Derivation
-- **Function**: `src/shared/connectionsFile.ts › colorFrom` (and the table `TO_COMPASS` for export)
+- **Function**: `src/shared/connectionsFile.ts › colorFrom` (and `compassColor` for export)
+- **Uses**: `connection.nearest-preset`.
 - **Tested by**: `test/unit/connectionsFile.test.ts › 'colorFrom' › "maps Compass's color codes and names"`, `›
-  "keeps Mongoster's colors, maps hex colors to the closest hue and grays to none"`; `› 'serializeConnections and
-  back' › 'round-trips every color through Compass’s codes'`.
+  "keeps Mongoster's colors, maps hex colors to the closest preset, or keeps them as custom colors"`; `›
+  'serializeConnections and back' › 'round-trips every color through Compass’s codes'`; `test/unit/colors.test.ts ›
+  "Compass's colors" › 'writes each preset as a Compass code and reads it back; brown goes as orange, a custom color
+  as its nearest'`, `› "keeps a custom color in Mongoster's format, and takes it to the nearest preset in
+  Compass's"`.
 
 Rules:
 
-- Mongoster's six names, in any case and with spaces around, are kept.
-- Compass's codes: `color1`, `color2`, `teal` → green; `color3`, `color4`, `iris` → blue; `color5`, `color7`, `pink`
-  → purple; `color6` → red; `color8` → orange; `color9` → yellow; `color10` (gray) → none.
-- A hex color (`#rgb`, `#rrggbb`, with or without `#`), from older Compass: none when it is gray (the difference
-  between the largest and smallest channel under 0.12), else the color whose hue is closest: red 0°, orange 30°,
-  yellow 55°, green 125°, blue 215°, purple 280°.
+- Mongoster's eleven preset names, in any case and with spaces around, are kept.
+- Compass's codes: `color1` → green, `color2` → teal, `color3` → blue, `color4` and `iris` → indigo, `color5` →
+  purple, `color6` → red, `color7` → pink, `color8` → orange, `color9` → yellow, `color10` → gray.
+- A hex color (`#rgb`, `#rrggbb`, with or without `#`), from older Compass: its nearest preset
+  (`connection.nearest-preset`). From Mongoster's own format it is kept as a custom color, as `#rrggbb` in lower case.
 - Anything else, or not a string: none.
-- Export to Compass: red `color6`, orange `color8`, yellow `color9`, green `color1`, blue `color3`, purple `color5`.
+- Export to Compass: red `color6`, orange `color8`, yellow `color9`, green `color1`, blue `color3`, purple `color5`,
+  pink `color7`, teal `color2`, indigo `color4`, gray `color10`; brown, which Compass lacks, `color8`; a custom color
+  as its nearest preset.
 
 Examples:
 
-- `color3` → blue; `color10` → none; `' Blue '` → blue; `#ff0000` → red; `#00f` → blue; `ffa500` → orange;
-  `#808080` → none; `#xyz` → none; `3` → none.
+- `color3` → blue; `color10` → gray; `' Blue '` → blue; `#ff0000` → red; `#00f` → blue; `ffa500` → orange;
+  `#808080` → gray; `#xyz` → none; `3` → none; from Mongoster's format, `#12ABEF` → `#12abef`.
+
+### `connection.nearest-preset` — The preset a custom color shows as
+
+Where VS Code takes only theme colors, a custom color shows as the nearest of the eleven presets.
+
+- **Kind**: Derivation
+- **Function**: `src/shared/colors.ts › nearestPreset`
+- **Implemented in**: `src/shared/colors.ts` (`themeColorId`, `cssColorOf`, `PRESET_DEFAULTS`);
+  `src/connectionColors.ts` (`themeColorOf`, `tabIcon`, `paintTab`); `src/webview/stripe.ts › paintStripe`;
+  `src/standalone/theme.ts` (the five contributed presets as CSS variables)
+- **Tested by**: `test/unit/colors.test.ts › 'presets and custom colors' › 'takes a custom color to the nearest
+  preset'`, `› 'writes a color as CSS: the theme variable of a preset, the custom color as it is'`; `› 'where a custom
+  color shows' › "is its nearest preset's theme color and leaf where VS Code takes only those"`, `› "is exact on the
+  desktop app's line above the tab"`, `› 'is exact on the stripe of the webviews'`; `› 'the files and theme colors that
+  follow the presets' › "contributes the five presets VS Code lacks, with the table's defaults"`, `› 'has a leaf for
+  each preset, in its dark and light color'`.
+
+Rules:
+
+- The presets: red, orange, yellow, green, blue, purple (the theme's `charts.<name>`), pink, teal, indigo, brown, gray
+  (`mongoster.color.<name>`, contributed with defaults for dark, light and high contrast themes).
+- A custom color whose largest and smallest channels differ by less than 0.12 is gray; a dark one (largest channel
+  under 0.65) with a hue from 10° to 45° is brown; otherwise the preset of the nearest hue: red 0°, orange 30°, yellow
+  55°, green 125°, teal 170°, blue 215°, purple 280°, pink 330°; a blue with a hue of 220° or more and a largest
+  channel under 0.8 is indigo.
+- The nearest preset is used for: the icons and names in the tree, the tab icons (its leaf), the names of editor tabs.
+- The custom color itself is used for: the stripe at the top of the webviews (`--conn-color`), the dot of the
+  scheduled tasks, and the desktop app's line above a tab (`tabColor` as a CSS color).
+
+Examples:
+
+- `#ff0000` → red; `#ffa500` → orange; `#20b2aa` → teal; `#1e90ff` → blue; `#5c6bc0` → indigo; `#4b0082` → purple;
+  `#ff69b4` → pink; `#8b4513` → brown; `#808080` → gray.
 
 ### `connection.ssh-tunnel-target` — Where the SSH tunnel leads
 

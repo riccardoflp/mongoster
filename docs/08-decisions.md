@@ -111,6 +111,16 @@ connection removes them, and the open tabs hear of a change the way they hear of
 drop from Mongoster moves or removes the color; one done elsewhere leaves it. *Accepted in
 [proposal 0001](proposals/0001-collection-colors.md).*
 
+## D17 — Eleven preset colors and custom colors, exact where Mongoster draws them
+
+The colors of connections and collections are eleven presets, the theme's six `charts.*` colors and five Mongoster
+contributes as theme colors (pink, teal, indigo, brown, gray: four of them are Compass's), or a custom `#rrggbb`
+chosen in the **Choose a Color** tab. VS Code takes only theme colors for the icons and names in the tree, the tab
+icons and the names of editor tabs, so a custom color shows there as its nearest preset; it is exact on the stripe of
+the tabs' content and the desktop app's line above the tabs, which Mongoster draws itself. The stored color is a preset
+name or the hex, so the old six names keep their meaning. *Accepted in revision 2 of
+[proposal 0001](proposals/0001-collection-colors.md).*
+
 ## Open questions
 
 - **Q1** — Adopt the target of [04-feature-contract.md](04-feature-contract.md#the-target-for-new-code-and-code-that-is-changed-anyway)

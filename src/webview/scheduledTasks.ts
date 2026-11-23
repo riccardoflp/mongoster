@@ -16,6 +16,7 @@ import {
   type Schedule,
   type TaskRun,
 } from '../shared/schedule';
+import { paintStripe } from './stripe';
 
 interface State {
   expanded: string[];
@@ -127,7 +128,7 @@ function cell(row: HTMLTableRowElement, content: string | Node, className = '', 
 
 function dot(color?: string): HTMLSpanElement {
   const d = make('span', 'dot');
-  if (color) d.dataset.color = color;
+  paintStripe(d, color);
   return d;
 }
 

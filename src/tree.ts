@@ -29,8 +29,8 @@ export class ConnectionNode extends vscode.TreeItem {
     this.id = `conn:${info.id}${epoch ? `:${epoch}` : ''}${open ? `?${filters}` : ''}`;
     this.contextValue = `connection${connected ? '.connected' : ''}${info.noHistory ? '.nohistory' : ''}${info.readOnly ? '.readonly' : ''}`;
     // The connection's color wins over the green "connected" tint; the description then says it.
-    const color = info.color ? `charts.${info.color}` : connected ? 'testing.iconPassed' : undefined;
-    this.iconPath = new vscode.ThemeIcon(info.readOnly ? 'lock' : 'server', color ? new vscode.ThemeColor(color) : undefined);
+    const color = info.color ? themeColorOf(info.color) : connected ? new vscode.ThemeColor('testing.iconPassed') : undefined;
+    this.iconPath = new vscode.ThemeIcon(info.readOnly ? 'lock' : 'server', color);
     // Its name takes the color too, through the decoration of this URI.
     if (info.color) this.resourceUri = connectionUri(info.id);
     this.description = [info.readOnly && 'read-only', info.ssh && 'SSH', info.redisOplog && 'redis-oplog', connected && (info.color || info.readOnly) && 'connected'].filter(Boolean).join(' · ');

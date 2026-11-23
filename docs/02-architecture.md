@@ -120,7 +120,7 @@ Every tab other than the editors is a `vscode.WebviewPanel`, built the same way.
 
 **Message types** live in `src/shared/messages.ts`: one `XHostMessage` and one `XViewMessage` union per tab, discriminated by `type`. Requests that expect an answer carry a `requestId`.
 
-**Webview side** (`src/webview/<tab>.ts`): `acquireVsCodeApi()`, a `post()` helper, plain DOM code (no framework), `window.addEventListener('message', …)` switching on `type`. Shared widgets: `popupMenu.ts`, `cellEditor.ts`, `highlight.ts` (colored query inputs), `autocomplete.ts`, `codeDialog.ts`.
+**Webview side** (`src/webview/<tab>.ts`): `acquireVsCodeApi()`, a `post()` helper, plain DOM code (no framework), `window.addEventListener('message', …)` switching on `type`. Shared widgets: `popupMenu.ts`, `cellEditor.ts`, `highlight.ts` (colored query inputs), `autocomplete.ts`, `codeDialog.ts`, `stripe.ts` (the stripe of the connection's or collection's color: `paintStripe` on `init`).
 
 **Build and package**: a webview bundle needs an entry in `esbuild.mjs` and a `!dist/<tab>.js` line in `.vscodeignore` (an allowlist: anything not listed is left out of the `.vsix`).
 
@@ -216,6 +216,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `docHistory.ts` – rebuilding a document's versions from its oplog entries
 - `oplog.ts` – redis-oplog channels and messages, the fields an update changes
 - `schedule.ts` – scheduled tasks: next runs in local time, missed runs, file name patterns
+- `colors.ts` – the eleven preset colors and custom `#rrggbb` ones: reading them, the nearest preset where VS Code takes only theme colors, a color as CSS, the choices of `Set Color…` (D17)
 - `collectionColors.ts` – the colors of single collections: which color something of a collection takes, and the map of colors through a rename or a drop (D16)
 - `gridfs.ts`, `advisor.ts`, `mcp.ts`, `connectionsFile.ts`, `savedQueries.ts`, `tokenColors.ts` – see their features
 
@@ -231,6 +232,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - Undo history – `src/history.ts`, `src/webview/undoHistory.ts`, `media/undoHistory.css`
 - Users and roles – `src/users.ts`, `src/webview/users.ts`, `media/users.css`
 - GridFS – `src/gridfs.ts`, `src/shared/gridfs.ts`, `src/webview/gridfs.ts`, `media/gridfs.css`
+- Choose a Color – `src/colorPicker.ts` (`pickCustomColor`, waited for like a quick pick), `src/webview/colorPicker.ts`, `media/colorPicker.css`
 - Scheduled tasks – `src/scheduledTasks.ts` (tab), `src/scheduler.ts` (timers, lock, log), `src/taskRunner.ts` (running a task without prompts, retention), `src/fileLock.ts`, `src/shared/schedule.ts`, `src/webview/scheduledTasks.ts`, `media/scheduledTasks.css`
 
 ### Data operations without a tab
@@ -254,7 +256,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 ### Desktop app (`src/standalone/`)
 - `main.ts` – entry point: window, menu bar, tray, `mongoster-app://` protocol
 - `preload.ts`, `protocol.ts` – the messages between the main process and the window
-- `theme.ts` – dark and light colors
+- `theme.ts` – dark and light colors, with the preset colors Mongoster contributes (`src/shared/colors.ts`)
 - `vscode/` – the `vscode` module: `index.ts` (exports), `base.ts` (value types), `commands.ts`, `contributions.ts` (reads `package.json`), `documents.ts` (text documents, file systems, providers), `tree.ts`, `ui.ts` (messages, quick picks, dialogs, progress), `webview.ts`, `storage.ts`, `decorations.ts`, `watcher.ts` (`fs.watch`), `appearance.ts`, `bridge.ts`, `runtime.ts`
 - `shell/` – the window: `main.ts`, `workbench.ts` (tabs), `tree.ts`, `editor.ts` (Monaco), `panels.ts` (webview frames), `quickInput.ts`, `notifications.ts`, `settings.ts`, `dom.ts`, `shell.html`, `shell.css`, `webview-default.css`
 - `electron-builder.yml`, `build/` – the installers

@@ -111,14 +111,8 @@ td.actions {
 
 .dot[data-color] {
   border-color: transparent;
+  background: var(--conn-color);
 }
-
-.dot[data-color='red'] { background: var(--vscode-charts-red, #f14c4c); }
-.dot[data-color='orange'] { background: var(--vscode-charts-orange, #d18616); }
-.dot[data-color='yellow'] { background: var(--vscode-charts-yellow, #cca700); }
-.dot[data-color='green'] { background: var(--vscode-charts-green, #89d185); }
-.dot[data-color='blue'] { background: var(--vscode-charts-blue, #3794ff); }
-.dot[data-color='purple'] { background: var(--vscode-charts-purple, #b180d7); }
 
 .status {
   display: inline-block;

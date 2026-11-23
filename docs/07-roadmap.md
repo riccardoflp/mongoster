@@ -41,6 +41,8 @@ Mongoster keeps for itself ([11-data.md](11-data.md)), so each starts with a pro
    the names of its documents' editor tabs. Without one, the connection's color applies as today. The proposal decides
    where the colors are kept (on the connection in `mongoster.connections`, so that export and import carry them, or
    in `globalState`), what happens when the collection is renamed or dropped (RS4), and the `tree.` cards this brings.
+   Asked later, for connections and collections alike: more preset colors, and a color picker for a color of one's
+   own; the proposal says where a custom color can show exactly and where VS Code takes only theme colors.
 3. **Conditional formatting** in the collection tab. Rules per collection, each with a condition, a color and what it
    colors: the whole row, or the cell of one field. The condition is a filter in mongosh syntax, as in the filter bar
    (`{ status: "failed" }`, `{ amount: { $gt: 1000 } }`, `{ deletedAt: { $exists: true } }`); the colors are the

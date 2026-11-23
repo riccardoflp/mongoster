@@ -2,9 +2,10 @@ import * as vscode from 'vscode';
 import { MongoClient } from 'mongodb';
 import { ConnectionOptions, HostKeyCheck, openClient, SshTunnel } from './transport';
 import type { RedisOplogSettings } from './shared/oplog';
+import type { Color } from './shared/colors';
 
-export const CONNECTION_COLORS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
-export type ConnectionColor = (typeof CONNECTION_COLORS)[number];
+/** A connection's color: one of the presets or a custom `#rrggbb` (`src/shared/colors.ts`, D17). */
+export type ConnectionColor = Color;
 /** The color of a single collection: one of a connection's, or `none` to show it plain in a colored connection. */
 export type CollectionColor = ConnectionColor | 'none';
 

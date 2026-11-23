@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import {
   bucketCollection,
-  collectionColorChoices,
   colorOf,
   dropCollectionColors,
   namespaceOf,
@@ -12,6 +11,7 @@ import {
   renameCollectionColor,
   setCollectionColor,
 } from '../../src/shared/collectionColors';
+import { colorChoices } from '../../src/shared/colors';
 import { parseConnections, serializeConnections, type PortableConnection } from '../../src/shared/connectionsFile';
 import { ConnectionDecorations } from '../../src/connectionColors';
 import { BucketNode, CollectionNode } from '../../src/tree';
@@ -65,9 +65,11 @@ describe('the color of a collection', () => {
   });
 
   it('reads only valid entries from a file', () => {
-    expect(readCollectionColors({ 'shop.a': 'red', 'shop.b': 'none', 'shop.c': 'pink', nodot: 'red', '.x': 'red', 'shop.d': 3 })).toEqual({
+    expect(readCollectionColors({ 'shop.a': 'red', 'shop.b': 'none', 'shop.c': 'magenta', nodot: 'red', '.x': 'red', 'shop.d': 3, 'shop.e': '#ABC', 'shop.f': 'Teal' })).toEqual({
       'shop.a': 'red',
       'shop.b': 'none',
+      'shop.e': '#aabbcc',
+      'shop.f': 'teal',
     });
     expect(readCollectionColors(['shop.a'])).toBeUndefined();
     expect(readCollectionColors('red')).toBeUndefined();
@@ -76,19 +78,19 @@ describe('the color of a collection', () => {
 });
 
 describe('the choices of Set Color… on a collection', () => {
-  it("offers the six colors, None and Connection's Color described with the connection's", () => {
-    const choices = collectionColorChoices('red', undefined);
-    expect(choices.map((c) => c.label)).toEqual(['🔴 Red', '🟠 Orange', '🟡 Yellow', '🟢 Green', '🔵 Blue', '🟣 Purple', '⚪ None', "Connection's Color"]);
-    expect(choices.map((c) => c.color)).toEqual(['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'none', undefined]);
-    expect(choices[7].description).toBe('red · current');
-    expect(choices.filter((c) => c.description).length).toBe(1);
+  it("offers the presets, None, Connection's Color described with the connection's, and Custom Color…", () => {
+    const choices = colorChoices(undefined, { connectionColor: 'red' });
+    expect(choices.slice(-3).map((c) => c.label)).toEqual(['None', "Connection's Color", 'Custom Color…']);
+    expect(choices.slice(-3).map((c) => c.value)).toEqual(['none', 'connection', 'custom']);
+    expect(choices.at(-2)?.description).toBe('Red · current');
+    expect(choices.filter((c) => c.description?.includes('current')).length).toBe(1);
   });
 
-  it('marks the current choice, and a connection without a color', () => {
-    const choices = collectionColorChoices(undefined, 'none');
-    expect(choices[6].description).toBe('current');
-    expect(choices[7].description).toBe('none');
-    expect(collectionColorChoices('blue', 'green')[3].description).toBe('current');
+  it('marks the current choice: none, a preset, or a custom color', () => {
+    expect(colorChoices('none', { connectionColor: undefined }).find((c) => c.value === 'none')?.description).toBe('current');
+    expect(colorChoices('none', { connectionColor: undefined }).find((c) => c.value === 'connection')?.description).toBe('none');
+    expect(colorChoices('green', { connectionColor: 'blue' }).find((c) => c.value === 'green')?.description).toBe('current');
+    expect(colorChoices('#12abef', { connectionColor: 'blue' }).at(-1)?.description).toBe('#12abef · current');
   });
 });
 
@@ -141,7 +143,7 @@ describe('the colors of collections in connection files', () => {
 
   it('are read without the invalid entries, and a file without them reads as before', async () => {
     const file = (extra: object) => JSON.stringify({ type: 'Mongoster Connections', version: 1, connections: [{ name: 'a', uri: 'mongodb://h/db', ...extra }] });
-    expect((await parseConnections(file({ collectionColors: { 'db.x': 'blue', 'db.y': 'pink' } }))).connections[0].collectionColors).toEqual({ 'db.x': 'blue' });
+    expect((await parseConnections(file({ collectionColors: { 'db.x': 'blue', 'db.y': 'magenta' } }))).connections[0].collectionColors).toEqual({ 'db.x': 'blue' });
     expect((await parseConnections(file({}))).connections[0]).not.toHaveProperty('collectionColors');
   });
 

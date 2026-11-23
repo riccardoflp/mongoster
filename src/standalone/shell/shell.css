@@ -701,6 +701,13 @@ button.status-item:hover {
   min-width: 0;
 }
 
+.quick-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  align-self: center;
+}
+
 .quick-item-line {
   display: flex;
   align-items: baseline;

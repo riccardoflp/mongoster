@@ -3,6 +3,7 @@
 import { UNKNOWN_TEXT, VersionDiff } from '../shared/docHistory';
 import type { DocHistoryHostMessage, DocHistoryInfo, DocHistoryViewMessage, DocVersionView } from '../shared/messages';
 import { prettyShell } from '../shared/query';
+import { paintStripe } from './stripe';
 
 declare function acquireVsCodeApi(): { postMessage(m: DocHistoryViewMessage): void };
 
@@ -71,8 +72,7 @@ function renderHeader(): void {
   if (!info) return;
   const target = el('target');
   target.replaceChildren(span(`${info.database}.${info.collection}`, 'ns'), span(` _id: ${info.id}`, 'id'), span(` · ${info.connectionName}`, 'conn'));
-  if (info.color) document.body.dataset.color = info.color;
-  else delete document.body.dataset.color;
+  paintStripe(document.body, info.color);
   el('badge').classList.toggle('hidden', !info.readOnly);
   el('badge').title = info.readOnly ?? '';
 }

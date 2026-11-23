@@ -2,8 +2,7 @@
 // of a collection takes, and how the map of colors changes when a collection is colored, renamed or dropped.
 // No vscode dependency: the tree, the tabs, the decorations and the import of connections use it.
 import type { CollectionColor, ConnectionColor } from '../connections';
-
-const COLORS: readonly string[] = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'none'];
+import { readColor } from './colors';
 
 /** The colors of a connection's collections, keyed by `database.collection`. */
 export type CollectionColors = Record<string, CollectionColor>;
@@ -12,32 +11,6 @@ export type CollectionColors = Record<string, CollectionColor>;
 export interface ColoredConnection {
   color?: ConnectionColor;
   collectionColors?: CollectionColors;
-}
-
-/** The colored circle before a color's name in the quick picks. */
-export const COLOR_EMOJI: Record<ConnectionColor, string> = { red: '🔴', orange: '🟠', yellow: '🟡', green: '🟢', blue: '🔵', purple: '🟣' };
-
-export interface CollectionColorChoice {
-  label: string;
-  /** Undefined for `Connection's Color`: the collection follows its connection again. */
-  color: CollectionColor | undefined;
-  description?: string;
-}
-
-/**
- * The choices of `Set Color…` on a collection: the six colors, `None`, and `Connection's Color` described with the
- * connection's color; the collection's current choice is described `current`.
- */
-export function collectionColorChoices(connectionColor: ConnectionColor | undefined, current: CollectionColor | undefined): CollectionColorChoice[] {
-  const colors = (COLORS.filter((c) => c !== 'none') as ConnectionColor[]).map((color) => ({
-    label: `${COLOR_EMOJI[color]} ${color[0].toUpperCase()}${color.slice(1)}`,
-    color: color as CollectionColor | undefined,
-  }));
-  const choices = [...colors, { label: '⚪ None', color: 'none' as CollectionColor | undefined }, { label: "Connection's Color", color: undefined }];
-  return choices.map((c) => {
-    const notes = [c.color === undefined && (connectionColor ?? 'none'), c.color === current && 'current'].filter(Boolean);
-    return notes.length ? { ...c, description: notes.join(' · ') } : c;
-  });
 }
 
 /** The key of a collection: a database name has no `.`, so the first one separates it from the collection's. */
@@ -94,13 +67,14 @@ export function dropCollectionColors(colors: CollectionColors | undefined, datab
   return orUndefined(Object.fromEntries(kept));
 }
 
-/** The valid entries of a map read from a file or from storage: a `database.collection` key and a known color. */
+/** The valid entries of a map read from a file: a `database.collection` key and a preset, a hex color or `none`. */
 export function readCollectionColors(value: unknown): CollectionColors | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const entries = Object.entries(value as Record<string, unknown>).filter(
-    ([ns, color]) => /^[^.]+\..+$/.test(ns) && typeof color === 'string' && COLORS.includes(color),
-  );
-  return orUndefined(Object.fromEntries(entries) as CollectionColors);
+  const entries = Object.entries(value as Record<string, unknown>).flatMap(([ns, value]): [string, CollectionColor][] => {
+    const color = value === 'none' ? 'none' : readColor(value);
+    return /^[^.]+\..+$/.test(ns) && color ? [[ns, color]] : [];
+  });
+  return orUndefined(Object.fromEntries(entries));
 }
 
 function orUndefined(colors: CollectionColors): CollectionColors | undefined {

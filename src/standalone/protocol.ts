@@ -47,6 +47,8 @@ export type Column = 'active' | 'beside' | 1 | 2;
 
 export interface QuickPickEntry {
   label: string;
+  /** The URL of the item's icon, for the current theme. */
+  icon?: string;
   description?: string;
   detail?: string;
   picked?: boolean;

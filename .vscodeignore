@@ -5,6 +5,7 @@
 !dist/monitor.js
 !dist/compare.js
 !dist/docHistory.js
+!dist/colorPicker.js
 !dist/structure.js
 !dist/scheduledTasks.js
 !dist/users.js

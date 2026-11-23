@@ -2,7 +2,9 @@
 // the status bar and the output channels. The shell draws them; the native file dialogs are Electron's.
 import { dialog, FileFilter, OpenDialogOptions } from 'electron';
 import type { QuickPickEntry, Severity, StatusItem } from '../protocol';
-import { CancellationToken, CancellationTokenSource, Disposable, ProgressLocation, QuickPickItemKind, StatusBarAlignment, Thenable, Uri } from './base';
+import { CancellationToken, CancellationTokenSource, Disposable, ProgressLocation, QuickPickItemKind, StatusBarAlignment, ThemeIcon, Thenable, Uri } from './base';
+import { themeKind } from './appearance';
+import { appResourceUri } from './webview';
 import { onShell, post } from './bridge';
 import { runtime } from './runtime';
 
@@ -54,6 +56,8 @@ export function showErrorMessage<T extends string>(message: string, ...rest: (T 
 
 export interface QuickPickItem {
   label: string;
+  /** Drawn when it is a file of the app (Mongoster's leaves); a `ThemeIcon` is not drawn. */
+  iconPath?: Uri | { light: Uri; dark: Uri } | ThemeIcon;
   description?: string;
   detail?: string;
   picked?: boolean;
@@ -90,7 +94,7 @@ export async function showQuickPick(
   const entries: QuickPickEntry[] = items.map((item) =>
     typeof item === 'string'
       ? { label: item }
-      : { label: item.label, description: item.description, detail: item.detail, picked: item.picked, separator: item.kind === QuickPickItemKind.Separator },
+      : { label: item.label, icon: iconUrl(item.iconPath), description: item.description, detail: item.detail, picked: item.picked, separator: item.kind === QuickPickItemKind.Separator },
   );
   const id = nextId++;
   const picked = await new Promise<number[] | undefined>((resolve) => {
@@ -110,6 +114,16 @@ export async function showQuickPick(
   });
   if (!picked) return undefined;
   return options.canPickMany ? picked.map((i) => items[i]) : items[picked[0]];
+}
+
+/** The URL of a quick pick item's icon for the current theme, when it is a file of the app. */
+function iconUrl(icon: QuickPickItem['iconPath']): string | undefined {
+  if (!icon || icon instanceof ThemeIcon) return undefined;
+  try {
+    return appResourceUri(icon instanceof Uri ? icon : icon[themeKind()]).toString();
+  } catch {
+    return undefined;
+  }
 }
 
 // ---- input box

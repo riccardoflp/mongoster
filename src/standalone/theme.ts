@@ -1,6 +1,7 @@
 // The two color themes of the standalone app. The webviews are styled with VS Code's `--vscode-*`
 // variables, so the app defines them: the colors below are those of VS Code's default themes.
 import type { ThemeInfo, ThemeKind } from './protocol';
+import { PRESET_COLORS, PRESET_DEFAULTS, themeColorId } from '../shared/colors';
 
 export const THEME_NAMES: Record<ThemeKind, string> = { dark: 'Mongoster Dark', light: 'Mongoster Light' };
 
@@ -265,8 +266,14 @@ const LIGHT: Record<string, string> = {
   'terminal-ansiYellow': '#949800',
 };
 
+/** The presets Mongoster contributes (`mongoster.color.*` in `package.json`), with the same defaults. */
+function contributedColors(kind: ThemeKind): Record<string, string> {
+  const own = PRESET_COLORS.filter((c) => themeColorId(c).startsWith('mongoster.'));
+  return Object.fromEntries(own.map((c) => [themeColorId(c).replace(/\./g, '-'), PRESET_DEFAULTS[c][kind]]));
+}
+
 export function themeInfo(kind: ThemeKind): ThemeInfo {
-  return { kind, vars: { ...FONTS, ...(kind === 'dark' ? DARK : LIGHT) }, syntax: { ...SYNTAX[kind] } };
+  return { kind, vars: { ...FONTS, ...(kind === 'dark' ? DARK : LIGHT), ...contributedColors(kind) }, syntax: { ...SYNTAX[kind] } };
 }
 
 interface SyntaxColors {

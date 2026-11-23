@@ -2,6 +2,7 @@
 // collections are read.
 import './tokenColors';
 import type { SearchCollection, SearchHit, SearchHostMessage, SearchOptions, SearchProgress, SearchResult, SearchViewMessage } from '../shared/messages';
+import { paintStripe } from './stripe';
 
 interface State {
   options: SearchOptions;
@@ -238,8 +239,7 @@ window.addEventListener('message', (e: MessageEvent<SearchHostMessage>) => {
     scope = { database: m.database, collection: m.collection };
     el('title').textContent = `Search ${m.collection ? `${m.database}.${m.collection}` : (m.database ?? 'every database')} · ${m.connectionName}`;
     el('viewsOption').classList.toggle('hidden', !!m.collection);
-    if (m.color) document.body.dataset.color = m.color;
-    else delete document.body.dataset.color;
+    paintStripe(document.body, m.color);
     return;
   }
   if (m.type === 'run') {

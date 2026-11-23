@@ -2,6 +2,7 @@
 import './tokenColors';
 import type { PlaygroundHostMessage, PlaygroundViewMessage } from '../shared/messages';
 import { isEjsonWrapper, isPlainObject, prettyShell, toShell } from '../shared/query';
+import { paintStripe } from './stripe';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: PlaygroundViewMessage): void;
@@ -23,8 +24,7 @@ const MAX_CELL = 160;
 window.addEventListener('message', (e: MessageEvent<PlaygroundHostMessage>) => {
   const m = e.data;
   if (m.type !== 'running' && m.type !== 'result') return; // e.g. the theme's colors
-  if (m.color) document.body.dataset.color = m.color;
-  else delete document.body.dataset.color;
+  paintStripe(document.body, m.color);
   if (m.type === 'running') {
     el('meta').textContent = `Running ${m.title} on ${m.target}…`;
     document.body.classList.add('running');

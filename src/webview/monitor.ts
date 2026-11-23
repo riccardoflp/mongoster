@@ -17,6 +17,7 @@ import type {
 } from '../shared/messages';
 import { prettyShell, toShell } from '../shared/query';
 import { SlowOp, SlowOpGroup, SlowOpSource, canOpen, groupOps, splitNs } from '../shared/profile';
+import { paintStripe } from './stripe';
 
 type Tab = 'ops' | 'profile' | 'stats' | 'repl' | 'shard';
 
@@ -1363,8 +1364,7 @@ window.addEventListener('message', (e: MessageEvent<MonitorHostMessage>) => {
     case 'init': {
       readOnly = m.readOnly;
       document.body.classList.toggle('locked', readOnly);
-      if (m.color) document.body.dataset.color = m.color;
-      else delete document.body.dataset.color;
+      paintStripe(document.body, m.color);
       el('title').textContent = m.connectionName;
       if (readOnly) {
         const badge = document.createElement('span');

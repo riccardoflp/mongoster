@@ -42,4 +42,4 @@ What gets harder, what breaks, the files that need reading in their old form (11
 
 | Number | Title | Status |
 | --- | --- | --- |
-| [0001](0001-collection-colors.md) | The color of a collection | accepted (D16) |
+| [0001](0001-collection-colors.md) | The color of a collection, more colors and a color picker | accepted (D16, D17) |

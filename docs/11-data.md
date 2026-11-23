@@ -23,7 +23,7 @@ being asked for passwords.
 
 | Key | Holds | May be lost? |
 | --- | --- | --- |
-| `mongoster.connections` | The list of connections: id, name, folder, color, the colors of collections (`collectionColors`: `database.collection` → a color or `none`, optional, added after 0.8.0, D16), read-only, no undo history, SSH label, TLS flag, redis-oplog settings without the URL (`ConnectionInfo`) | **No**: the user's connections |
+| `mongoster.connections` | The list of connections: id, name, folder, color (a preset name, or `#rrggbb` added after 0.8.0, D17), the colors of collections (`collectionColors`: `database.collection` → a color or `none`, optional, added after 0.8.0, D16), read-only, no undo history, SSH label, TLS flag, redis-oplog settings without the URL (`ConnectionInfo`) | **No**: the user's connections |
 | `mongoster.knownHosts` | The SSH host keys the user confirmed | No: losing it asks again, which is safe but surprising |
 | `mongoster.history.<connection>/<database>/<collection>` | The last 50 queries run on a collection | Yes |
 | `mongoster.saved.<connection>/<database>/<collection>` | The queries saved *for me* | **No** |
@@ -43,6 +43,11 @@ removed when Mongoster drops the collection, its bucket or its database, and wit
 done elsewhere leaves it (`tree.collection-color-follows`). An entry written by 0.8.0 or earlier has no `collectionColors`
 and reads as no collection having a color of its own; an older version keeps the field when it rewrites the entry,
 because `ConnectionManager.update` spreads the stored one.
+
+A color is a preset name or a custom `#rrggbb` (D17). The six names of 0.8.0 keep their meaning, so nothing is
+migrated. An older version shows a connection or collection with a new preset or a custom color without its color
+(and without a leaf on its tabs), and keeps the value when it rewrites the entry. An older Mongoster importing a newer
+connection file takes a hex color to its nearest old color and drops a new preset name.
 
 ### Files of Mongoster's own
 

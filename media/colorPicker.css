@@ -1,0 +1,93 @@
+/* The Choose a Color tab: monitor.css provides the base. */
+
+body[data-color] .bar {
+  border-top: 3px solid var(--conn-color);
+}
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  max-width: 520px;
+  overflow: auto;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#native {
+  width: 44px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: none;
+  cursor: pointer;
+}
+
+#value {
+  width: 12em;
+  font-family: var(--mono);
+}
+
+.error {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+}
+
+.swatch.selected {
+  border-color: var(--vscode-focusBorder, var(--vscode-foreground));
+  outline: 1px solid var(--vscode-editor-background);
+  outline-offset: -4px;
+}
+
+.preview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 12px;
+  overflow: hidden;
+}
+
+.preview .stripe {
+  height: 3px;
+  margin: 0 -12px;
+  background: var(--conn-color);
+}
+
+.preview p {
+  margin: 10px 0;
+}
+
+.nearest {
+  color: var(--muted);
+}
+
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  border-radius: 50%;
+  vertical-align: baseline;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}

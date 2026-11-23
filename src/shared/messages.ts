@@ -1212,3 +1212,15 @@ export type DocHistoryViewMessage =
   | { type: 'restore'; key: string }
   | { type: 'openDocument' }
   | { type: 'copy'; text: string };
+
+// ---- The Choose a Color tab (src/colorPicker.ts)
+
+export type ColorPickerHostMessage = {
+  type: 'init';
+  /** What gets the color: `Color of <name>`. */
+  title: string;
+  /** The color shown first: a preset name or `#rrggbb`. */
+  color: string;
+};
+
+export type ColorPickerViewMessage = { type: 'ready' } | { type: 'apply'; color: string } | { type: 'cancel' };

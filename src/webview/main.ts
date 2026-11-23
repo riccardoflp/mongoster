@@ -46,6 +46,7 @@ import { FilterBuilder } from './builder';
 import { CompletionKind, FieldHint, fieldHints } from '../shared/complete';
 import { analyzeSchema } from '../shared/schema';
 import { CollectionReferences, ReferenceTarget, referenceKeys, referenceTargets, referencingTargets } from '../shared/references';
+import { paintStripe } from './stripe';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: WebviewMessage): void;
@@ -291,8 +292,7 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       }
       document.body.classList.toggle('locked', m.locked);
       document.body.classList.toggle('view', m.view);
-      if (m.color) document.body.dataset.color = m.color;
-      else delete document.body.dataset.color;
+      paintStripe(document.body, m.color);
       readOnly = m.readOnly;
       if (m.expanded.length) expanded = new Set(m.expanded);
       layout = m.layout ?? {};
