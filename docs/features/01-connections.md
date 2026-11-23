@@ -783,8 +783,8 @@ Examples:
   `missingSecrets`)
 - **Uses**: `connection.tls-in-uri`.
 - **Tested by**: `test/unit/connectionsFile.test.ts › 'parseList' › 'reads one connection string per line, with or
-  without a name'`, `› 'takes the TLS files out and notes a missing password'`; `› 'connection strings' › 'names a
-  connection after its hosts, without credentials'`.
+  without a name'`, `› 'names a connection after the // comment right above it'`, `› 'takes the TLS files out and
+  notes a missing password'`; `› 'connection strings' › 'names a connection after its hosts, without credentials'`.
 
 Rules:
 
@@ -794,7 +794,10 @@ Rules:
   has no host right after the scheme.
 - The connection string runs from the scheme to the first space, without trailing `"`, `'`, `` ` ``, `,`, `;`.
 - The name is what comes before it, without trailing spaces, `=`, `:`, `,`, `;`, `|`, quotes and without leading
-  quotes; without a name, the host part of the connection string, credentials left out.
+  quotes; without a name, the text of a `//` comment on the line right above, trimmed and without the `//`; without
+  either, the host part of the connection string, credentials left out.
+- A `//` comment names only the line right below it: an empty line, a `#` comment, another `//` comment or a line
+  that is not a connection in between forgets it, and an empty `//` names nothing.
 - TLS certificate files in the connection string move to the TLS settings (`connection.tls-in-uri`).
 - Notes: **no password** as in `connection.read-file`.
 
@@ -805,6 +808,8 @@ Examples:
   connection string unchanged.
 - `"Quoted Name" = "mongodb://h1:27017/db",` → `Quoted Name`, `mongodb://h1:27017/db`.
 - `'Single': mongodb://h2/db;` → `Single`, `mongodb://h2/db`; `Tabbed<Tab>mongodb://h3/db` → `Tabbed`.
+- `// Production` then `mongodb+srv://ada@cluster0.x.mongodb.net/shop` on the next line → `Production`.
+- `// Reports` then `Main = mongodb://r1/db` → `Main`; `// Old`, an empty line, then `mongodb://h1/db` → `h1`.
 - `not a connection` and `mongodb:// broken` → skipped (2).
 - `Secure = mongodb://ada@h/db?tls=true&tlsCAFile=%2Fca.pem` → `mongodb://ada@h/db`, TLS `{ caFile: "/ca.pem" }`,
   note **no password**.

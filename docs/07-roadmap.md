@@ -33,8 +33,8 @@ Mongoster keeps for itself ([11-data.md](11-data.md)), so each starts with a pro
    that has no name of its own gives it its name (`Production`, `Staging`), trimmed, without the `//`. A name on the
    connection string's own line (`name = mongodb://…`) wins over the comment; a comment followed by an empty line or
    by a line that is not a connection is forgotten; the other comments are ignored as today. The card's rules and
-   examples change, with a test for each; Mongoster's own list export keeps writing `name = …` lines.
-   *Open*: whether a `#` comment counts the same way.
+   examples change, with a test for each; Mongoster's own list export keeps writing `name = …` lines. A `#` comment
+   names nothing, as the user's files use `//` and the export's header is a `#` line.
 2. **The color of a collection**. `Set Color…` on a collection, a view and a GridFS bucket in the tree, with the six
    colors of `connection.set-color` and `Connection's Color`. The collection's color takes the place of the
    connection's wherever something of that collection is shown: its icon in the tree, the icon and stripe of its tab,

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `Import Connections…` now names each connection of a list of connection strings after the `// name` comment on the line above it, when the line has no name of its own; such connections were named after their hosts.
+
 ## 0.8.0
 
 - **Follow references from the table**: in a collection's tab, a field that references another collection (an id, an array of ids, a DBRef, or a field like `customerEmail` pointing to a unique field) is underlined on hover. Ctrl/Cmd+click on it, or `Open referenced document` in its right-click menu, opens the referenced collection filtered on `{ _id: … }`, or on `{ _id: { $in: [...] } }` for an array. `Find referencing documents ▸` in a row's menu lists the collections and fields that reference it and opens them filtered on that row's `_id`. The references are found in the background once per database and session (setting `mongoster.references.detect`), with the same analysis as the relationship diagram. On a reference cell Ctrl/Cmd+click now follows the link instead of selecting the row. The right-click menus can have submenus.

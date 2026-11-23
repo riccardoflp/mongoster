@@ -195,6 +195,44 @@ describe('parseList', () => {
     ]);
   });
 
+  it('names a connection after the // comment right above it', () => {
+    const r = parseList(
+      [
+        '// Production',
+        'mongodb+srv://ada@cluster0.x.mongodb.net/shop',
+        '//   Staging  ',
+        'mongodb://staging-1:27017/shop',
+        '// Ignored, the line has its own name',
+        'Reports = mongodb://r1/db',
+        '// Forgotten after an empty line',
+        '',
+        'mongodb://h1/db',
+        '// Forgotten after a line that is not a connection',
+        'not a connection',
+        'mongodb://h2/db',
+        '// Forgotten after a # comment',
+        '# other',
+        'mongodb://h3/db',
+        '// First',
+        '// Second',
+        'mongodb://h4/db',
+        '//',
+        'mongodb://h5/db',
+      ].join('\n'),
+    );
+    expect(r.skipped).toBe(1);
+    expect(r.connections.map((c) => [c.name, c.uri])).toEqual([
+      ['Production', 'mongodb+srv://ada@cluster0.x.mongodb.net/shop'],
+      ['Staging', 'mongodb://staging-1:27017/shop'],
+      ['Reports', 'mongodb://r1/db'],
+      ['h1', 'mongodb://h1/db'],
+      ['h2', 'mongodb://h2/db'],
+      ['h3', 'mongodb://h3/db'],
+      ['Second', 'mongodb://h4/db'],
+      ['h5', 'mongodb://h5/db'],
+    ]);
+  });
+
   it('takes the TLS files out and notes a missing password', () => {
     const [c] = parseList('Secure = mongodb://ada@h/db?tls=true&tlsCAFile=%2Fca.pem').connections;
     expect(c).toEqual({ name: 'Secure', uri: 'mongodb://ada@h/db', tls: { caFile: '/ca.pem' }, notes: ['no password'] });

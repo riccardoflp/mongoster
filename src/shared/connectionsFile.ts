@@ -356,13 +356,24 @@ export async function parseConnections(text: string, passphrase?: string): Promi
   return { format, connections, skipped };
 }
 
-/** One connection string per line, optionally `name = mongodb://…` or `name<TAB>mongodb://…`; `#` comments. */
+/**
+ * One connection string per line, optionally `name = mongodb://…` or `name<TAB>mongodb://…`; `#` and `//` comments.
+ * A `// name` comment on the line right above a connection string without a name of its own names it.
+ */
 export function parseList(text: string): ParsedConnections {
   const connections: PortableConnection[] = [];
   let skipped = 0;
+  // The text of a `//` comment, until the next line: only the line right above a connection string names it.
+  let commentName: string | undefined;
   for (const raw of text.replace(/^﻿/, '').split(/\r?\n/)) {
     const line = raw.trim();
-    if (!line || line.startsWith('#') || line.startsWith('//')) continue;
+    const above = commentName;
+    commentName = undefined;
+    if (line.startsWith('//')) {
+      commentName = line.slice(2).trim() || undefined;
+      continue;
+    }
+    if (!line || line.startsWith('#')) continue;
     const at = line.search(/mongodb(\+srv)?:\/\//i);
     if (at < 0) {
       skipped++;
@@ -380,7 +391,7 @@ export function parseList(text: string): ParsedConnections {
       .replace(/^["'`]+/, '')
       .trim();
     const { uri: rest, tls } = tlsFromUri(uri);
-    const c: PortableConnection = { name: name || hostOf(uri), uri: rest, ...(tls && { tls }), notes: [] };
+    const c: PortableConnection = { name: name || above || hostOf(uri), uri: rest, ...(tls && { tls }), notes: [] };
     c.notes = missingSecrets(c);
     connections.push(c);
   }
