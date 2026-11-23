@@ -7,7 +7,8 @@ kept apart.
 
 The state of the work: version 0.8.0 is released; the catalog has cards for the riskiest areas (writes, undo,
 connections and secrets, the MCP server, backups, scheduled tasks), and the other areas get theirs when they are next
-changed ([07-roadmap.md](07-roadmap.md)).
+changed. Next ([07-roadmap.md](07-roadmap.md)): colors for collections, conditional formatting and names from comments
+in a list of connection strings (M2), then the known risks (M3 to M5).
 
 ## The pages
 
@@ -19,7 +20,7 @@ changed ([07-roadmap.md](07-roadmap.md)).
 | [04-feature-contract.md](04-feature-contract.md) | How a feature is shaped in the code, the template of a card, the list of areas. |
 | [05-platform.md](05-platform.md) | What Mongoster asks of VS Code, of Electron and of the operating systems. |
 | [06-testing.md](06-testing.md) | Setup, running, the tests, from a card to a test, what no test reaches, packaging, CI, releasing. |
-| [07-roadmap.md](07-roadmap.md) | The areas still without cards, and the gaps to close, in order. |
+| [07-roadmap.md](07-roadmap.md) | The features scheduled next, the gaps to close in order, and the areas still without cards. |
 | [08-decisions.md](08-decisions.md) | The decisions (D1…), most reconstructed from the history, and the open questions (Q1…). |
 | [09-glossary.md](09-glossary.md) | The words of Mongoster, one meaning each, and the words to avoid. |
 | [10-security.md](10-security.md) | The threat model: what is protected, the trust boundaries, the threats (T1…) and their mitigations. |
