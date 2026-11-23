@@ -1,4 +1,5 @@
 // Aggregation pipeline editor: a strip of stage cards, or the whole pipeline as text.
+import { iconSvg } from '../shared/icons';
 import { isPlainObject, mergeCondition, parseQuery, toShell } from '../shared/query';
 import {
   PipelineStage,
@@ -208,7 +209,9 @@ export class PipelineEditor {
   private setTextMode(on: boolean): void {
     if (!on && !this.applyText()) return;
     this.textMode = on;
-    this.textToggle.textContent = on ? 'Edit as stages' : 'Edit as text';
+    // The button keeps its icon: only its label changes.
+    const label = this.textToggle.querySelector('.label') ?? this.textToggle;
+    label.textContent = on ? 'Edit as stages' : 'Edit as text';
     this.textToggle.classList.toggle('active', on);
     this.strip.classList.toggle('hidden', on);
     this.textArea.classList.toggle('hidden', !on);
@@ -247,8 +250,9 @@ export class PipelineEditor {
     if (this.stages.length) {
       const add = document.createElement('button');
       add.className = 'stage-add secondary';
-      add.textContent = '+';
+      add.innerHTML = iconSvg('add');
       add.title = 'Add a stage at the end';
+      add.setAttribute('aria-label', 'Add a stage at the end');
       add.addEventListener('click', () => this.addStage());
       this.strip.append(add);
     } else {

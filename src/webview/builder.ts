@@ -4,6 +4,7 @@
 import { BUILDER_OPS, BUILDER_TYPES, BuilderOp, BuilderQuery, BuilderRow, NO_VALUE, filterToRows, rowComplete, rowsToFilter } from '../shared/builder';
 import type { FieldHint } from '../shared/complete';
 import { formatFilter, parseQuery, toShell } from '../shared/query';
+import { iconSvg } from '../shared/icons';
 
 export interface BuilderHost {
   text(): string;
@@ -287,13 +288,13 @@ export class FilterBuilder {
     spacer.className = 'spacer';
     const add = document.createElement('button');
     add.className = 'secondary';
-    add.textContent = '+ Condition';
+    add.innerHTML = `${iconSvg('add')}<span class="label">Condition</span>`;
     add.title = 'Add a condition';
     add.disabled = !!this.unsupported;
     add.addEventListener('click', () => this.add());
     const clear = document.createElement('button');
     clear.className = 'secondary';
-    clear.textContent = 'Clear';
+    clear.innerHTML = `${iconSvg('clear-all')}<span class="label">Clear</span>`;
     clear.title = 'Remove every condition (and the filter)';
     clear.addEventListener('click', () => this.clear());
     head.append(label('Match'), combine, label('of these conditions'), spacer, add, clear);

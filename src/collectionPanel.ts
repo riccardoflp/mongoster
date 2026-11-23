@@ -33,6 +33,8 @@ import { RelationsCache } from './relationsAnalysis';
 import type { RelGraph } from './shared/relations';
 import { collectionReferences } from './shared/references';
 import { readFormatRules } from './shared/formatting';
+import { iconSvg } from './shared/icons';
+import { readQueryPane } from './shared/queryPane';
 
 const { EJSON } = BSON;
 /** Documents sampled for the autocompletion of field names and values. */
@@ -57,6 +59,8 @@ export const panelKey = (ref: CollectionRef) => `${ref.connectionId}/${ref.datab
 export const expandedStateKey = (ref: CollectionRef) => `mongoster.expanded.${panelKey(ref)}`;
 export const layoutStateKey = (ref: CollectionRef) => `mongoster.layout.${panelKey(ref)}`;
 export const formattingStateKey = (ref: CollectionRef) => `mongoster.formatting.${panelKey(ref)}`;
+/** Where every collection's tab puts its query: above or beside the results (`QueryPane`). */
+export const QUERY_PANE_KEY = 'mongoster.queryPane';
 
 /** Carries the recent and saved queries, the expanded columns, the layout and the formatting rules of a renamed collection over to its new name. */
 export async function moveCollectionState(state: vscode.Memento, from: CollectionRef, to: CollectionRef): Promise<void> {
@@ -196,6 +200,7 @@ export class CollectionPanel {
       expanded: this.context.globalState.get<string[]>(expandedStateKey(t), []),
       layout: this.context.globalState.get<ColumnLayout>(layoutStateKey(t), {}),
       formatRules: readFormatRules(this.context.globalState.get(formattingStateKey(t))),
+      queryPane: readQueryPane(this.context.globalState.get(QUERY_PANE_KEY)),
     });
   }
 
@@ -261,6 +266,13 @@ export class CollectionPanel {
         // Feature: query.format-rules. Kept for the user, like the layout; nothing is written to the database.
         const rules = readFormatRules(m.rules);
         await this.context.globalState.update(formattingStateKey(this.target), rules.length ? rules : undefined);
+        break;
+      }
+      case 'saveQueryPane': {
+        // One choice for every collection: the other open tabs follow it.
+        const pane = readQueryPane(m.pane);
+        await this.context.globalState.update(QUERY_PANE_KEY, pane);
+        for (const p of CollectionPanel.panels.values()) if (p !== this) p.post({ type: 'queryPane', pane });
         break;
       }
       case 'saveExpanded':
@@ -1103,6 +1115,7 @@ export class CollectionPanel {
   private html(): string {
     const webview = this.panel.webview;
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...p));
+    const ic = iconSvg;
     const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
@@ -1127,42 +1140,56 @@ export class CollectionPanel {
         <button id="modeChart" role="tab" aria-selected="false" title="Bar, line, pie, scatter and histogram charts of the documents">Chart</button>
         <button id="modeIndexes" role="tab" aria-selected="false" title="Indexes of the collection">Indexes</button>
       </div>
-      <button id="historyBtn" class="secondary" title="Recent and saved queries" aria-haspopup="true" aria-expanded="false">History ▾</button>
-      <button id="export" class="secondary not-indexes not-schema not-chart" title="Export the results to JSON, JSON Lines or CSV">Export</button>
-      <button id="watch" class="secondary not-view" title="Show the changes of the collection as they happen (change stream)">Watch</button>
-      <button id="insert" class="secondary editable" title="Insert documents: type them or paste a copied one">Insert</button>
+      <div class="btn-group collection-actions">
+        <button id="historyBtn" class="secondary" title="Recent and saved queries" aria-haspopup="true" aria-expanded="false">${ic('history')}<span class="label">History</span><span class="caret" aria-hidden="true">▾</span></button>
+        <button id="export" class="secondary not-indexes not-schema not-chart" title="Export the results to JSON, JSON Lines or CSV">${ic('export')}<span class="label">Export</span></button>
+        <button id="watch" class="secondary not-view" title="Show the changes of the collection as they happen (change stream)">${ic('pulse')}<span class="label">Watch</span></button>
+        <button id="insert" class="secondary editable" title="Insert documents: type them or paste a copied one">${ic('add')}<span class="label">Insert</span></button>
+      </div>
+      <button id="layoutToggle" class="secondary icon-only not-indexes" title="Query beside the results" aria-label="Query beside the results" aria-pressed="false">${ic('layout-sidebar-left')}</button>
       </div>
     </div>
-    <div class="find-only">
-      <div class="row">
+  </header>
+  <div class="workspace" id="workspace">
+  <div class="query-pane" id="queryPane">
+    <div class="find-only query-find">
+      <div class="row q-filter">
         <label for="filter">Filter</label>
-        <div class="filter-line">
         <div class="filter-wrap" id="filterWrap">
           <textarea id="filter" rows="1" spellcheck="false" placeholder="{ field: &quot;value&quot; }  —  or drag a cell / column here"></textarea>
           <div class="dropzones" id="dropzones"></div>
         </div>
-        <div class="filter-actions">
-        <button id="builderToggle" class="secondary" title="Build the filter from fields, operators and values" aria-expanded="false" aria-controls="builder">Builder</button>
-        <button id="run" class="primary" title="Run query (Ctrl+Enter)">Find</button>
-        <button id="reset" class="secondary" title="Clear filter, sort and projection">Reset</button>
-        <button id="explainFind" class="secondary not-schema not-chart" title="Show how MongoDB runs this query: index used, documents examined">Explain</button>
-        <button id="codeFind" class="secondary not-schema not-chart" title="The query as code for mongosh, Node.js, Python, Java, C# or Go">Code</button>
-        <button id="updateMany" class="secondary editable not-schema not-chart" title="Update every document matching the filter">Update many…</button>
-        <button id="deleteMany" class="secondary editable danger not-schema not-chart" title="Delete every document matching the filter">Delete many…</button>
+        <div class="btn-group q-run">
+          <button id="run" class="primary" title="Run query (Ctrl+Enter)">${ic('play')}<span class="label">Find</span></button>
+          <button id="reset" class="secondary" title="Clear filter, sort and projection">${ic('discard')}<span class="label">Reset</span></button>
         </div>
+      </div>
+      <div class="row q-tools">
+        <div class="btn-group q-inspect">
+          <button id="builderToggle" class="secondary" title="Build the filter from fields, operators and values" aria-expanded="false" aria-controls="builder">${ic('list-filter')}<span class="label">Builder</span></button>
+          <button id="explainFind" class="secondary not-schema not-chart" title="Show how MongoDB runs this query: index used, documents examined">${ic('telescope')}<span class="label">Explain</span></button>
+          <button id="codeFind" class="secondary not-schema not-chart" title="The query as code for mongosh, Node.js, Python, Java, C# or Go">${ic('code')}<span class="label">Code</span></button>
+        </div>
+        <div class="btn-group q-write editable not-schema not-chart">
+          <button id="updateMany" class="secondary editable not-schema not-chart" title="Update every document matching the filter">${ic('edit')}<span class="label">Update many…</span></button>
+          <button id="deleteMany" class="secondary editable danger not-schema not-chart" title="Delete every document matching the filter">${ic('trash')}<span class="label">Delete many…</span></button>
         </div>
       </div>
       <div id="builder" class="builder hidden" role="group" aria-label="Filter builder"></div>
       <div class="row options not-schema not-chart">
-        <label for="sort">Sort</label>
-        <div class="option-wrap" id="sortWrap">
-          <input id="sort" spellcheck="false" placeholder="{ field: -1 }  —  or drag a column here">
-          <div class="dropzones" id="sortDrop"></div>
+        <div class="q-option">
+          <label for="sort">Sort</label>
+          <div class="option-wrap" id="sortWrap">
+            <input id="sort" spellcheck="false" placeholder="{ field: -1 }  —  or drag a column here">
+            <div class="dropzones" id="sortDrop"></div>
+          </div>
         </div>
-        <label for="projection">Project</label>
-        <div class="option-wrap" id="projectionWrap">
-          <input id="projection" spellcheck="false" placeholder="{ field: 1 }  —  or drag a column here">
-          <div class="dropzones" id="projectionDrop"></div>
+        <div class="q-option">
+          <label for="projection">Project</label>
+          <div class="option-wrap" id="projectionWrap">
+            <input id="projection" spellcheck="false" placeholder="{ field: 1 }  —  or drag a column here">
+            <div class="dropzones" id="projectionDrop"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1174,19 +1201,23 @@ export class CollectionPanel {
       </div>
       <datalist id="stageOps"></datalist>
       <div class="row pipeline-actions">
-        <button id="runPipeline" class="primary" title="Run the whole pipeline (Ctrl+Enter in a stage)">Run</button>
-        <button id="clearPipeline" class="secondary" title="Remove all stages">Clear</button>
-        <button id="explainPipeline" class="secondary" title="Show how MongoDB runs the pipeline (up to the previewed stage)">Explain</button>
-        <button id="saveView" class="secondary not-locked" title="Create a view with the pipeline up to the previewed stage">Save as view…</button>
-        <button id="addStage" class="secondary" title="Add a stage at the end">+ Stage</button>
-        <button id="pipelineTextToggle" class="secondary" title="Edit or paste the whole pipeline as text">Edit as text</button>
-        <button id="copyPipeline" class="secondary" title="Copy the pipeline (mongosh syntax)">Copy</button>
-        <button id="codePipeline" class="secondary" title="The pipeline as code for mongosh, Node.js, Python, Java, C# or Go">Code</button>
-        <span class="spacer"></span>
+        <div class="btn-group">
+          <button id="runPipeline" class="primary" title="Run the whole pipeline (Ctrl+Enter in a stage)">${ic('play')}<span class="label">Run</span></button>
+          <button id="addStage" class="secondary" title="Add a stage at the end">${ic('add')}<span class="label">Stage</span></button>
+          <button id="pipelineTextToggle" class="secondary" title="Edit or paste the whole pipeline as text">${ic('json')}<span class="label">Edit as text</span></button>
+          <button id="clearPipeline" class="secondary" title="Remove all stages">${ic('clear-all')}<span class="label">Clear</span></button>
+        </div>
+        <div class="btn-group">
+          <button id="explainPipeline" class="secondary" title="Show how MongoDB runs the pipeline (up to the previewed stage)">${ic('telescope')}<span class="label">Explain</span></button>
+          <button id="codePipeline" class="secondary" title="The pipeline as code for mongosh, Node.js, Python, Java, C# or Go">${ic('code')}<span class="label">Code</span></button>
+          <button id="copyPipeline" class="secondary" title="Copy the pipeline (mongosh syntax)">${ic('copy')}<span class="label">Copy</span></button>
+          <button id="saveView" class="secondary not-locked" title="Create a view with the pipeline up to the previewed stage">${ic('save-as')}<span class="label">Save as view…</span></button>
+        </div>
         <span id="previewInfo" class="preview-info"></span>
       </div>
     </div>
-  </header>
+  </div>
+  <div class="pane-splitter" id="paneSplitter" role="separator" aria-orientation="vertical" aria-label="Width of the query" tabindex="0" title="Drag to resize the query (double-click: default width)"></div>
   <div id="historyPanel" class="history hidden" role="dialog" aria-label="Query history">
     <div class="history-head">
       <input id="historySearch" spellcheck="false" placeholder="Search queries">
@@ -1195,6 +1226,7 @@ export class CollectionPanel {
     <div class="history-body" id="historyBody"></div>
     <div id="historyMenu" class="context-menu hidden" role="menu"></div>
   </div>
+  <div class="results-pane">
   <div class="error hidden" id="error"></div>
   <section class="schema-only schema-view" id="schemaView">
     <div class="row schema-head">
@@ -1309,6 +1341,8 @@ export class CollectionPanel {
     <table id="grid" class="grid"></table>
     <div id="empty" class="empty hidden">No documents match this query.</div>
   </main>
+  </div>
+  </div>
   <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-box">
       <div class="modal-head">

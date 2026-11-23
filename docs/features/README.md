@@ -1,15 +1,15 @@
 # The catalog of features
 
-Every feature, one card each, 148 in all. The template and the rules of the cards are in the
+Every feature, one card each, 154 in all. The template and the rules of the cards are in the
 feature contract. This index is written by `catalog.py --index`: change a status here in the commit that
 earns it, and run the script again after adding or renaming a card; the statuses are kept. A card with a
 **Differs** line is *Differs*; when the line goes, it becomes *Documented*.
 
 | File | Area | Cards |
 | --- | --- | --- |
-| [01-connections.md](01-connections.md) | Connections | 27 |
+| [01-connections.md](01-connections.md) | Connections | 29 |
 | [02-tree.md](02-tree.md) | The connections view | 3 |
-| [03-collection-tab.md](03-collection-tab.md) | The collection tab | 3 |
+| [03-collection-tab.md](03-collection-tab.md) | The collection tab | 4 |
 | [04-documents.md](04-documents.md) | Writing documents | 15 |
 | [05-field-actions.md](05-field-actions.md) | Actions on a column | 10 |
 | [06-databases.md](06-databases.md) | Databases and collections | 9 |
@@ -38,6 +38,7 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | [`connection.disconnect`](01-connections.md#connectiondisconnect--disconnect) | Disconnect | Operation | Documented |
 | [`connection.remove`](01-connections.md#connectionremove--remove-a-connection) | Remove a connection | Operation | Differs |
 | [`connection.set-color`](01-connections.md#connectionset-color--set-the-color-of-a-connection) | Set the color of a connection | Operation | Differs |
+| [`connection.custom-color`](01-connections.md#connectioncustom-color--choose-a-custom-color) | Choose a custom color | View | Specified |
 | [`connection.move-to-folder`](01-connections.md#connectionmove-to-folder--move-a-connection-to-a-folder) | Move a connection to a folder | Operation | Documented |
 | [`connection.rename-folder`](01-connections.md#connectionrename-folder--rename-a-folder) | Rename a folder | Operation | Documented |
 | [`connection.remove-folder`](01-connections.md#connectionremove-folder--remove-a-folder-keeping-its-connections) | Remove a folder, keeping its connections | Operation | Documented |
@@ -54,6 +55,7 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | [`connection.encryption`](01-connections.md#connectionencryption--encrypt-the-passwords-of-a-file-as-compass-does) | Encrypt the passwords of a file as Compass does | Derivation | Documented |
 | [`connection.tls-in-uri`](01-connections.md#connectiontls-in-uri--tls-settings-in-and-out-of-a-connection-string) | TLS settings in and out of a connection string | Derivation | Documented |
 | [`connection.color-from-compass`](01-connections.md#connectioncolor-from-compass--the-closest-color-of-a-compass-connection) | The closest color of a Compass connection | Derivation | Documented |
+| [`connection.nearest-preset`](01-connections.md#connectionnearest-preset--the-preset-a-custom-color-shows-as) | The preset a custom color shows as | Derivation | Specified |
 | [`connection.ssh-tunnel-target`](01-connections.md#connectionssh-tunnel-target--where-the-ssh-tunnel-leads) | Where the SSH tunnel leads | Derivation | Documented |
 
 ## The connections view
@@ -71,6 +73,7 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | [`query.format-rules`](03-collection-tab.md#queryformat-rules--add-edit-reorder-and-turn-off-formatting-rules) | Add, edit, reorder and turn off formatting rules | Operation | Built |
 | [`query.format-table`](03-collection-tab.md#queryformat-table--color-the-table-by-the-formatting-rules) | Color the table by the formatting rules | View | Built |
 | [`query.match`](03-collection-tab.md#querymatch--match-a-document-against-a-filter) | Match a document against a filter | Derivation | Built |
+| [`query.pane`](03-collection-tab.md#querypane--put-the-query-above-or-beside-the-results) | Put the query above or beside the results | Operation | Built |
 
 ## Writing documents
 

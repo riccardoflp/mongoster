@@ -11,6 +11,7 @@ import type { PipelineStage } from './pipeline';
 import type { ExplainSummary } from './explain';
 import type { CollectionReferences } from './references';
 import type { FormatRule } from './formatting';
+import type { QueryPane } from './queryPane';
 
 export interface QueryRequest {
   type: 'query';
@@ -156,6 +157,8 @@ export type WebviewMessage =
   | { type: 'saveLayout'; layout: ColumnLayout }
   /** Stores the collection's formatting rules, in their order (`query.format-rules`). */
   | { type: 'saveFormatRules'; rules: FormatRule[] }
+  /** Stores where the query goes (above or beside the results) for every collection's tab. */
+  | { type: 'saveQueryPane'; pane: QueryPane }
   /** Saves a query with a name; `place` skips the question of where (For me / In the project). */
   | { type: 'saveQuery'; query: QueryText; place?: SavedQuerySource }
   | { type: 'removeQuery'; id: string }
@@ -217,7 +220,10 @@ export type HostMessage =
       layout: ColumnLayout;
       /** The collection's formatting rules, in their order. */
       formatRules: FormatRule[];
+      queryPane: QueryPane;
     }
+  /** The query was moved (or its pane resized) in another collection's tab. */
+  | { type: 'queryPane'; pane: QueryPane }
   /** Shows a tab of the panel, e.g. Indexes when opened from the tree. */
   | { type: 'showMode'; mode: 'indexes' }
   | { type: 'result'; requestId: number; docs: unknown[]; count: number | null; durationMs: number; note?: string }

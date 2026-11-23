@@ -45,6 +45,8 @@ these words; `catalog.py` reports the words of the **Avoid** column anywhere in 
 | row | A document as shown in the table; a sub-row is an element of an expanded array. | a document in the database | — | — |
 | column | A field as shown in the table, with its layout (hidden, order, width, pinned). | a field | — | `Column`, `ColumnLayout` |
 | query | A filter, a sort and a projection, run with `find`. | a pipeline | — | `QueryText`, `ParsedQuery` |
+| query bar | The inputs and buttons of the collection tab where the query or the pipeline is written and run: above the table, or in the query pane. | the toolbar: the top row with the mode tabs, `History`, `Export`, `Watch`, `Insert` | — | `.query-pane` in `src/collectionPanel.ts` |
+| query pane | The query bar put at the left of the table, resizable; one choice for every collection. | a VS Code panel or side bar | — | `QueryPane`, `QueryPaneUi` |
 | filter | The condition that chooses documents, in mongosh syntax. | the tree filter | where clause | `filter` |
 | pipeline | The stages of an aggregation. | a query | — | `PipelineStage` |
 | stage | One step of a pipeline: `$match`, `$group`… | — | — | `PipelineStage` |

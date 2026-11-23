@@ -4,7 +4,8 @@ The tab of a collection or a view: the table, the query bar, the pipeline editor
 side is in the README's [Features](../../README.md#features). This area is one of those written when it is next
 changed ([07-roadmap.md](../07-roadmap.md)): it has the cards of conditional formatting only, from
 [proposal 0002](../proposals/0002-conditional-formatting.md) and [D18](../08-decisions.md); the table, the query, the
-builder, the pipeline and the columns get theirs when they change.
+builder, the pipeline and the columns get theirs when they change. The place of the query, above or beside the
+results, has its card since the query bar was reordered.
 
 Conditional formatting writes nothing to the database. Its rules are Mongoster's own state, kept for the user in
 `globalState` under `mongoster.formatting.<connection>/<database>/<collection>` ([11-data.md](../11-data.md)), sent to
@@ -164,3 +165,46 @@ Acceptance:
 - [ ] `{ amount: { $gt: 1000 } }` matches `{ amount: 1500 }` and not `{ amount: 1000 }` nor `{ amount: "2000" }`.
 - [ ] `{ tags: "red" }` matches `{ tags: ["blue", "red"] }`; `{ tags: { $ne: "red" } }` does not.
 - [ ] `{ $expr: { $gt: ["$a", "$b"] } }` is refused with `$expr is not supported in a formatting rule.`
+
+### `query.pane` — Put the query above or beside the results
+
+The user chooses whether the query (Filter, Builder, Sort, Project, or the stages of the pipeline) sits above the
+table or in a resizable pane at its left; the choice holds for every collection.
+
+- **Kind**: Operation
+- **Function**: `src/webview/queryPane.ts › QueryPaneUi`; stored by `src/collectionPanel.ts ›
+  CollectionPanel.onMessage` (`case 'saveQueryPane'`).
+- **Implemented in**: `src/shared/queryPane.ts › readQueryPane`, `clampPaneWidth`; `src/collectionPanel.ts ›
+  QUERY_PANE_KEY`, `postInit`, `html`; `src/webview/main.ts`; `src/shared/messages.ts` (`saveQueryPane`, `queryPane`,
+  `init.queryPane`); `media/webview.css` (`body.query-side`).
+- **Entry points**: the toggle at the right end of the tab's top row, after `Insert` (tooltip `Query beside the
+  results` or `Query above the results`); the splitter between the pane and the results (drag, `←` `→` by 20 px,
+  with Shift by 60 px, double-click for the default width).
+- **Offered when**: in `Find`, `Aggregate`, `Schema` and `Chart`; not in `Indexes`, which has no query.
+- **Reads**: the choice from `globalState`, through `readQueryPane`, when the tab opens.
+- **Writes**: no database. `{ side, width }` to `globalState` under `mongoster.queryPane` at each toggle and at the
+  end of each drag.
+- **Danger**: None.
+- **Read-only**: Allowed, because it writes nothing to the database.
+- **Undo**: Cannot be undone: the undo history is for writes to databases; pressing the toggle again goes back.
+- **redis-oplog**: Not published.
+- **After**: the open tabs of the other collections take the same place and width at once.
+- **Tested by**: `test/unit/queryPane.test.ts › 'query.pane: the stored choice'`, `'query.pane: the width'`. The
+  toggle and the splitter: none.
+
+Rules:
+
+- Above the results: `Find` and `Reset` beside the filter; `Builder`, `Explain` and `Code` under it, `Update many…`
+  and `Delete many…` at the right of that line; Sort and Project on the line after the builder.
+- Beside the results: each label above its box, in the order Filter, `Builder` `Explain` `Code`, the builder, Sort,
+  Project, `Find` `Reset`, then `Update many…` `Delete many…` under a line. The stages of the pipeline are one under
+  the other, as wide as the pane.
+- When the tab leaves less than 360 px to the results, the query is above them whatever the choice; the toggle stays
+  pressed and its tooltip says why.
+- The width is kept between 260 and 900 px; the default is 380.
+
+Acceptance:
+
+- [ ] Nothing stored, a value that is not an object, or `side` other than `true` reads as above the results, 380 px.
+- [ ] `{ side: true, width: 500 }` reads back unchanged; a width of 10 becomes 260, 5000 becomes 900, `"400"`
+  becomes 380.

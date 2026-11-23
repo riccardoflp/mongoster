@@ -49,6 +49,7 @@ import { FormatColor, FormatRule, TableFormat } from '../shared/formatting';
 import { FormatDialog, FormattingPanel } from './formatting';
 import { CollectionReferences, ReferenceTarget, referenceKeys, referenceTargets, referencingTargets } from '../shared/references';
 import { paintStripe } from './stripe';
+import { QueryPaneUi } from './queryPane';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: WebviewMessage): void;
@@ -243,7 +244,8 @@ function setMode(mode: Mode, runNow = true): void {
   document.body.classList.toggle('mode-chart', mode === 'chart');
   el('modeSchema').setAttribute('aria-selected', String(mode === 'schema'));
   el('modeChart').setAttribute('aria-selected', String(mode === 'chart'));
-  el('run').textContent = mode === 'schema' ? 'Analyze' : mode === 'chart' ? 'Draw' : 'Find';
+  // Only the label changes: the button keeps its icon.
+  el('run').querySelector('.label')!.textContent = mode === 'schema' ? 'Analyze' : mode === 'chart' ? 'Draw' : 'Find';
   el('run').title = mode === 'chart' ? 'Draw the chart (Ctrl+Enter)' : 'Run query (Ctrl+Enter)';
   el('modeFind').setAttribute('aria-selected', String(mode === 'find'));
   el('modeAggregate').setAttribute('aria-selected', String(mode === 'aggregate'));
@@ -302,6 +304,7 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       formatRules = m.formatRules ?? [];
       tableFormat = new TableFormat(formatRules);
       formattingPanel.update();
+      queryPane.apply(m.queryPane);
       document.body.classList.toggle('readonly', readOnly);
       el('docEdit').textContent = readOnly ? 'Open in editor' : 'Edit';
       el('docEdit').title = el('docEdit').dataset.title = readOnly
@@ -323,6 +326,9 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       completer.refresh();
       indexDialog.refreshFields();
       searchIndexDialog.refreshFields();
+      break;
+    case 'queryPane':
+      queryPane.apply(m.pane);
       break;
     case 'showMode':
       if (state.mode !== m.mode) setMode(m.mode);
@@ -695,6 +701,11 @@ function saveLayout(next: ColumnLayout): void {
 const layoutActions = new LayoutActions({ columns: () => allColumns, layout: () => layout, change: saveLayout });
 const columnsPanel = new ColumnsPanel({ columns: () => allColumns, layout: () => layout, change: saveLayout }, layoutActions);
 const columnMenu = new ColumnMenu({ columns: () => allColumns, layout: () => layout, change: saveLayout }, layoutActions, () => columnsPanel.open(), fieldItems);
+
+/** The query above the results or beside them: the user's choice for every collection. */
+const queryPane = new QueryPaneUi(el<HTMLButtonElement>('layoutToggle'), el('paneSplitter'), (pane) =>
+  vscode.postMessage({ type: 'saveQueryPane', pane }),
+);
 
 // ---------------------------------------------------------------------------
 // Conditional formatting: rows and cells colored by the collection's formatting rules

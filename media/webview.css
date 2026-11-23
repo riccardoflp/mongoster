@@ -79,7 +79,6 @@ body.loading .progress::after {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  border-bottom: 1px solid var(--border);
 }
 
 .ns {
@@ -106,7 +105,15 @@ body.loading .progress::after {
   font-size: 0.92em;
 }
 
-.options label:not(:first-child) {
+.q-option {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.q-option + .q-option label {
   width: auto;
   margin-left: 6px;
 }
@@ -156,25 +163,9 @@ select:focus {
   border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important;
 }
 
-/* The filter keeps a usable width: when the buttons don't fit beside it, they wrap below it. */
-.filter-line {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 6px 8px;
-}
-
-.filter-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-}
-
 .filter-wrap {
   position: relative;
-  flex: 1 1 360px;
+  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   border-radius: var(--radius);
@@ -315,6 +306,35 @@ button.icon {
 
 button.icon:hover:not(:disabled) {
   background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+}
+
+/* A button with an icon (shared/icons.ts) before its label; the icon takes the color of the text. */
+button:has(> .ico) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-left: 8px;
+}
+
+button .ico {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+button.icon-only {
+  padding: 4px 6px;
+}
+
+button.danger .ico {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.btn-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
 }
 
 button.danger:hover:not(:disabled) {
@@ -919,7 +939,247 @@ button.link:hover {
   flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
-  gap: 6px 8px;
+  gap: 6px 12px;
+}
+
+.caret {
+  margin-left: -1px;
+  font-size: 0.85em;
+}
+
+#layoutToggle.active {
+  background: var(--toggle-bg);
+  color: var(--toggle-fg);
+  border-color: var(--toggle-border);
+}
+
+/* On a narrow tab the collection's buttons keep only their icon (their title says what they do). */
+@media (max-width: 900px) {
+  .collection-actions .label,
+  .collection-actions .caret {
+    display: none;
+  }
+
+  .collection-actions button {
+    padding: 4px 6px;
+  }
+}
+
+/* ---------- the query: above the results, or in a pane beside them (queryPane.ts) ---------- */
+
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.query-pane {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 0 12px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.results-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pane-splitter {
+  display: none;
+}
+
+/* Above the results: the run buttons beside the filter, the other actions under it, the ones that
+   write to the database at the right. */
+.q-filter .filter-wrap {
+  flex-basis: 300px;
+}
+
+.q-run {
+  flex: none;
+}
+
+.q-tools {
+  padding-left: 60px;
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.q-write {
+  margin-left: auto;
+}
+
+/* Nothing of the query in these tabs: the line under the toolbar takes its place. */
+body.mode-indexes .query-pane,
+body.mode-indexes .pane-splitter,
+body.mode-chart.chart-pipeline .query-pane,
+body.mode-chart.chart-pipeline .pane-splitter {
+  display: none !important;
+}
+
+body.mode-indexes .toolbar,
+body.mode-chart.chart-pipeline .toolbar,
+body.query-side .toolbar {
+  border-bottom: 1px solid var(--border);
+}
+
+/* Beside the results: a column with each label above its box, the actions at the bottom. */
+body.query-side .workspace {
+  flex-direction: row;
+}
+
+body.query-side .query-pane {
+  width: var(--query-pane-width, 380px);
+  padding: 8px 12px 12px;
+  border-bottom: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+body.query-side .pane-splitter {
+  display: block;
+  position: relative;
+  z-index: 2;
+  flex: none;
+  width: 7px;
+  margin: 0 -3px;
+  cursor: col-resize;
+  outline: none;
+}
+
+body.query-side .pane-splitter::after {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  background: var(--border);
+}
+
+body.query-side .pane-splitter:hover::after,
+body.query-side .pane-splitter:focus-visible::after,
+body.pane-resizing .pane-splitter::after {
+  inset: 0 2px;
+  background: var(--accent);
+}
+
+body.pane-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.query-side .query-find {
+  gap: 8px;
+}
+
+body.query-side .q-filter,
+body.query-side .q-tools {
+  display: contents;
+}
+
+body.query-side .query-pane label {
+  width: auto;
+  margin: 0 0 -4px;
+  padding: 0;
+}
+
+body.query-side .q-filter label {
+  order: 1;
+}
+
+body.query-side .q-filter .filter-wrap {
+  order: 2;
+  flex: none;
+}
+
+body.query-side .q-filter textarea {
+  min-height: 60px;
+}
+
+body.query-side .q-inspect {
+  order: 3;
+}
+
+body.query-side .builder {
+  order: 4;
+  margin-left: 0;
+}
+
+/* + Condition and Clear on their own line, under "Match all of these conditions". */
+body.query-side .builder-head .spacer {
+  flex-basis: 100%;
+}
+
+body.query-side .builder-row {
+  flex-wrap: wrap;
+}
+
+body.query-side .builder-row .b-field {
+  flex: 1 1 calc(100% - 100px);
+  max-width: none;
+}
+
+body.query-side .options {
+  order: 5;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+body.query-side .q-option {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+body.query-side .q-run {
+  order: 6;
+  margin-top: 4px;
+}
+
+body.query-side .q-run #run,
+body.query-side #runPipeline {
+  flex: 1;
+  justify-content: center;
+}
+
+body.query-side .q-write {
+  order: 7;
+  margin-left: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* The stages one under the other, the arrows pointing down. */
+body.query-side .stages {
+  flex-direction: column;
+  align-items: stretch;
+  overflow-x: visible;
+}
+
+/* As wide as the pane: the width pipeline.ts gives each card to fit its longest line is for the strip. */
+body.query-side .stage {
+  width: auto !important;
+}
+
+body.query-side .stage-arrow {
+  transform: rotate(90deg);
+  line-height: 1;
+}
+
+body.query-side .stage-add {
+  min-height: 30px;
+}
+
+body.query-side .pipeline-text {
+  min-height: 240px;
+  max-height: none;
+}
+
+body.query-side .pipeline-actions .btn-group {
+  width: 100%;
 }
 
 .mode {
@@ -1116,7 +1376,7 @@ body.mode-aggregate .doc-write {
 .pipeline-actions {
   align-items: center;
   flex-wrap: wrap;
-  row-gap: 6px;
+  gap: 6px 12px;
 }
 
 .pipeline-actions button.active {
@@ -1126,6 +1386,7 @@ body.mode-aggregate .doc-write {
 }
 
 .preview-info {
+  margin-left: auto;
   color: var(--muted);
   font-size: 0.92em;
 }
@@ -2733,19 +2994,34 @@ body[data-color] .ns-conn {
     margin-left: 0;
   }
 
-  /* Sort and Project one under the other. */
+  /* Sort and Project one under the other, the run buttons under the filter. */
   .options {
+    flex-direction: column;
+    row-gap: 6px;
+  }
+
+  .q-option {
+    width: 100%;
+  }
+
+  .q-option + .q-option label {
+    width: 52px;
+    margin-left: 0;
+  }
+
+  .q-filter {
     flex-wrap: wrap;
     row-gap: 6px;
   }
 
-  .option-wrap {
+  .q-filter .filter-wrap {
     flex-basis: calc(100% - 60px);
   }
 
-  .options label:not(:first-child) {
-    width: 52px;
-    margin-left: 0;
+  .q-run,
+  .q-tools {
+    margin-left: 60px;
+    padding-left: 0;
   }
 
   .builder-row {
