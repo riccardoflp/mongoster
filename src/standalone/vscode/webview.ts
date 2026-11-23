@@ -1,17 +1,15 @@
 // vscode.window.createWebviewPanel: each panel is a tab of the shell showing a sandboxed frame. The
 // frame gets what VS Code gives a webview: acquireVsCodeApi(), the theme's CSS variables, the default styles.
-import * as path from 'path';
 import type { Column, ThemeInfo } from '../protocol';
 import { themeInfo } from '../theme';
 import { Event, EventEmitter, Thenable, ThemeColor, Uri, ViewColumn } from './base';
 import { onShell, post } from './bridge';
 import { onDidChangeActiveColorTheme, themeKind } from './appearance';
 import { cssColor } from './decorations';
-import { runtime } from './runtime';
+import { APP_PROTOCOL, RESOURCE_HOST, appResourceUri } from './resources';
 
-/** The protocol the app serves its own files and the webviews' documents from. */
-export const APP_PROTOCOL = 'mongoster-app';
-const RESOURCE_HOST = 'res';
+export { APP_PROTOCOL, isResourceHost } from './resources';
+
 const viewHost = (id: number) => `view-${id}`;
 
 export interface WebviewOptions {
@@ -229,20 +227,9 @@ export function panelOfHost(host: string): number | undefined {
   return m ? Number(m[1]) : undefined;
 }
 
-/** The URL of a file of the app, as the webviews and the shell load it; files elsewhere aren't served. */
-export function appResourceUri(resource: Uri): Uri {
-  const relative = path.relative(runtime().appRoot, resource.fsPath);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error(`Not a file of the app: ${resource.fsPath}`);
-  return Uri.from({ scheme: APP_PROTOCOL, authority: RESOURCE_HOST, path: `/${relative.split(path.sep).join('/')}` });
-}
-
 /** A tab's color as CSS: a theme color's variable, or the CSS color it already is. */
 function cssOf(color: ThemeColor | string | undefined): string | undefined {
   return typeof color === 'string' ? color : color && cssColor(color);
-}
-
-export function isResourceHost(host: string): boolean {
-  return host === RESOURCE_HOST;
 }
 
 /** The document of a panel: its html, with the webview's environment set up before anything else runs. */

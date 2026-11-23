@@ -258,7 +258,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `main.ts` – entry point: window, menu bar, tray, `mongoster-app://` protocol
 - `preload.ts`, `protocol.ts` – the messages between the main process and the window
 - `theme.ts` – dark and light colors, with the preset colors Mongoster contributes (`src/shared/colors.ts`)
-- `vscode/` – the `vscode` module: `index.ts` (exports), `base.ts` (value types), `commands.ts`, `contributions.ts` (reads `package.json`), `documents.ts` (text documents, file systems, providers), `tree.ts`, `ui.ts` (messages, quick picks, dialogs, progress), `webview.ts`, `storage.ts`, `decorations.ts`, `watcher.ts` (`fs.watch`), `appearance.ts`, `bridge.ts`, `runtime.ts`
+- `vscode/` – the `vscode` module: `index.ts` (exports), `base.ts` (value types), `commands.ts`, `contributions.ts` (reads `package.json`), `documents.ts` (text documents, file systems, providers), `tree.ts`, `ui.ts` (messages, quick picks, dialogs, progress), `webview.ts`, `resources.ts` (the URLs of the app's own files), `storage.ts`, `decorations.ts`, `watcher.ts` (`fs.watch`), `appearance.ts`, `bridge.ts`, `runtime.ts`
 - `shell/` – the window: `main.ts`, `workbench.ts` (tabs), `tree.ts`, `editor.ts` (Monaco), `panels.ts` (webview frames), `quickInput.ts`, `notifications.ts`, `settings.ts`, `dom.ts`, `shell.html`, `shell.css`, `webview-default.css`
 - `electron-builder.yml`, `build/` – the installers
 

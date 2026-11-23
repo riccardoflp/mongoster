@@ -4,7 +4,7 @@ import { dialog, FileFilter, OpenDialogOptions } from 'electron';
 import type { QuickPickEntry, Severity, StatusItem } from '../protocol';
 import { CancellationToken, CancellationTokenSource, Disposable, ProgressLocation, QuickPickItemKind, StatusBarAlignment, ThemeIcon, Thenable, Uri } from './base';
 import { themeKind } from './appearance';
-import { appResourceUri } from './webview';
+import { appResourceUri } from './resources';
 import { onShell, post } from './bridge';
 import { runtime } from './runtime';
 
