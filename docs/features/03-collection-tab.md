@@ -5,7 +5,7 @@ side is in the README's [Features](../../README.md#features). This area is one o
 changed ([07-roadmap.md](../07-roadmap.md)): it has the cards of conditional formatting only, from
 [proposal 0002](../proposals/0002-conditional-formatting.md) and [D18](../08-decisions.md); the table, the query, the
 builder, the pipeline and the columns get theirs when they change. The place of the query, above or beside the
-results, has its card since the query bar was reordered.
+results, and dropping a field on Sort or Project have theirs since they changed.
 
 Conditional formatting writes nothing to the database. Its rules are Mongoster's own state, kept for the user in
 `globalState` under `mongoster.formatting.<connection>/<database>/<collection>` ([11-data.md](../11-data.md)), sent to
@@ -174,9 +174,10 @@ table or in a resizable pane at its left; the choice holds for every collection.
 - **Kind**: Operation
 - **Function**: `src/webview/queryPane.ts › QueryPaneUi`; stored by `src/collectionPanel.ts ›
   CollectionPanel.onMessage` (`case 'saveQueryPane'`).
-- **Implemented in**: `src/shared/queryPane.ts › readQueryPane`, `clampPaneWidth`; `src/collectionPanel.ts ›
-  QUERY_PANE_KEY`, `postInit`, `html`; `src/webview/main.ts`; `src/shared/messages.ts` (`saveQueryPane`, `queryPane`,
-  `init.queryPane`); `media/webview.css` (`body.query-side`).
+- **Implemented in**: `src/shared/queryPane.ts › readQueryPane`, `clampPaneWidth`, `paneLayout`, `draggedWidth`,
+  `keyedWidth`; `src/queryBarHtml.ts › queryBarHtml` (the markup, with `src/shared/icons.ts › iconSvg`);
+  `src/collectionPanel.ts › QUERY_PANE_KEY`, `postInit`, `html`; `src/webview/main.ts`; `src/shared/messages.ts`
+  (`saveQueryPane`, `queryPane`, `init.queryPane`); `media/webview.css` (`body.query-side`).
 - **Entry points**: the toggle at the right end of the tab's top row, after `Insert` (tooltip `Query beside the
   results` or `Query above the results`); the splitter between the pane and the results (drag, `←` `→` by 20 px,
   with Shift by 60 px, double-click for the default width).
@@ -189,8 +190,9 @@ table or in a resizable pane at its left; the choice holds for every collection.
 - **Undo**: Cannot be undone: the undo history is for writes to databases; pressing the toggle again goes back.
 - **redis-oplog**: Not published.
 - **After**: the open tabs of the other collections take the same place and width at once.
-- **Tested by**: `test/unit/queryPane.test.ts › 'query.pane: the stored choice'`, `'query.pane: the width'`. The
-  toggle and the splitter: none.
+- **Tested by**: `test/unit/queryPane.test.ts › 'query.pane: the stored choice'`, `'query.pane: the width'`,
+  `'query.pane: above or beside'`, `'query.pane: the splitter'`; `test/unit/queryBar.test.ts › 'query.pane: the
+  markup'`, `'query.pane: the icons'`. The CSS of the two places and the DOM wiring: none (checked by hand).
 
 Rules:
 
@@ -208,3 +210,44 @@ Acceptance:
 - [ ] Nothing stored, a value that is not an object, or `side` other than `true` reads as above the results, 380 px.
 - [ ] `{ side: true, width: 500 }` reads back unchanged; a width of 10 becomes 260, 5000 becomes 900, `"400"`
   becomes 380.
+- [ ] Beside, 380 px wide, in a tab 740 px wide: beside; in one 739 px wide: above, with the tooltip `Query beside
+  the results: the tab is too narrow, so it is above them for now`.
+- [ ] Dragging the splitter 600 px right from 380 in a tab 1000 px wide gives 640; `→` adds 20, Shift+`←` takes 60.
+- [ ] Every button of the query bar but the mode tabs and the toggle has a codicon and its text in a `.label` span;
+  `Find` and `Reset` are in the filter's row, `Update many…` and `Delete many…` in their own group.
+
+### `query.drop-options` — Drop a header or a cell on Sort or Project
+
+What a field dragged from the table offers on Sort and Project: a header and a cell alike put their field there.
+
+- **Kind**: Derivation
+- **Function**: `src/shared/dropZones.ts › sortZones`, `projectionZones`
+- **Implemented in**: `src/webview/main.ts › showDropzones`, `showOptionZones`, `setOption`;
+  `src/shared/query.ts › mergeSort`, `mergeProjection` (what a zone does to the text).
+- **Uses**: nothing.
+- **Tested by**: `test/unit/dropZones.test.ts › 'query.drop-options: Sort'`, `'query.drop-options: Project'`; the
+  merging: `test/unit/query.test.ts`.
+
+Rules:
+
+- In `Find`, Sort offers `▲ ascending` (1) and `▼ descending` (-1), and Project `include` (1) and `exclude` (0), for
+  the field of a dragged header or cell. A cell of an array element gives the dotted path of its field (`items.qty`).
+- A field already in the box also gets `✕ remove`.
+- In `Aggregate` neither box exists, and nothing is offered.
+
+Examples:
+
+| Dragged | Mode | Sort already | Sort offers |
+| --- | --- | --- | --- |
+| header `amount` | Find | `{}` | `▲ ascending`, `▼ descending` |
+| cell of `amount` (275) | Find | `{ amount: -1 }` | `▲ ascending`, `▼ descending`, `✕ remove` |
+| cell of `items.qty` in an element of `items` | Find | `{}` | the same, for `items.qty` |
+| cell of `amount` | Aggregate | — | nothing |
+
+Acceptance:
+
+- [ ] A cell of `amount` offers on Sort `▲ ascending` and `▼ descending`, as the header `amount` does, and on
+  Project `include` and `exclude`.
+- [ ] A cell of `items.qty` in an element of `items` offers `▼ descending` with the tooltip `items.qty: -1 (after the
+  fields already in the sort)`.
+- [ ] In Aggregate, a cell offers nothing on Sort nor on Project.

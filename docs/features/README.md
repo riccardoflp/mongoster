@@ -1,6 +1,6 @@
 # The catalog of features
 
-Every feature, one card each, 154 in all. The template and the rules of the cards are in the
+Every feature, one card each, 155 in all. The template and the rules of the cards are in the
 feature contract. This index is written by `catalog.py --index`: change a status here in the commit that
 earns it, and run the script again after adding or renaming a card; the statuses are kept. A card with a
 **Differs** line is *Differs*; when the line goes, it becomes *Documented*.
@@ -9,7 +9,7 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | --- | --- | --- |
 | [01-connections.md](01-connections.md) | Connections | 29 |
 | [02-tree.md](02-tree.md) | The connections view | 3 |
-| [03-collection-tab.md](03-collection-tab.md) | The collection tab | 4 |
+| [03-collection-tab.md](03-collection-tab.md) | The collection tab | 5 |
 | [04-documents.md](04-documents.md) | Writing documents | 15 |
 | [05-field-actions.md](05-field-actions.md) | Actions on a column | 10 |
 | [06-databases.md](06-databases.md) | Databases and collections | 9 |
@@ -74,6 +74,7 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | [`query.format-table`](03-collection-tab.md#queryformat-table--color-the-table-by-the-formatting-rules) | Color the table by the formatting rules | View | Built |
 | [`query.match`](03-collection-tab.md#querymatch--match-a-document-against-a-filter) | Match a document against a filter | Derivation | Built |
 | [`query.pane`](03-collection-tab.md#querypane--put-the-query-above-or-beside-the-results) | Put the query above or beside the results | Operation | Built |
+| [`query.drop-options`](03-collection-tab.md#querydrop-options--drop-a-header-or-a-cell-on-sort-or-project) | Drop a header or a cell on Sort or Project | Derivation | Built |
 
 ## Writing documents
 

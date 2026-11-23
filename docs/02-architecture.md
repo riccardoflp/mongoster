@@ -191,6 +191,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `src/queryHistory.ts` – recent and saved queries of a collection, for the user
 - `src/projectQueries.ts`, `src/savedQueryActions.ts`, `src/shared/savedQueries.ts` – saved queries in the project's repository: file format, watching the folder, saving, renaming and moving them
 - `src/webview/main.ts` – the table and the tab's wiring; with `history.ts`, `pipeline.ts`, `builder.ts`, `indexes.ts`, `indexDialog.ts`, `searchIndexes.ts`, `searchIndexDialog.ts`, `explainView.ts`, `bulk.ts`, `schemaView.ts`, `chartView.ts`, `columnsUi.ts`, `queryPane.ts` (the query above or beside the results), `autocomplete.ts`, `insertDialog.ts`, `cellEditor.ts`, `popupMenu.ts`, `highlight.ts`, `codeDialog.ts` of `src/webview/`, and `media/webview.css`
+- `src/queryBarHtml.ts` – the markup of the collection tab's top row and query bar, with the buttons' icons (no `vscode`)
 - `src/shared/formatting.ts`, `src/shared/match.ts`, `src/webview/formatting.ts` – conditional formatting: the formatting rules and how they are stored, the colors of rows and cells, the matcher of query operators over relaxed EJSON, the `Formatting` panel and the rule dialog
 - `src/webview/chartjs.ts` – Chart.js, a bundle of its own loaded only when the `Chart` tab is opened
 
@@ -202,6 +203,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `builder.ts` – visual query builder rows ⇄ filter
 - `queryPane.ts` – where the collection tab puts its query (above or beside the results) and the pane's width
 - `icons.ts` – the codicons of the query bar's buttons, as inline SVG
+- `dropZones.ts` – what a header or a cell dragged from the table offers on Sort and Project
 - `pipeline.ts` – aggregation stages, templates, text ⇄ stages
 - `columns.ts` – columns model (nested fields, arrays) and the user's layout, for the table and CSV
 - `csv.ts` – CSV writing and parsing

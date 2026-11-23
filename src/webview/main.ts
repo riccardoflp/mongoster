@@ -50,6 +50,7 @@ import { FormatDialog, FormattingPanel } from './formatting';
 import { CollectionReferences, ReferenceTarget, referenceKeys, referenceTargets, referencingTargets } from '../shared/references';
 import { paintStripe } from './stripe';
 import { QueryPaneUi } from './queryPane';
+import { DragPayload, projectionZones, sortZones } from '../shared/dropZones';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: WebviewMessage): void;
@@ -83,8 +84,6 @@ interface QueryState {
 }
 
 /** `within`: the array a dragged element field belongs to; its conditions go into an $elemMatch. */
-type DragPayload = { kind: 'cell'; key: string; value: unknown; within?: string } | { kind: 'column'; key: string };
-
 interface DropZone {
   label: string;
   title: string;
@@ -1375,8 +1374,7 @@ function showDropzones(p: DragPayload): void {
     if (p.kind === 'cell' && p.within) div.title += ` · same element of ${p.within} ($elemMatch)`;
     container.append(div);
   }
-  // Sort and Project take the field of a header or of a cell alike (only in Find: Aggregate has neither).
-  if (!aggregate) showOptionZones(p.key);
+  showOptionZones(p);
   document.body.classList.add('dragging');
 }
 
@@ -1400,27 +1398,17 @@ function dropzone(label: string, title: string, key: string, drop: () => void): 
 }
 
 /** A column or a cell dropped on Sort sorts by its field, on Project includes or excludes it; a field already there can be removed. */
-function showOptionZones(key: string): void {
-  const sortZones: [string, string, 1 | -1 | null][] = [
-    ['▲ ascending', `${key}: 1 (after the fields already in the sort)`, 1],
-    ['▼ descending', `${key}: -1 (after the fields already in the sort)`, -1],
-  ];
-  if (key in currentSort()) sortZones.push(['✕ remove', `Remove ${key} from the sort`, null]);
+function showOptionZones(p: DragPayload): void {
+  const key = p.key;
   sortDrop.replaceChildren(
-    ...sortZones.map(([label, title, dir]) =>
-      dropzone(label, title, key, () => setOption(sortInput, el('sortWrap'), (text) => mergeSort(text, key, dir))),
+    ...sortZones(p, state.mode, currentSort()).map((z) =>
+      dropzone(z.label, z.title, key, () => setOption(sortInput, el('sortWrap'), (text) => mergeSort(text, key, z.value))),
     ),
   );
-
-  const projectionZones: [string, string, 1 | 0 | null][] = [
-    ['include', `${key}: 1 (only the included fields are shown, and _id)`, 1],
-    ['exclude', `${key}: 0 (every field but the excluded ones is shown)`, 0],
-  ];
-  if (key in currentProjection()) projectionZones.push(['✕ remove', `Remove ${key} from the projection`, null]);
   projectionDrop.replaceChildren(
-    ...projectionZones.map(([label, title, value]) =>
-      dropzone(label, title, key, () =>
-        setOption(projectionInput, el('projectionWrap'), (text) => mergeProjection(text, key, value)),
+    ...projectionZones(p, state.mode, currentProjection()).map((z) =>
+      dropzone(z.label, z.title, key, () =>
+        setOption(projectionInput, el('projectionWrap'), (text) => mergeProjection(text, key, z.value)),
       ),
     ),
   );

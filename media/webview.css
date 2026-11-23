@@ -369,9 +369,18 @@ body.dragging .dropzones {
   display: flex;
 }
 
-/* Sort and Project get no zones while a cell is dragged. */
+/* A box with no zones (Sort and Project in Aggregate) keeps showing its field. */
 body.dragging .dropzones:empty {
   display: none;
+}
+
+/* In the narrow query pane the filter's zones go two by two, over the taller filter box, so their labels fit. */
+body.query-side #dropzones {
+  flex-wrap: wrap;
+}
+
+body.query-side #dropzones .dropzone {
+  flex-basis: calc(50% - 2px);
 }
 
 .dropzone {

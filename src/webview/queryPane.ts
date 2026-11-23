@@ -1,10 +1,8 @@
 // The place of the query in a collection's tab: above the results, or in a resizable pane beside them.
 // The toggle button and the splitter change it; the choice is the user's for every collection, so it
-// is saved by the host and arrives from other tabs too.
-import { QUERY_PANE_WIDTH, QueryPane, clampPaneWidth } from '../shared/queryPane';
-
-/** Below this width left for the results, the query goes back above them whatever the choice. */
-const MIN_RESULTS_WIDTH = 360;
+// is saved by the host and arrives from other tabs too. What the choice gives is decided in
+// src/shared/queryPane.ts; this module only wires it to the DOM.
+import { QUERY_PANE_WIDTH, QueryPane, draggedWidth, keyedWidth, paneLayout } from '../shared/queryPane';
 
 export class QueryPaneUi {
   private pane: QueryPane = { side: false, width: QUERY_PANE_WIDTH.default };
@@ -19,11 +17,10 @@ export class QueryPaneUi {
     this.dragging();
     splitter.addEventListener('dblclick', () => this.change({ ...this.pane, width: QUERY_PANE_WIDTH.default }));
     splitter.addEventListener('keydown', (e) => {
-      const step = e.shiftKey ? 60 : 20;
-      if (e.key === 'ArrowLeft') this.change({ ...this.pane, width: clampPaneWidth(this.pane.width - step) });
-      else if (e.key === 'ArrowRight') this.change({ ...this.pane, width: clampPaneWidth(this.pane.width + step) });
-      else return;
+      const width = keyedWidth(this.pane.width, e.key, e.shiftKey);
+      if (width === null) return;
       e.preventDefault();
+      this.change({ ...this.pane, width });
     });
   }
 
@@ -39,22 +36,14 @@ export class QueryPaneUi {
   }
 
   private paint(): void {
-    const width = clampPaneWidth(this.pane.width);
-    const fits = window.innerWidth - width >= MIN_RESULTS_WIDTH;
-    const side = this.pane.side && fits;
-    document.body.classList.toggle('query-side', side);
-    document.body.style.setProperty('--query-pane-width', `${width}px`);
+    const layout = paneLayout(this.pane, window.innerWidth);
+    document.body.classList.toggle('query-side', layout.side);
+    document.body.style.setProperty('--query-pane-width', `${layout.width}px`);
     this.toggle.setAttribute('aria-pressed', String(this.pane.side));
     this.toggle.classList.toggle('active', this.pane.side);
-    const title =
-      this.pane.side && !fits
-        ? 'Query beside the results: the tab is too narrow, so it is above them for now'
-        : this.pane.side
-          ? 'Query above the results'
-          : 'Query beside the results';
-    this.toggle.title = title;
-    this.toggle.setAttribute('aria-label', title);
-    this.splitter.setAttribute('aria-valuenow', String(width));
+    this.toggle.title = layout.title;
+    this.toggle.setAttribute('aria-label', layout.title);
+    this.splitter.setAttribute('aria-valuenow', String(layout.width));
     this.splitter.setAttribute('aria-valuemin', String(QUERY_PANE_WIDTH.min));
     this.splitter.setAttribute('aria-valuemax', String(QUERY_PANE_WIDTH.max));
   }
@@ -69,8 +58,7 @@ export class QueryPaneUi {
       this.splitter.setPointerCapture(e.pointerId);
       document.body.classList.add('pane-resizing');
       const move = (ev: PointerEvent) => {
-        const max = Math.max(QUERY_PANE_WIDTH.min, window.innerWidth - MIN_RESULTS_WIDTH);
-        this.pane = { ...this.pane, width: Math.min(max, clampPaneWidth(startWidth + ev.clientX - startX)) };
+        this.pane = { ...this.pane, width: draggedWidth(startWidth, ev.clientX - startX, window.innerWidth) };
         this.paint();
       };
       const up = () => {
