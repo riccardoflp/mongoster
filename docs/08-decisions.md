@@ -121,6 +121,19 @@ the tabs' content and the desktop app's line above the tabs, which Mongoster dra
 name or the hex, so the old six names keep their meaning. *Accepted in revision 2 of
 [proposal 0001](proposals/0001-collection-colors.md).*
 
+## D18 — Conditional formatting matched in the webview, rules kept for the user
+
+Formatting rules color rows and cells of the collection tab's table. A rule's condition is a filter in mongosh syntax,
+matched in the webview on the page shown by `src/shared/match.ts`, Mongoster's own matcher of the query operators over
+relaxed Extended JSON, with MongoDB's semantics for the operators it supports and a clear refusal for the others
+(`$expr`, `$where`, `$text`, geospatial, bitwise). The first matching rule wins, a cell rule over a row rule; the
+colors are the six of connections, taken from the theme. The rules are kept for the user in `globalState`, per
+collection, and follow a rename. Rejected: matching on the server (a query per rule and page, nothing for a
+pipeline's output), a matcher library (`sift`, `mingo`: a dependency that knows plain values, not relaxed Extended
+JSON), any CSS color (unreadable in one of the themes), rules in the project's `.mongoster/` (a shared file format,
+left to a later proposal). The cost: a matcher that must keep MongoDB's semantics, and is for display only.
+*Decided 2026-11-23, [proposal 0002](proposals/0002-conditional-formatting.md).*
+
 ## Open questions
 
 - **Q1** — Adopt the target of [04-feature-contract.md](04-feature-contract.md#the-target-for-new-code-and-code-that-is-changed-anyway)

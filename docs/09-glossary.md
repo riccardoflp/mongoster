@@ -56,6 +56,8 @@ these words; `catalog.py` reports the words of the **Avoid** column anywhere in 
 | Update many dialog | The modal of `Update many` and `Delete many`. | — | — | `BulkDialog` |
 | selection | The rows chosen with Ctrl or Shift and a click, kept by `_id`. | the text selected in an input | — | `Selection` |
 | column action | `Rename field…`, `Remove field…`, `Convert type…` on a column header. | the column's layout | — | `src/fieldActions.ts` |
+| conditional formatting | Coloring the rows and cells of the table by conditions on their documents, with formatting rules. | the syntax colors of values; a connection's color | — | `TableFormat` |
+| formatting rule | A condition (a filter), a color and what it colors: the row or the cell of one field. Kept per collection, in order; the first that matches wins. | a filter of the query bar; a validation rule | format rule | `FormatRule` |
 | query shape | A query with its literal values replaced by `?`, used to group slow operations. | a query | — | `src/shared/profile.ts` |
 
 ## Writes and their history

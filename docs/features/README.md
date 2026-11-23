@@ -9,6 +9,7 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | --- | --- | --- |
 | [01-connections.md](01-connections.md) | Connections | 27 |
 | [02-tree.md](02-tree.md) | The connections view | 3 |
+| [03-collection-tab.md](03-collection-tab.md) | The collection tab | 3 |
 | [04-documents.md](04-documents.md) | Writing documents | 15 |
 | [05-field-actions.md](05-field-actions.md) | Actions on a column | 10 |
 | [06-databases.md](06-databases.md) | Databases and collections | 9 |
@@ -62,6 +63,14 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | [`tree.set-collection-color`](02-tree.md#treeset-collection-color--set-the-color-of-a-collection-a-view-or-a-bucket) | Set the color of a collection, a view or a bucket | Operation | Built |
 | [`tree.color-of-collection`](02-tree.md#treecolor-of-collection--which-color-something-of-a-collection-takes) | Which color something of a collection takes | Derivation | Built |
 | [`tree.collection-color-follows`](02-tree.md#treecollection-color-follows--a-collections-color-follows-a-rename-and-goes-with-a-drop) | A collection's color follows a rename and goes with a drop | Operation | Built |
+
+## The collection tab
+
+| Feature | Title | Kind | Status |
+| --- | --- | --- | --- |
+| [`query.format-rules`](03-collection-tab.md#queryformat-rules--add-edit-reorder-and-turn-off-formatting-rules) | Add, edit, reorder and turn off formatting rules | Operation | Built |
+| [`query.format-table`](03-collection-tab.md#queryformat-table--color-the-table-by-the-formatting-rules) | Color the table by the formatting rules | View | Built |
+| [`query.match`](03-collection-tab.md#querymatch--match-a-document-against-a-filter) | Match a document against a filter | Derivation | Built |
 
 ## Writing documents
 

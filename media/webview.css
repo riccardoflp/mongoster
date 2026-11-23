@@ -2291,6 +2291,38 @@ body.resizing * {
   box-shadow: inset -3px 0 0 var(--accent);
 }
 
+/* ---------- conditional formatting ---------- */
+
+/* The six colors of connections, mixed into the background so that the text keeps the theme's foreground. */
+[data-fmt='red'] { --fmt-solid: var(--vscode-charts-red, #f14c4c); --fmt: color-mix(in srgb, var(--fmt-solid) 25%, transparent); }
+[data-fmt='orange'] { --fmt-solid: var(--vscode-charts-orange, #d18616); --fmt: color-mix(in srgb, var(--fmt-solid) 25%, transparent); }
+[data-fmt='yellow'] { --fmt-solid: var(--vscode-charts-yellow, #cca700); --fmt: color-mix(in srgb, var(--fmt-solid) 25%, transparent); }
+[data-fmt='green'] { --fmt-solid: var(--vscode-charts-green, #89d185); --fmt: color-mix(in srgb, var(--fmt-solid) 25%, transparent); }
+[data-fmt='blue'] { --fmt-solid: var(--vscode-charts-blue, #3794ff); --fmt: color-mix(in srgb, var(--fmt-solid) 25%, transparent); }
+[data-fmt='purple'] { --fmt-solid: var(--vscode-charts-purple, #b180d7); --fmt: color-mix(in srgb, var(--fmt-solid) 25%, transparent); }
+
+/* A row rule colors the cells of its document (tbody), a cell rule its cell (td), which sets its own --fmt. Kept
+   below the hover and the selection in specificity, so that those still show. */
+.grid :where([data-fmt] td, td[data-fmt]):not(.rownum) {
+  background: var(--fmt);
+}
+
+/* Hovering a row shows over the color instead of hiding it; the selected cell keeps its own background. */
+.grid tbody:hover td:where([data-fmt] td, [data-fmt]):not(.rownum, .selected) {
+  background: linear-gradient(var(--vscode-list-hoverBackground, transparent), var(--vscode-list-hoverBackground, transparent)), var(--fmt);
+}
+
+/* A missing field keeps its hatching over the color. */
+.grid td.missing:where([data-fmt], [data-fmt] td) {
+  background: repeating-linear-gradient(-45deg, transparent 0 4px, rgba(128, 128, 128, 0.07) 4px 8px), var(--fmt);
+}
+
+/* Pinned cells must stay opaque while scrolling sideways. */
+.grid [data-fmt] td.pinned,
+.grid td.pinned[data-fmt] {
+  background: linear-gradient(var(--fmt), var(--fmt)), var(--vscode-editor-background);
+}
+
 .grid td.pinned {
   position: sticky;
   z-index: 1;
@@ -2719,4 +2751,126 @@ body[data-color] .ns-conn {
   .builder-row {
     flex-wrap: wrap;
   }
+}
+
+/* ---------- conditional formatting: the panel and the rule dialog ---------- */
+
+.formatting-panel {
+  width: 420px;
+}
+
+.formatting-row .formatting-target {
+  flex: none;
+  max-width: 30%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.formatting-row .formatting-condition {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.formatting-row.invalid .formatting-condition {
+  text-decoration: underline wavy var(--vscode-editorError-foreground, #f14c4c);
+}
+
+.formatting-warning {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.formatting-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.formatting-hint {
+  flex: 1;
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.fmt-swatch {
+  flex: none;
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--fmt-solid);
+  background: linear-gradient(var(--fmt), var(--fmt)), var(--vscode-editor-background);
+}
+
+.format-box {
+  width: min(560px, 96vw);
+}
+
+.format-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px 0;
+}
+
+.format-target {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+
+.format-target input[type='text'],
+.format-target #formatField {
+  flex: 1;
+  min-width: 140px;
+  font-family: var(--mono);
+}
+
+.format-target #formatField.dim {
+  opacity: 0.6;
+}
+
+.format-body textarea {
+  font-family: var(--mono);
+  resize: vertical;
+}
+
+.format-colors-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.format-colors {
+  display: flex;
+  gap: 6px;
+}
+
+.fmt-choice {
+  padding: 3px;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background: none;
+}
+
+.fmt-choice .fmt-swatch {
+  width: 20px;
+  height: 20px;
+}
+
+.fmt-choice[aria-checked='true'] {
+  border-color: var(--vscode-focusBorder, var(--accent));
+}
+
+/* A hovered pinned cell: the hover over the color, both over an opaque background (after the pinned hover rule). */
+.grid tbody:hover td.pinned:where([data-fmt] td, [data-fmt]) {
+  background: linear-gradient(var(--vscode-list-hoverBackground, transparent), var(--vscode-list-hoverBackground, transparent)), linear-gradient(var(--fmt), var(--fmt)),
+    var(--vscode-editor-background);
 }

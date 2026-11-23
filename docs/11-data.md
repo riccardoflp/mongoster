@@ -29,12 +29,13 @@ being asked for passwords.
 | `mongoster.saved.<connection>/<database>/<collection>` | The queries saved *for me* | **No** |
 | `mongoster.layout.<connection>/<database>/<collection>` | The columns' layout: hidden, order, widths, pinned | Yes |
 | `mongoster.expanded.<connection>/<database>/<collection>` | The expanded nested columns | Yes |
+| `mongoster.formatting.<connection>/<database>/<collection>` | The formatting rules, in their order: an array of `{ id, condition, field?, color, enabled? }` (`FormatRule`), read by `readFormatRules`, which drops the entries it can't use | **No**: the user wrote them |
 | `mongoster.playgroundTargets` | The connection and database of each playground file | Yes |
 | `mongoster.backupFolder` | The last folder used for a backup | Yes |
 | `mongoster.savedQueries.lastPlace` | *For me* or *In the project*, offered first | Yes |
 | `mongoster.savedQueries.projectFolder` | The desktop app's project folder for saved queries | No |
 
-The four keys of a collection follow its rename (`moveCollectionState` in `src/collectionPanel.ts`). They are not
+The five keys of a collection follow its rename (`moveCollectionState` in `src/collectionPanel.ts`). They are not
 deleted when the collection or its database is dropped, nor when the connection is removed: they stay in
 `globalState`, and come back if a collection of the same name is created again (RS4).
 

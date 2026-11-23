@@ -10,6 +10,7 @@ import type { ColumnLayout } from './columns';
 import type { PipelineStage } from './pipeline';
 import type { ExplainSummary } from './explain';
 import type { CollectionReferences } from './references';
+import type { FormatRule } from './formatting';
 
 export interface QueryRequest {
   type: 'query';
@@ -153,6 +154,8 @@ export type WebviewMessage =
   | { type: 'insertInEditor'; text: string }
   | { type: 'saveExpanded'; expanded: string[] }
   | { type: 'saveLayout'; layout: ColumnLayout }
+  /** Stores the collection's formatting rules, in their order (`query.format-rules`). */
+  | { type: 'saveFormatRules'; rules: FormatRule[] }
   /** Saves a query with a name; `place` skips the question of where (For me / In the project). */
   | { type: 'saveQuery'; query: QueryText; place?: SavedQuerySource }
   | { type: 'removeQuery'; id: string }
@@ -212,6 +215,8 @@ export type HostMessage =
       color?: string;
       expanded: string[];
       layout: ColumnLayout;
+      /** The collection's formatting rules, in their order. */
+      formatRules: FormatRule[];
     }
   /** Shows a tab of the panel, e.g. Indexes when opened from the tree. */
   | { type: 'showMode'; mode: 'indexes' }
