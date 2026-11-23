@@ -1,6 +1,6 @@
 # The catalog of features
 
-Every feature, one card each, 145 in all. The template and the rules of the cards are in the
+Every feature, one card each, 148 in all. The template and the rules of the cards are in the
 feature contract. This index is written by `catalog.py --index`: change a status here in the commit that
 earns it, and run the script again after adding or renaming a card; the statuses are kept. A card with a
 **Differs** line is *Differs*; when the line goes, it becomes *Documented*.
@@ -8,6 +8,7 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | File | Area | Cards |
 | --- | --- | --- |
 | [01-connections.md](01-connections.md) | Connections | 27 |
+| [02-tree.md](02-tree.md) | The connections view | 3 |
 | [04-documents.md](04-documents.md) | Writing documents | 15 |
 | [05-field-actions.md](05-field-actions.md) | Actions on a column | 10 |
 | [06-databases.md](06-databases.md) | Databases and collections | 9 |
@@ -53,6 +54,14 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | [`connection.tls-in-uri`](01-connections.md#connectiontls-in-uri--tls-settings-in-and-out-of-a-connection-string) | TLS settings in and out of a connection string | Derivation | Documented |
 | [`connection.color-from-compass`](01-connections.md#connectioncolor-from-compass--the-closest-color-of-a-compass-connection) | The closest color of a Compass connection | Derivation | Documented |
 | [`connection.ssh-tunnel-target`](01-connections.md#connectionssh-tunnel-target--where-the-ssh-tunnel-leads) | Where the SSH tunnel leads | Derivation | Documented |
+
+## The connections view
+
+| Feature | Title | Kind | Status |
+| --- | --- | --- | --- |
+| [`tree.set-collection-color`](02-tree.md#treeset-collection-color--set-the-color-of-a-collection-a-view-or-a-bucket) | Set the color of a collection, a view or a bucket | Operation | Built |
+| [`tree.color-of-collection`](02-tree.md#treecolor-of-collection--which-color-something-of-a-collection-takes) | Which color something of a collection takes | Derivation | Built |
+| [`tree.collection-color-follows`](02-tree.md#treecollection-color-follows--a-collections-color-follows-a-rename-and-goes-with-a-drop) | A collection's color follows a rename and goes with a drop | Operation | Built |
 
 ## Writing documents
 

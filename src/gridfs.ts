@@ -12,6 +12,7 @@ import { paintTab } from './connectionColors';
 import type { DocumentFileSystem } from './documentFs';
 import type { GridFSHostMessage, GridFSViewMessage, GridFile, GridSort } from './shared/messages';
 import { hexDump } from './shared/gridfs';
+import { bucketCollection, colorOf } from './shared/collectionColors';
 import { relaxEjson, toShell } from './shared/query';
 import { toBson } from './queries';
 import { errorMessage } from './tree';
@@ -245,7 +246,7 @@ export class GridFSPanel {
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')],
     });
-    paintTab(this.panel, context.extensionUri, this.info()?.color);
+    paintTab(this.panel, context.extensionUri, this.color());
     this.panel.webview.html = this.html();
     this.panel.onDidDispose(() => GridFSPanel.panels.delete(targetKey(target)));
     this.panel.webview.onDidReceiveMessage((m: GridFSViewMessage) => void this.receive(m));
@@ -259,6 +260,11 @@ export class GridFSPanel {
     return this.connections.get(this.target.connectionId);
   }
 
+  /** The bucket's own color (that of its `.files` collection), or the connection's. */
+  private color() {
+    return colorOf(this.info(), this.target.database, bucketCollection(this.target.bucket));
+  }
+
   private where(): string {
     return `${this.info()?.name ?? '?'} › ${this.target.database} › ${this.target.bucket}`;
   }
@@ -269,8 +275,8 @@ export class GridFSPanel {
 
   private postInit(): void {
     const info = this.info();
-    paintTab(this.panel, this.context.extensionUri, info?.color);
-    this.post({ type: 'init', connectionName: info?.name ?? '?', readOnly: !!info?.readOnly, color: info?.color, database: this.target.database, bucket: this.target.bucket });
+    paintTab(this.panel, this.context.extensionUri, this.color());
+    this.post({ type: 'init', connectionName: info?.name ?? '?', readOnly: !!info?.readOnly, color: this.color(), database: this.target.database, bucket: this.target.bucket });
   }
 
   private async db() {

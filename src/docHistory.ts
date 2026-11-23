@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { BSON, Document } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
 import { paintTab } from './connectionColors';
+import { colorOf } from './shared/collectionColors';
 import type { CollectionRef, DocumentFileSystem } from './documentFs';
 import { CollectionPanel } from './collectionPanel';
 import { UndoHistory } from './history';
@@ -85,7 +86,7 @@ export class DocumentHistoryPanel {
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')],
     });
-    paintTab(this.panel, context.extensionUri, connections.get(ref.connectionId)?.color);
+    paintTab(this.panel, context.extensionUri, this.color());
     this.panel.webview.html = this.html();
     this.panel.webview.onDidReceiveMessage((m: DocHistoryViewMessage) => void this.receive(m));
   }
@@ -94,11 +95,16 @@ export class DocumentHistoryPanel {
     void this.panel.webview.postMessage(m);
   }
 
+  /** The collection's own color, or the connection's. */
+  private color() {
+    return colorOf(this.connections.get(this.ref.connectionId), this.ref.database, this.ref.collection);
+  }
+
   private info(): DocHistoryInfo {
     const c = this.connections.get(this.ref.connectionId);
     return {
       connectionName: c?.name ?? '?',
-      color: c?.color,
+      color: this.color(),
       database: this.ref.database,
       collection: this.ref.collection,
       id: idText(this.id),
@@ -107,7 +113,7 @@ export class DocumentHistoryPanel {
   }
 
   private postInit(): void {
-    paintTab(this.panel, this.context.extensionUri, this.connections.get(this.ref.connectionId)?.color);
+    paintTab(this.panel, this.context.extensionUri, this.color());
     this.post({ type: 'init', info: this.info() });
   }
 

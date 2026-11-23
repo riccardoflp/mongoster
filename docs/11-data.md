@@ -23,7 +23,7 @@ being asked for passwords.
 
 | Key | Holds | May be lost? |
 | --- | --- | --- |
-| `mongoster.connections` | The list of connections: id, name, folder, color, read-only, no undo history, SSH label, TLS flag, redis-oplog settings without the URL (`ConnectionInfo`) | **No**: the user's connections |
+| `mongoster.connections` | The list of connections: id, name, folder, color, the colors of collections (`collectionColors`: `database.collection` → a color or `none`, optional, added after 0.8.0, D16), read-only, no undo history, SSH label, TLS flag, redis-oplog settings without the URL (`ConnectionInfo`) | **No**: the user's connections |
 | `mongoster.knownHosts` | The SSH host keys the user confirmed | No: losing it asks again, which is safe but surprising |
 | `mongoster.history.<connection>/<database>/<collection>` | The last 50 queries run on a collection | Yes |
 | `mongoster.saved.<connection>/<database>/<collection>` | The queries saved *for me* | **No** |
@@ -37,6 +37,12 @@ being asked for passwords.
 The four keys of a collection follow its rename (`moveCollectionState` in `src/collectionPanel.ts`). They are not
 deleted when the collection or its database is dropped, nor when the connection is removed: they stay in
 `globalState`, and come back if a collection of the same name is created again (RS4).
+
+A collection's color, in its connection's entry of `mongoster.connections`, follows a rename from Mongoster and is
+removed when Mongoster drops the collection, its bucket or its database, and with the connection. A rename or drop
+done elsewhere leaves it (`tree.collection-color-follows`). An entry written by 0.8.0 or earlier has no `collectionColors`
+and reads as no collection having a color of its own; an older version keeps the field when it rewrites the entry,
+because `ConnectionManager.update` spreads the stored one.
 
 ### Files of Mongoster's own
 
@@ -55,7 +61,7 @@ deleted when the collection or its database is dropped, nor when the connection 
 | `.mongoster/queries/<database>/<collection>/<name>.json` (or `mongoster.savedQueries.folder`) | JSON: `name`, `description`, `database`, `collection`, optional `connection`, `filter` / `sort` / `projection` or `pipeline` in mongosh syntax, text on several lines as an array of lines | Shared through git by teams: other versions of Mongoster read and write the same files; invalid ones are skipped with a warning and `Open File` (D15) |
 | Backups: `.agz`, `.archive`, folders of `.bson` and `.metadata.json` (gzipped or not) | mongodump's formats | Readable by `mongorestore` and from `mongodump` ([D10](08-decisions.md#d10--backups-in-mongodumps-formats-written-by-mongoster)) |
 | Exports: JSON, JSON Lines (canonical Extended JSON), CSV with a UTF-8 BOM | as `mongoexport` writes them, for JSON Lines | Importable again by Mongoster and `mongoimport` |
-| Connection files: Mongoster's JSON, Compass's JSON, lists of connection strings | `src/shared/connectionsFile.ts` | Compass reads Mongoster's Compass export, passwords included when encrypted with a passphrase |
+| Connection files: Mongoster's JSON, Compass's JSON, lists of connection strings | `src/shared/connectionsFile.ts` | Compass reads Mongoster's Compass export, passwords included when encrypted with a passphrase. Mongoster's JSON may have `collectionColors` per connection (added after 0.8.0); a file without it reads as before, and an older Mongoster ignores it |
 
 ### The desktop app
 

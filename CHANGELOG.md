@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The color of a collection**: right-click a collection, a view or a GridFS bucket → `Set Color…` gives it its own color (red, orange, yellow, green, blue, purple), `None` to show it plain in a colored connection, or `Connection's Color` to follow the connection again. Its own color takes the place of the connection's on its icon in the tree, the icon and stripe of its tab (collection, GridFS, document history), the names of its documents' and definitions' editor tabs and, in the desktop app, the line above its tabs. The color follows a collection renamed from Mongoster and goes away when it is dropped; `Export Connections…` in Mongoster's format carries the colors of collections and `Import Connections…` brings them back.
 - `Import Connections…` now names each connection of a list of connection strings after the `// name` comment on the line above it, when the line has no name of its own; such connections were named after their hosts.
 
 ## 0.8.0

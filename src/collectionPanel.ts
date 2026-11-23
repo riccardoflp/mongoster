@@ -4,6 +4,7 @@ import { ThemeColors } from './themeColors';
 import { BSON, Collection, Document } from 'mongodb';
 import { ConnectionColor, ConnectionInfo, ConnectionManager } from './connections';
 import { paintTab } from './connectionColors';
+import { colorOf } from './shared/collectionColors';
 import { byId, CollectionRef, DocumentFileSystem, relaxed, restoreTypes } from './documentFs';
 import { errorMessage } from './tree';
 import { QueryHistory } from './queryHistory';
@@ -43,7 +44,6 @@ export interface CollectionTarget extends CollectionRef {
   view: boolean;
   /** The connection is read-only: no writes of any kind (indexes, $out, …). */
   locked: boolean;
-  color?: ConnectionColor;
 }
 
 /** Why `target` can't be modified. */
@@ -110,7 +110,6 @@ export class CollectionPanel {
     for (const p of CollectionPanel.panels.values()) {
       if (p.target.connectionId !== info.id) continue;
       p.target.connectionName = info.name;
-      p.target.color = info.color;
       p.target.locked = !!info.readOnly;
       p.target.readOnly = p.target.view || p.target.locked;
       p.postInit();
@@ -159,7 +158,7 @@ export class CollectionPanel {
       vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: roots },
     );
-    paintTab(this.panel, context.extensionUri, target.color, 'collection.svg');
+    paintTab(this.panel, context.extensionUri, this.color(), 'collection.svg');
     this.panel.webview.html = this.html();
     this.panel.webview.onDidReceiveMessage((m: WebviewMessage) => this.onMessage(m));
     ThemeColors.attach(this.panel);
@@ -175,9 +174,14 @@ export class CollectionPanel {
     });
   }
 
+  /** The collection's own color, or its connection's (D16). */
+  private color(): ConnectionColor | undefined {
+    return colorOf(this.connections.get(this.target.connectionId), this.target.database, this.target.collection);
+  }
+
   private postInit(): void {
     const t = this.target;
-    paintTab(this.panel, this.context.extensionUri, t.color, 'collection.svg');
+    paintTab(this.panel, this.context.extensionUri, this.color(), 'collection.svg');
     this.post({
       type: 'init',
       connectionName: t.connectionName,
@@ -186,7 +190,7 @@ export class CollectionPanel {
       readOnly: t.readOnly,
       view: t.view,
       locked: t.locked,
-      color: t.color,
+      color: this.color(),
       expanded: this.context.globalState.get<string[]>(expandedStateKey(t), []),
       layout: this.context.globalState.get<ColumnLayout>(layoutStateKey(t), {}),
     });

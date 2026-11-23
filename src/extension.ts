@@ -32,6 +32,7 @@ import { ProjectQueries } from './projectQueries';
 import { mergeSavedQueries } from './shared/savedQueries';
 import { exportConnections, importConnections } from './connectionsTransfer';
 import { ConnectionDecorations } from './connectionColors';
+import { COLOR_EMOJI, CollectionColors, bucketCollection, collectionColorChoices, dropCollectionColors, namespaceOf, ownColorOf, renameCollectionColor, setCollectionColor } from './shared/collectionColors';
 import { Scheduler } from './scheduler';
 import { ScheduledTasksPanel } from './scheduledTasks';
 import type { QueryText } from './shared/messages';
@@ -61,7 +62,6 @@ export function activate(context: vscode.ExtensionContext): void {
     readOnly: node.isView || !!node.connection.readOnly,
     view: node.isView,
     locked: !!node.connection.readOnly,
-    color: node.connection.color,
   });
   /** Saves the connection form: options first (they reconnect), then name and connection string. */
   const saveConnection: SaveConnection = async (id, name, uri, options, redis) => {
@@ -85,6 +85,14 @@ export function activate(context: vscode.ExtensionContext): void {
       GridFSPanel.connectionChanged(info);
       DocumentHistoryPanel.connectionChanged(info);
     }
+  };
+
+  /** Changes the colors of a connection's collections (D16); `change` returns the same map when nothing changes. */
+  const changeCollectionColors = async (connectionId: string, change: (colors: CollectionColors | undefined) => CollectionColors | undefined) => {
+    const info = connections.get(connectionId);
+    if (!info) return;
+    const colors = change(info.collectionColors);
+    if (colors !== info.collectionColors) await updateConnection(connectionId, { collectionColors: colors });
   };
 
   const workspace: WorkspaceHost = {
@@ -198,6 +206,18 @@ export function activate(context: vscode.ExtensionContext): void {
         placeHolder: 'Shown on the tree icon and as a stripe on its collection tabs, e.g. red for production',
       });
       if (pick) await updateConnection(node.info.id, { color: pick.color });
+    }),
+
+    vscode.commands.registerCommand('mongoster.setCollectionColor', async (node?: CollectionNode | BucketNode) => {
+      if (!(node instanceof CollectionNode || node instanceof BucketNode)) return;
+      const info = connections.get(node.connection.id);
+      if (!info) return;
+      const [name, collection] = node instanceof BucketNode ? [node.bucket, bucketCollection(node.bucket)] : [node.collection, node.collection];
+      const pick = await vscode.window.showQuickPick(collectionColorChoices(info.color, ownColorOf(info, node.database, collection)), {
+        title: `Color of ${name}`,
+        placeHolder: `Shown on its tree icon, its tab and its documents' tabs, instead of the color of ${info.name}`,
+      });
+      if (pick) await changeCollectionColors(info.id, (colors) => setCollectionColor(colors, namespaceOf(node.database, collection), pick.color));
     }),
 
     vscode.commands.registerCommand('mongoster.setReadOnly', (node?: ConnectionNode) =>
@@ -449,7 +469,6 @@ export function activate(context: vscode.ExtensionContext): void {
         readOnly: false,
         view: false,
         locked: false,
-        color: node.info.color,
       });
     }),
 
@@ -466,6 +485,9 @@ export function activate(context: vscode.ExtensionContext): void {
       const from = collectionTarget(node);
       const to = { ...from, collection: name };
       await moveCollectionState(context.globalState, from, to);
+      await changeCollectionColors(node.connection.id, (colors) =>
+        renameCollectionColor(colors, namespaceOf(node.database, node.collection), namespaceOf(node.database, name)),
+      );
       RelationsCache.invalidate(node.connection.id, node.database);
       // The open panel belongs to the old name: reopen it under the new one.
       if (CollectionPanel.close((t) => sameCollection(t, from)).length) {
@@ -495,7 +517,6 @@ export function activate(context: vscode.ExtensionContext): void {
           readOnly: !!info.readOnly,
           view: false,
           locked: !!info.readOnly,
-          color: info.color,
         });
       });
       return copier.start({ connection: node.connection, database: node.database, collection: node.collection, isView: node.isView });
@@ -504,6 +525,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mongoster.dropCollection', async (node?: CollectionNode) => {
       if (!node) return;
       if (!(await manager.dropCollection(node.connection, node.database, node.collection, node.isView))) return;
+      await changeCollectionColors(node.connection.id, (colors) => dropCollectionColors(colors, node.database, node.collection));
       RelationsCache.invalidate(node.connection.id, node.database);
       CollectionPanel.close((t) => sameCollection(t, collectionTarget(node)));
       tree.refresh();
@@ -512,6 +534,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mongoster.dropDatabase', async (node?: DatabaseNode) => {
       if (!node) return;
       if (!(await manager.dropDatabase(node.connection, node.database))) return;
+      await changeCollectionColors(node.connection.id, (colors) => dropCollectionColors(colors, node.database));
       RelationsCache.invalidate(node.connection.id, node.database);
       CollectionPanel.close((t) => t.connectionId === node.connection.id && t.database === node.database);
       GridFSPanel.close(node.connection.id, node.database);
@@ -558,6 +581,7 @@ export function activate(context: vscode.ExtensionContext): void {
       try {
         if (!(await dropBucket(await connections.getClient(info.id), target, `${info.name} › ${node.database} › ${node.bucket}`))) return;
         GridFSPanel.close(info.id, node.database, node.bucket);
+        await changeCollectionColors(info.id, (colors) => dropCollectionColors(colors, node.database, node.bucket, true));
         tree.refresh();
       } catch (err) {
         void vscode.window.showErrorMessage(errorMessage(err));
@@ -619,7 +643,7 @@ export function activate(context: vscode.ExtensionContext): void {
           if (!info) return;
           // The destination is never a view (they are read-only).
           const locked = !!info.readOnly;
-          CollectionPanel.show(context, connections, documents, { ...ref, connectionName: info.name, readOnly: locked, view: false, locked, color: info.color });
+          CollectionPanel.show(context, connections, documents, { ...ref, connectionName: info.name, readOnly: locked, view: false, locked });
         },
         (ref) => {
           CollectionPanel.refresh(ref);
@@ -637,7 +661,6 @@ function sameCollection(a: CollectionRef, b: CollectionRef): boolean {
   return a.connectionId === b.connectionId && a.database === b.database && a.collection === b.collection;
 }
 
-const COLOR_EMOJI: Record<ConnectionColor, string> = { red: '🔴', orange: '🟠', yellow: '🟡', green: '🟢', blue: '🔵', purple: '🟣' };
 const capitalize = (s: string) => s[0].toUpperCase() + s.slice(1);
 
 async function addConnection(connections: ConnectionManager, folder?: string): Promise<void> {

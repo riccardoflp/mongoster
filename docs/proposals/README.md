@@ -40,4 +40,6 @@ What gets harder, what breaks, the files that need reading in their old form (11
 
 ## The proposals
 
-None yet.
+| Number | Title | Status |
+| --- | --- | --- |
+| [0001](0001-collection-colors.md) | The color of a collection | accepted (D16) |

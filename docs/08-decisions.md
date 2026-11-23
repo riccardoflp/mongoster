@@ -102,6 +102,15 @@ A query saved in the project is a JSON file in `.mongoster/queries/<database>/<c
 several lines is an array of lines, and nothing secret is written, so the team can review it in a diff and share it
 through git. *Reconstructed from 9ba6e0c.*
 
+## D16 — A collection's color is kept on its connection
+
+A collection, a view or a GridFS bucket can have a color of its own (one of the six, or none), which takes the place
+of the connection's for what belongs to that collection alone. The colors are kept in the connection's entry of
+`mongoster.connections`, keyed by `database.collection`, so that Mongoster's export and import carry them, removing the
+connection removes them, and the open tabs hear of a change the way they hear of the connection's color. A rename or
+drop from Mongoster moves or removes the color; one done elsewhere leaves it. *Accepted in
+[proposal 0001](proposals/0001-collection-colors.md).*
+
 ## Open questions
 
 - **Q1** — Adopt the target of [04-feature-contract.md](04-feature-contract.md#the-target-for-new-code-and-code-that-is-changed-anyway)

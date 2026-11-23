@@ -5,6 +5,8 @@ import type { RedisOplogSettings } from './shared/oplog';
 
 export const CONNECTION_COLORS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
 export type ConnectionColor = (typeof CONNECTION_COLORS)[number];
+/** The color of a single collection: one of a connection's, or `none` to show it plain in a colored connection. */
+export type CollectionColor = ConnectionColor | 'none';
 
 export interface ConnectionInfo {
   id: string;
@@ -13,6 +15,8 @@ export interface ConnectionInfo {
   folder?: string;
   /** Marks the connection (tree icon, stripe on its collection tabs), e.g. red for production. */
   color?: ConnectionColor;
+  /** Colors of single collections, views and buckets, keyed by `database.collection`; they win over `color` (D16). */
+  collectionColors?: Record<string, CollectionColor>;
   /** Mongoster refuses every write through this connection. */
   readOnly?: boolean;
   /** Writes through this connection aren't kept in the undo history. */
@@ -74,7 +78,7 @@ export class ConnectionManager implements vscode.Disposable {
     const current = this.get(id);
     if (!current) return undefined;
     const info: ConnectionInfo = { ...current, ...changes };
-    for (const key of ['folder', 'color', 'readOnly', 'noHistory', 'ssh', 'tls', 'redisOplog'] as const) if (!info[key]) delete info[key];
+    for (const key of ['folder', 'color', 'collectionColors', 'readOnly', 'noHistory', 'ssh', 'tls', 'redisOplog'] as const) if (!info[key]) delete info[key];
     if (uri !== undefined && uri !== (await this.uri(id))) {
       await this.context.secrets.store(secretKey(id), uri);
       await this.disconnect(id);

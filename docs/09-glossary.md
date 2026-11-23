@@ -13,7 +13,7 @@ these words; `catalog.py` reports the words of the **Avoid** column anywhere in 
 | connected | A connection with an open client, shown expanded in the tree. | read-only | online | `getClient(id)` |
 | read-only connection | A connection through which Mongoster refuses every write. A safeguard of Mongoster, not a permission of MongoDB. | a MongoDB user with read roles; a view | readonly | `ConnectionInfo.readOnly` |
 | folder | A group of connections in the tree. Removing it keeps its connections. | a folder on disk | — | `ConnectionInfo.folder`, `FolderNode` |
-| color | One of six colors that marks a connection, its tree nodes and its tabs. | the syntax colors of the theme | label color | `ConnectionColor` |
+| color | One of six colors that marks a connection, its tree nodes and its tabs; a collection, view or bucket can have its own, or none, in place of its connection's. | the syntax colors of the theme | label color | `ConnectionColor`, `CollectionColor` |
 | SSH tunnel | The SSH server a connection goes through to reach the first host of its connection string. | TLS | SSH proxy | `SshTunnel`, `SshOptions` |
 | known host | An SSH server key fingerprint the user has confirmed once. | — | trusted host | `KNOWN_HOSTS_KEY` |
 | secret storage | Where secrets are kept: VS Code's `SecretStorage`, or the desktop app's files encrypted with the system's keychain. | `globalState` | — | `context.secrets` |

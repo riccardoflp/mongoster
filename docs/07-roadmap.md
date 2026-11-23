@@ -75,7 +75,7 @@ cards of M3; the MCP tools' output limits (RS15).
 ## M5 — The remaining risks
 
 Every row of [13-risks.md](13-risks.md) still there after M4, each in its own commit with a test that failed before:
-a dropped collection's state left in `globalState` (RS4, unless M2's colors already dealt with it), tabs left open
+a dropped collection's state left in `globalState` (RS4: M2's colors of collections go with a drop, the other keys do not), tabs left open
 or not repainted after a connection is removed or recolored (RS18), the comparison's writes without `Undo` in their
 notification (RS19), a size limit on the files read from outside (RS16), playgrounds in untrusted workspaces once
 [Q8](08-decisions.md#open-questions) is answered (RS17), and the tests still missing by area (RS20).

@@ -1,7 +1,9 @@
 // The color of a connection wherever something of that connection is shown: the icon of its tabs, the
-// names of the tabs of its documents and playgrounds, its node in the tree and the icons below it.
+// names of the tabs of its documents and playgrounds, its node in the tree and the icons below it. A collection's
+// own color (D16) takes its place for the documents and definitions of that collection.
 import * as vscode from 'vscode';
 import type { ConnectionColor, ConnectionManager } from './connections';
+import { colorOf } from './shared/collectionColors';
 
 /** The scheme of the URI a connection's tree node carries, so that its name takes the connection's color. */
 export const CONNECTION_SCHEME = 'mongoster-connection';
@@ -67,7 +69,7 @@ export class ConnectionDecorations implements vscode.FileDecorationProvider, vsc
   }
 
   private signature(): string {
-    return JSON.stringify(this.connections.list().map((c) => [c.id, c.name, c.color]));
+    return JSON.stringify(this.connections.list().map((c) => [c.id, c.name, c.color, c.collectionColors]));
   }
 
   connectionOf(uri: vscode.Uri): string | undefined {
@@ -83,8 +85,18 @@ export class ConnectionDecorations implements vscode.FileDecorationProvider, vsc
   provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
     const id = this.connectionOf(uri);
     const info = id ? this.connections.get(id) : undefined;
-    if (!info?.color) return undefined;
-    return new vscode.FileDecoration(undefined, info.name, themeColorOf(info.color));
+    if (!info) return undefined;
+    const collection = this.collectionOf(uri);
+    const color = collection ? colorOf(info, ...collection) : info.color;
+    if (!color) return undefined;
+    return new vscode.FileDecoration(undefined, info.name, themeColorOf(color));
+  }
+
+  /** The database and collection of a document's or a definition's URI: `/<database>/<collection>/<file>`. */
+  private collectionOf(uri: vscode.Uri): [string, string] | undefined {
+    if (!this.schemes.includes(uri.scheme)) return undefined;
+    const [database, collection] = uri.path.split('/').slice(1, 3).map(decodeURIComponent);
+    return database && collection ? [database, collection] : undefined;
   }
 
   dispose(): void {

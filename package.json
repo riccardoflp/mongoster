@@ -166,6 +166,12 @@
         "icon": "$(symbol-color)"
       },
       {
+        "command": "mongoster.setCollectionColor",
+        "title": "Set Color…",
+        "category": "Mongoster",
+        "icon": "$(symbol-color)"
+      },
+      {
         "command": "mongoster.setReadOnly",
         "title": "Make Read-Only",
         "category": "Mongoster",
@@ -560,6 +566,11 @@
           "group": "4_organize@2"
         },
         {
+          "command": "mongoster.setCollectionColor",
+          "when": "view == mongoster.connections && viewItem =~ /^(collection|view|bucket)/",
+          "group": "4_organize@1"
+        },
+        {
           "command": "mongoster.setReadOnly",
           "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?(\\.nohistory)?$/",
           "group": "4_organize@3"
@@ -806,6 +817,10 @@
         },
         {
           "command": "mongoster.setColor",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.setCollectionColor",
           "when": "false"
         },
         {

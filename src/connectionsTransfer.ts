@@ -30,6 +30,7 @@ function summary(c: PortableConnection): string {
   return [
     c.folder && `folder ${c.folder}`,
     c.color,
+    c.collectionColors && plural(Object.keys(c.collectionColors).length, 'collection color'),
     c.readOnly && 'read-only',
     c.tls && 'TLS',
     c.ssh && `SSH ${c.ssh.username}@${c.ssh.host}`,
@@ -181,13 +182,15 @@ export async function importConnections(connections: ConnectionManager, updateCo
         await connections.setOptions(same.id, options);
         await connections.setRedisOplog(same.id, c.redis);
         // A read-only connection stays read-only: formats without the setting don't take the safeguard away.
-        await updateConnection(same.id, { ...settings, readOnly: c.readOnly || same.readOnly, folder: into }, c.uri);
+        // Colors of collections stay when the file has none: only Mongoster's format can hold them.
+        const collectionColors = c.collectionColors ?? same.collectionColors;
+        await updateConnection(same.id, { ...settings, readOnly: c.readOnly || same.readOnly, folder: into, collectionColors }, c.uri);
         replaced++;
       } else {
         const name = uniqueName(c.name, taken);
         const info = await connections.add(name, c.uri, into, options);
         if (c.redis) await connections.setRedisOplog(info.id, c.redis);
-        if (c.color || c.readOnly || c.noHistory) await connections.update(info.id, settings);
+        if (c.color || c.readOnly || c.noHistory || c.collectionColors) await connections.update(info.id, { ...settings, collectionColors: c.collectionColors });
         taken.add(name);
         added++;
       }
@@ -217,6 +220,7 @@ async function portable(connections: ConnectionManager, info: ConnectionInfo): P
     uri,
     ...(info.folder && { folder: info.folder }),
     ...(info.color && { color: info.color }),
+    ...(info.collectionColors && { collectionColors: info.collectionColors }),
     ...(info.readOnly && { readOnly: true }),
     ...(info.noHistory && { noHistory: true }),
     ...(options?.tls && { tls: options.tls }),

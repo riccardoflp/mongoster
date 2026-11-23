@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ConnectionInfo, ConnectionManager } from './connections';
 import { connectionUri, themeColorOf } from './connectionColors';
 import { bucketNames } from './shared/gridfs';
+import { bucketCollection, colorOf } from './shared/collectionColors';
 
 export class FolderNode extends vscode.TreeItem {
   readonly kind = 'folder';
@@ -46,9 +47,13 @@ export class ConnectionNode extends vscode.TreeItem {
   }
 }
 
-/** The icon of a node below a connection, in the connection's color: the names stay in the usual one. */
-function connectionIcon(id: string, connection: ConnectionInfo): vscode.ThemeIcon {
-  return new vscode.ThemeIcon(id, connection.color ? themeColorOf(connection.color) : undefined);
+/**
+ * The icon of a node below a connection, in the connection's color, or for a collection, view or bucket in its own
+ * color when it has one: the names stay in the usual one.
+ */
+function connectionIcon(id: string, connection: ConnectionInfo, database?: string, collection?: string): vscode.ThemeIcon {
+  const color = database !== undefined && collection !== undefined ? colorOf(connection, database, collection) : connection.color;
+  return new vscode.ThemeIcon(id, color ? themeColorOf(color) : undefined);
 }
 
 export class DatabaseNode extends vscode.TreeItem {
@@ -78,7 +83,7 @@ export class CollectionNode extends vscode.TreeItem {
     super(collection, vscode.TreeItemCollapsibleState.None);
     this.id = `coll:${connection.id}/${database}/${collection}`;
     this.contextValue = `${isView ? 'view' : 'collection'}${connection.readOnly ? '.readonly' : ''}`;
-    this.iconPath = connectionIcon(isView ? 'eye' : 'table', connection);
+    this.iconPath = connectionIcon(isView ? 'eye' : 'table', connection, database, collection);
     this.tooltip = `${database}.${collection}${isView ? ' (view)' : ''}`;
     this.command = {
       command: 'mongoster.openCollection',
@@ -100,7 +105,7 @@ export class BucketNode extends vscode.TreeItem {
     this.id = `bucket:${connection.id}/${database}/${bucket}`;
     this.description = 'GridFS';
     this.contextValue = `bucket${connection.readOnly ? '.readonly' : ''}`;
-    this.iconPath = connectionIcon('files', connection);
+    this.iconPath = connectionIcon('files', connection, database, bucketCollection(bucket));
     this.tooltip = `GridFS bucket ${database}.${bucket} (${bucket}.files and ${bucket}.chunks)`;
     this.command = { command: 'mongoster.openGridFS', title: 'Open GridFS Bucket', arguments: [this] };
   }

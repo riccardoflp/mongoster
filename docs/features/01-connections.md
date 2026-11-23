@@ -366,6 +366,8 @@ Acceptance:
 - [ ] Dismissing the quick pick changes nothing.
 - [ ] The connection's icon and name in the tree take the theme color `charts.<color>`; the icons of its databases,
       collections and buckets take it too, their names do not.
+- [ ] A collection, view or bucket with a color of its own (`tree.set-collection-color`) keeps it: its icon, tabs and
+      editor tabs follow `tree.color-of-collection`, not the connection's color.
 - [ ] The tabs of the connection take the leaf icon `media/connection/<color>-light.svg` / `-dark.svg`; without a
       color they keep `media/mongoster.svg` (or `media/collection.svg` for collection tabs).
 - [ ] The names of the editor tabs of its documents (`mongoster://`), definitions (`mongoster-def://`) and
@@ -625,7 +627,8 @@ the clipboard.
   (only when a chosen connection has a folder), **No Folder**, the existing folders, **New Folder…**.
 - **Reads**: the file or the clipboard; the saved connection strings of the connections with the same names.
 - **Writes**: per connection, as `connection.secrets` says: the connection string, the TLS / SSH options and the Redis
-  URL to the secret storage, the entry with folder, color, `readOnly` and `noHistory` to `mongoster.connections`.
+  URL to the secret storage, the entry with folder, color, the colors of collections, `readOnly` and `noHistory` to
+  `mongoster.connections`.
 - **Danger**: Confirm, when names are taken: **Skip: leave them out. Replace: the existing connections take the
   connection string and the settings of the imported ones. Keep Both: the imported ones are added with a number after
   the name.**
@@ -647,7 +650,7 @@ Acceptance:
 
 - [ ] Each item shows the name, the host and, for a name already used, **✓ already exists**, or **✓ already exists
       (same connection string)** when the saved connection string is the same; the detail lists the folder, the
-      color, **read-only**, **TLS**, **SSH <user>@<host>**, **redis-oplog** and the notes (**no password**, **no SSH
+      color, **<n> collection color(s)**, **read-only**, **TLS**, **SSH <user>@<host>**, **redis-oplog** and the notes (**no password**, **no SSH
       password**, **passwords not imported (encrypted)**, **In-Use Encryption settings not imported**…).
 - [ ] Connections already there with the same name and the same connection string start unchecked; all others start
       checked.
@@ -655,7 +658,8 @@ Acceptance:
       `name (3)`…; dismissing the warning imports nothing.
 - [ ] **Replace** gives the existing connection the imported connection string, TLS / SSH options, redis-oplog
       settings, color and `noHistory`, and the chosen folder; it stays read-only if it was, and becomes read-only if
-      the imported one is. A file without passwords therefore replaces the saved password with none.
+      the imported one is. A file without passwords therefore replaces the saved password with none. The colors of
+      collections are replaced by the file's, and kept when the file has none.
 - [ ] Run on a folder, every imported connection goes to that folder without asking; **Folders from the File** keeps
       each connection's own folder; **New Folder…** asks for a name (**Enter a name** when empty).
 - [ ] An empty passphrase imports without the encrypted passwords; dismissing the passphrase box imports nothing.
@@ -714,7 +718,7 @@ Acceptance:
       count.
 - [ ] The Redis settings are exported only when the Redis URL is saved.
 - [ ] The notes read, as they apply: **folders, read-only and redis-oplog were left out (Compass doesn't have
-      them)**, **Compass can't use the SSH agent: those tunnels have no password or key**, **<n> SSH tunnel(s)
+      them)**, **colors of collections were left out (Compass doesn't have them)**, **Compass can't use the SSH agent: those tunnels have no password or key**, **<n> SSH tunnel(s)
       was/were left out (a connection string can't hold one)**, **folders, colors, read-only and redis-oplog were left
       out**.
 
@@ -734,13 +738,15 @@ Tells the format of the text to import, and reads Mongoster's own export.
   JSON files and invalid JSON'`; `› 'serializeConnections and back' › 'keeps everything in Mongoster’s format, with the
   secrets in clear or encrypted'`, `› 'drops every secret from Mongoster’s format on request, and says what is
   missing'`, `› 'rejects the wrong passphrase on a Mongoster file'`; `› 'connection strings' › 'knows when a user has
-  no password'`.
+  no password'`; `test/unit/collectionColors.test.ts › 'the colors of collections in connection files' › 'are read
+  without the invalid entries, and a file without them reads as before'`, `› 'the color of a collection' › 'reads only
+  valid entries from a file'`.
 
 Rules:
 
 - Input: the text of a file or of the clipboard, and the passphrase when there is one. Output: the format
   (`compass`, `mongoster`, `list`), the connections (`PortableConnection`: name, connection string, folder, color,
-  `readOnly`, `noHistory`, TLS, SSH, Redis URL and settings, notes) and how many entries were skipped.
+  colors of collections, `readOnly`, `noHistory`, TLS, SSH, Redis URL and settings, notes) and how many entries were skipped.
 - A text that does not start with `{` (after a byte order mark and spaces) is a list (`connection.read-list`).
 - JSON whose `type` is `Compass Connections` is Compass's (`connection.read-compass`), `Mongoster Connections`
   Mongoster's; another JSON is refused with **This JSON file is neither a Compass export ("Compass Connections") nor
@@ -752,7 +758,9 @@ Rules:
 - A Mongoster entry without a connection string starting with `mongodb://` or `mongodb+srv://` and a host, or that
   is not an object, is skipped and counted.
 - A Mongoster entry gives: the name (trimmed; the host part of the connection string when empty), the folder
-  (trimmed), the color (`connection.color-from-compass`), `readOnly` and `noHistory` only when `true`; `tls` with
+  (trimmed), the color (`connection.color-from-compass`), `collectionColors` with only the entries whose key has a
+  `.` after a non-empty database name and whose value is one of the six colors or `none` (`readCollectionColors` in
+  `src/shared/collectionColors.ts`, `tree.set-collection-color`), `readOnly` and `noHistory` only when `true`; `tls` with
   `caFile`, `certificateKeyFile`, the key password only with a certificate file, the two `allowInvalid…` only when
   `true`; `ssh` only with a host, `auth` `privateKey` or `agent` or else `password`, port 22 left out, the password
   for password authentication, the key file and passphrase for a key; `redisOplog` only with a `url`, with `prefix`,
@@ -876,7 +884,9 @@ Examples:
   request, and says what is missing'`, `› 'keeps what Compass has in its format: passwords, TLS, SSH and colors'`, `›
   'round-trips every color through Compass’s codes'`, `› 'drops the secrets from Compass’s format on request'`, `›
   'writes a list of connection strings, with TLS in them and the rest left out'`, `› 'refuses to encrypt a list or
-  without a passphrase'`, `› 'notes that Compass cannot use the SSH agent'`.
+  without a passphrase'`, `› 'notes that Compass cannot use the SSH agent'`;
+  `test/unit/collectionColors.test.ts › 'the colors of collections in connection files' › "travel in Mongoster's
+  format"`, `› "are left out of Compass's format and of a list, which say so"`.
 
 Rules:
 
@@ -886,7 +896,7 @@ Rules:
   (**A list of connection strings can't be encrypted**).
 - **Mongoster**: `{ "type": "Mongoster Connections", "version": 1, "secrets": "removed" | "included" | "encrypted",
   "connections": [...] }`, two-space indented; each entry has `name`, `uri`, and when set `folder`, `color`,
-  `readOnly`, `noHistory`, `tls`, `ssh`, `redisOplog` (`url` plus the settings). The secrets taken out are the
+  `collectionColors`, `readOnly`, `noHistory`, `tls`, `ssh`, `redisOplog` (`url` plus the settings). The secrets taken out are the
   password of the connection string, `tls.certificateKeyFilePassword`, `ssh.password`, `ssh.passphrase` and the
   password of the Redis URL; `include` puts them back in place, `encrypt` writes them as one `secrets` string per
   entry (`{"secrets":{ password, tlsCertificateKeyFilePassword, sshPassword, sshPassphrase, redisPassword }}`
@@ -897,11 +907,12 @@ Rules:
   `tlsCertificateKeyFilePassword` are taken out of it, as are the SSH password (`sshTunnelPassword`) and passphrase
   (`sshTunnelPassphrase`); `include` puts them back (the password and the key password in the connection string,
   `password` and `identityKeyPassphrase` in `sshTunnel`), `encrypt` writes `connectionSecrets`, `remove` drops them. An agent tunnel is written without authentication.
-  Folders, read-only, `noHistory` and redis-oplog are left out.
+  Folders, read-only, `noHistory`, redis-oplog and the colors of collections are left out, with a note.
 - **List**: a first line `# Connections exported from Mongoster: name = connection string`, with ` (without
   passwords)` for `remove`, then `<name> = <connection string>` per connection, with new lines and `=` of the name
   turned into spaces; the TLS settings are in the connection string, the key password only with `include`; `remove`
-  takes the password out. SSH tunnels, folders, colors, read-only and redis-oplog are left out.
+  takes the password out. SSH tunnels, folders, colors (of connections and of collections), read-only and redis-oplog
+  are left out.
 
 Examples:
 
