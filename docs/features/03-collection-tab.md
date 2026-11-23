@@ -169,27 +169,30 @@ Acceptance:
 ### `query.pane` — Put the query above or beside the results
 
 The user chooses whether the query (Filter, Builder, Sort, Project, or the stages of the pipeline) sits above the
-table or in a resizable pane at its left; the choice holds for every collection.
+table or in a resizable pane at its right; the choice is a setting and holds for every collection.
 
 - **Kind**: Operation
 - **Function**: `src/webview/queryPane.ts › QueryPaneUi`; stored by `src/collectionPanel.ts ›
   CollectionPanel.onMessage` (`case 'saveQueryPane'`).
-- **Implemented in**: `src/shared/queryPane.ts › readQueryPane`, `clampPaneWidth`, `paneLayout`, `draggedWidth`,
-  `keyedWidth`; `src/queryBarHtml.ts › queryBarHtml` (the markup, with `src/shared/icons.ts › iconSvg`);
-  `src/collectionPanel.ts › QUERY_PANE_KEY`, `postInit`, `html`; `src/webview/main.ts`; `src/shared/messages.ts`
+- **Implemented in**: `src/shared/queryPane.ts › readQueryPane`, `positionOf`, `clampPaneWidth`, `paneLayout`,
+  `draggedWidth`, `keyedWidth`; `src/queryBarHtml.ts › queryBarHtml` (the markup, with `src/shared/icons.ts › iconSvg`);
+  `src/collectionPanel.ts › QUERY_PANE_KEY`, `queryPane`, `postInit`, `html`, the configuration listener; `src/webview/main.ts`; `src/shared/messages.ts`
   (`saveQueryPane`, `queryPane`, `init.queryPane`); `media/webview.css` (`body.query-side`).
-- **Entry points**: the toggle at the right end of the tab's top row, after `Insert` (tooltip `Query beside the
-  results` or `Query above the results`); the splitter between the pane and the results (drag, `←` `→` by 20 px,
+- **Entry points**: the toggle at the right end of the tab's top row, after `Insert` (tooltip `Query at the right
+  of the results` or `Query above the results`); the splitter between the pane and the results (drag, `←` `→` by 20 px,
   with Shift by 60 px, double-click for the default width).
 - **Offered when**: in `Find`, `Aggregate`, `Schema` and `Chart`; not in `Indexes`, which has no query.
-- **Reads**: the choice from `globalState`, through `readQueryPane`, when the tab opens.
-- **Writes**: no database. `{ side, width }` to `globalState` under `mongoster.queryPane` at each toggle and at the
-  end of each drag.
+- **Reads**: the setting `mongoster.queryBar.position` and the width from `globalState`, through `readQueryPane`,
+  when the tab opens and when the setting changes.
+- **Writes**: no database. The setting (user level) at each toggle; `{ width }` to `globalState` under
+  `mongoster.queryPane` at the end of each drag.
 - **Danger**: None.
 - **Read-only**: Allowed, because it writes nothing to the database.
 - **Undo**: Cannot be undone: the undo history is for writes to databases; pressing the toggle again goes back.
 - **redis-oplog**: Not published.
-- **After**: the open tabs of the other collections take the same place and width at once.
+- **After**: the open tabs of the other collections take the same place and width at once; so do all of them when
+  the setting is changed in the settings.
+- **Settings**: `mongoster.queryBar.position` (`top`, the default, or `right`).
 - **Tested by**: `test/unit/queryPane.test.ts › 'query.pane: the stored choice'`, `'query.pane: the width'`,
   `'query.pane: above or beside'`, `'query.pane: the splitter'`; `test/unit/queryBar.test.ts › 'query.pane: the
   markup'`, `'query.pane: the icons'`. The CSS of the two places and the DOM wiring: none (checked by hand).
@@ -198,7 +201,7 @@ Rules:
 
 - Above the results: `Find` and `Reset` beside the filter; `Builder`, `Explain` and `Code` under it, `Update many…`
   and `Delete many…` at the right of that line; Sort and Project on the line after the builder.
-- Beside the results: each label above its box, in the order Filter, `Builder` `Explain` `Code`, the builder, Sort,
+- At the right of the results: each label above its box, in the order Filter, `Builder` `Explain` `Code`, the builder, Sort,
   Project, `Find` `Reset`, then `Update many…` `Delete many…` under a line. The stages of the pipeline are one under
   the other, as wide as the pane.
 - When the tab leaves less than 360 px to the results, the query is above them whatever the choice; the toggle stays
@@ -207,12 +210,14 @@ Rules:
 
 Acceptance:
 
-- [ ] Nothing stored, a value that is not an object, or `side` other than `true` reads as above the results, 380 px.
-- [ ] `{ side: true, width: 500 }` reads back unchanged; a width of 10 becomes 260, 5000 becomes 900, `"400"`
-  becomes 380.
-- [ ] Beside, 380 px wide, in a tab 740 px wide: beside; in one 739 px wide: above, with the tooltip `Query beside
-  the results: the tab is too narrow, so it is above them for now`.
-- [ ] Dragging the splitter 600 px right from 380 in a tab 1000 px wide gives 640; `→` adds 20, Shift+`←` takes 60.
+- [ ] No setting and nothing stored reads as above the results, 380 px; a stored `side` of an earlier build is
+  ignored, only the setting places the query.
+- [ ] The setting `right` with `{ width: 500 }` stored reads as at the right, 500 px; a width of 10 becomes 260, 5000
+  becomes 900, `"400"` becomes 380.
+- [ ] At the right, 380 px wide, in a tab 740 px wide: at the right; in one 739 px wide: above, with the tooltip
+  `Query at the right of the results: the tab is too narrow, so it is above them for now`.
+- [ ] Dragging the splitter 600 px left from 380 in a tab 1000 px wide gives 640; `←` adds 20, Shift+`→` takes 60.
+- [ ] Changing `mongoster.queryBar.position` in the settings moves the query of the open tabs at once.
 - [ ] Every button of the query bar but the mode tabs and the toggle has a codicon and its text in a `.label` span;
   `Find` and `Reset` are in the filter's row, `Update many…` and `Delete many…` in their own group.
 

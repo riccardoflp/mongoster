@@ -30,7 +30,7 @@ being asked for passwords.
 | `mongoster.layout.<connection>/<database>/<collection>` | The columns' layout: hidden, order, widths, pinned | Yes |
 | `mongoster.expanded.<connection>/<database>/<collection>` | The expanded nested columns | Yes |
 | `mongoster.formatting.<connection>/<database>/<collection>` | The formatting rules, in their order: an array of `{ id, condition, field?, color, enabled? }` (`FormatRule`), read by `readFormatRules`, which drops the entries it can't use | **No**: the user wrote them |
-| `mongoster.queryPane` | Where every collection's tab puts its query: `{ side, width }` (`QueryPane`, added after 0.8.0), read by `readQueryPane`, which gives the default (above, 380 px) for anything else | Yes |
+| `mongoster.queryPane` | The width of the query pane of every collection's tab: `{ width }` (added after 0.8.0), read by `readQueryPane`, which gives the default (380 px) for anything else; where the query goes is the setting `mongoster.queryBar.position`, and a `side` stored by a build before that setting is ignored | Yes |
 | `mongoster.playgroundTargets` | The connection and database of each playground file | Yes |
 | `mongoster.backupFolder` | The last folder used for a backup | Yes |
 | `mongoster.savedQueries.lastPlace` | *For me* or *In the project*, offered first | Yes |

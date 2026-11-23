@@ -974,7 +974,7 @@ button.link:hover {
   }
 }
 
-/* ---------- the query: above the results, or in a pane beside them (queryPane.ts) ---------- */
+/* ---------- the query: above the results, or in a pane at their right (queryPane.ts) ---------- */
 
 .workspace {
   flex: 1;
@@ -1037,9 +1037,18 @@ body.query-side .toolbar {
   border-bottom: 1px solid var(--border);
 }
 
-/* Beside the results: a column with each label above its box, the actions at the bottom. */
+/* At the right of the results: a column with each label above its box, the actions at the bottom. The pane
+   comes after the results, the splitter between them. */
 body.query-side .workspace {
   flex-direction: row;
+}
+
+body.query-side .pane-splitter {
+  order: 1;
+}
+
+body.query-side .query-pane {
+  order: 2;
 }
 
 body.query-side .query-pane {

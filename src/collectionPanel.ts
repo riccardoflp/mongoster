@@ -34,7 +34,7 @@ import type { RelGraph } from './shared/relations';
 import { collectionReferences } from './shared/references';
 import { readFormatRules } from './shared/formatting';
 import { queryBarHtml } from './queryBarHtml';
-import { readQueryPane } from './shared/queryPane';
+import { POSITION_SETTING, QueryPane, positionOf, readQueryPane } from './shared/queryPane';
 
 const { EJSON } = BSON;
 /** Documents sampled for the autocompletion of field names and values. */
@@ -59,7 +59,7 @@ export const panelKey = (ref: CollectionRef) => `${ref.connectionId}/${ref.datab
 export const expandedStateKey = (ref: CollectionRef) => `mongoster.expanded.${panelKey(ref)}`;
 export const layoutStateKey = (ref: CollectionRef) => `mongoster.layout.${panelKey(ref)}`;
 export const formattingStateKey = (ref: CollectionRef) => `mongoster.formatting.${panelKey(ref)}`;
-/** Where every collection's tab puts its query: above or beside the results (`QueryPane`). */
+/** The width of the query pane, for every collection's tab: `{ width }`. Its place is the setting `mongoster.queryBar.position`. */
 export const QUERY_PANE_KEY = 'mongoster.queryPane';
 
 /** Carries the recent and saved queries, the expanded columns, the layout and the formatting rules of a renamed collection over to its new name. */
@@ -173,9 +173,14 @@ export class CollectionPanel {
     const references = RelationsCache.onDidUpdate((e) => {
       if (this.referencesWanted && e.connectionId === this.target.connectionId && e.database === this.target.database) this.postReferences(e.graph);
     });
+    // The place of the query, changed by the toggle of any tab or in the settings.
+    const position = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration(`mongoster.${POSITION_SETTING}`)) this.post({ type: 'queryPane', pane: this.queryPane() });
+    });
     this.panel.onDidDispose(() => {
       projectChanged?.dispose();
       references.dispose();
+      position.dispose();
       onDispose();
     });
   }
@@ -200,8 +205,13 @@ export class CollectionPanel {
       expanded: this.context.globalState.get<string[]>(expandedStateKey(t), []),
       layout: this.context.globalState.get<ColumnLayout>(layoutStateKey(t), {}),
       formatRules: readFormatRules(this.context.globalState.get(formattingStateKey(t))),
-      queryPane: readQueryPane(this.context.globalState.get(QUERY_PANE_KEY)),
+      queryPane: this.queryPane(),
     });
+  }
+
+  /** The place of the query (the setting) and the pane's width (globalState). */
+  private queryPane(): QueryPane {
+    return readQueryPane(vscode.workspace.getConfiguration('mongoster').get(POSITION_SETTING), this.context.globalState.get(QUERY_PANE_KEY));
   }
 
   /** Shows why the collection can't be modified; true when it can't. */
@@ -269,10 +279,17 @@ export class CollectionPanel {
         break;
       }
       case 'saveQueryPane': {
-        // One choice for every collection: the other open tabs follow it.
-        const pane = readQueryPane(m.pane);
-        await this.context.globalState.update(QUERY_PANE_KEY, pane);
-        for (const p of CollectionPanel.panels.values()) if (p !== this) p.post({ type: 'queryPane', pane });
+        // One choice for every collection. The place is a setting: changing it reaches every tab through
+        // onDidChangeConfiguration. The width is Mongoster's own state, sent to the other tabs here.
+        const pane = readQueryPane(positionOf(m.pane), m.pane);
+        const config = vscode.workspace.getConfiguration('mongoster');
+        if (config.get(POSITION_SETTING) !== positionOf(pane)) {
+          await config.update(POSITION_SETTING, positionOf(pane), vscode.ConfigurationTarget.Global);
+        }
+        if (readQueryPane(undefined, this.context.globalState.get(QUERY_PANE_KEY)).width !== pane.width) {
+          await this.context.globalState.update(QUERY_PANE_KEY, { width: pane.width });
+          for (const p of CollectionPanel.panels.values()) if (p !== this) p.post({ type: 'queryPane', pane: p.queryPane() });
+        }
         break;
       }
       case 'saveExpanded':

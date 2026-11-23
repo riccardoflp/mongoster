@@ -1,9 +1,15 @@
-// Where a collection's tab puts its query (Filter, Builder, Sort, Project, or the stages of the
-// pipeline): above the results, or in a pane beside them, and that pane's width. One choice for every
-// collection, kept in globalState. No vscode dependency.
+// Where a collection's tab puts its query bar (Filter, Builder, Sort, Project, or the stages of the
+// pipeline): above the results, or in a pane at their right, and that pane's width. The place is the setting
+// `mongoster.queryBar.position`; the width is kept in globalState. Both hold for every collection.
+// No vscode dependency.
+
+/** The values of the setting `mongoster.queryBar.position`. */
+export type QueryBarPosition = 'top' | 'right';
+
+export const POSITION_SETTING = 'queryBar.position';
 
 export interface QueryPane {
-  /** The query in a pane at the left of the results; false: above them. */
+  /** The query in a pane at the right of the results; false: above them. */
   side: boolean;
   /** Width of the side pane in CSS pixels. */
   width: number;
@@ -11,10 +17,19 @@ export interface QueryPane {
 
 export const QUERY_PANE_WIDTH = { min: 260, max: 900, default: 380 } as const;
 
-/** The stored value, or the default for anything missing or of another form. */
-export function readQueryPane(raw: unknown): QueryPane {
-  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-  return { side: o.side === true, width: clampPaneWidth(o.width) };
+/**
+ * The setting's value and the width stored in globalState (`{ width }`); anything missing or of another form
+ * gives the default: above the results, 380 px. A `side` stored by an earlier build is ignored: the setting
+ * decides.
+ */
+export function readQueryPane(position: unknown, stored: unknown): QueryPane {
+  const o = stored && typeof stored === 'object' ? (stored as Record<string, unknown>) : {};
+  return { side: position === 'right', width: clampPaneWidth(o.width) };
+}
+
+/** The setting's value for a place. */
+export function positionOf(pane: QueryPane): QueryBarPosition {
+  return pane.side ? 'right' : 'top';
 }
 
 /** A width within the limits; the default for a value that isn't a number. */
@@ -31,23 +46,27 @@ export function paneLayout(pane: QueryPane, viewport: number): { side: boolean; 
   const width = clampPaneWidth(pane.width);
   const fits = viewport - width >= MIN_RESULTS_WIDTH;
   const title = !pane.side
-    ? 'Query beside the results'
+    ? 'Query at the right of the results'
     : fits
       ? 'Query above the results'
-      : 'Query beside the results: the tab is too narrow, so it is above them for now';
+      : 'Query at the right of the results: the tab is too narrow, so it is above them for now';
   return { side: pane.side && fits, width, title };
 }
 
-/** The width while the splitter is dragged `dx` pixels from `start`: within the limits, leaving room for the results. */
+/**
+ * The width while the splitter, at the pane's left edge, is dragged `dx` pixels to the right from where the
+ * pane was `start` wide: the pane grows when the splitter goes left. Within the limits, leaving room for the
+ * results.
+ */
 export function draggedWidth(start: number, dx: number, viewport: number): number {
   const max = Math.max(QUERY_PANE_WIDTH.min, viewport - MIN_RESULTS_WIDTH);
-  return Math.min(max, clampPaneWidth(start + dx));
+  return Math.min(max, clampPaneWidth(start - dx));
 }
 
-/** The width after an arrow key on the splitter (20 px, 60 px with Shift); null for another key. */
+/** The width after an arrow key on the splitter (20 px, 60 px with Shift): `←` moves it left, widening the pane. */
 export function keyedWidth(width: number, key: string, shift: boolean): number | null {
   const step = shift ? 60 : 20;
-  if (key === 'ArrowLeft') return clampPaneWidth(width - step);
-  if (key === 'ArrowRight') return clampPaneWidth(width + step);
+  if (key === 'ArrowLeft') return clampPaneWidth(width + step);
+  if (key === 'ArrowRight') return clampPaneWidth(width - step);
   return null;
 }

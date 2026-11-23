@@ -1,7 +1,7 @@
-// The place of the query in a collection's tab: above the results, or in a resizable pane beside them.
-// The toggle button and the splitter change it; the choice is the user's for every collection, so it
-// is saved by the host and arrives from other tabs too. What the choice gives is decided in
-// src/shared/queryPane.ts; this module only wires it to the DOM.
+// The place of the query in a collection's tab: above the results, or in a resizable pane at their right.
+// The toggle button and the splitter change it; the choice is the user's for every collection (the setting
+// `mongoster.queryBar.position`, and the width), so it is saved by the host and arrives from other tabs too.
+// What the choice gives is decided in src/shared/queryPane.ts; this module only wires it to the DOM.
 import { QUERY_PANE_WIDTH, QueryPane, draggedWidth, keyedWidth, paneLayout } from '../shared/queryPane';
 
 export class QueryPaneUi {

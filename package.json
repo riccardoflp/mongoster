@@ -1081,11 +1081,25 @@
           "markdownDescription": "Find the references between the collections of a database when one of its collections is opened, so that the table can follow them (Ctrl/Cmd+click on a reference, `Open referenced document` and `Find referencing documents` in the menu of a row). It reads 100 documents of each collection of the database once per session, in the background. Turned off, the table only follows the references found by a `Relationship Diagram` of the database.",
           "order": 10
         },
+        "mongoster.queryBar.position": {
+          "type": "string",
+          "enum": [
+            "top",
+            "right"
+          ],
+          "enumDescriptions": [
+            "Above the table, with the run buttons beside the filter.",
+            "In a pane at the right of the table, each label above its box, the stages one under the other."
+          ],
+          "default": "top",
+          "markdownDescription": "Where a collection's tab puts the query bar (Filter, Builder, Sort and Project, or the stages of `Aggregate`). The toggle at the right end of the tab's top row changes it too, for every collection; drag the line between the pane and the table to make the pane wider or narrower. When the tab is too narrow for both, the query bar goes above the table until it is wider again.",
+          "order": 11
+        },
         "mongoster.scheduledTasks.keepRunningInTray": {
           "type": "boolean",
           "default": false,
           "markdownDescription": "Desktop app only: when there are enabled scheduled tasks, closing the window keeps the app running in the system tray (menu bar on macOS) so that the tasks keep running. `Open` in the tray icon's menu shows the window again, `Quit` closes the app. VS Code runs scheduled tasks only while one of its windows is open.",
-          "order": 11
+          "order": 12
         }
       }
     },

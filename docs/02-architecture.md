@@ -201,7 +201,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `syntax.ts` – tokens of mongosh text, to color the query inputs
 - `complete.ts` – autocomplete: cursor context in mongosh text, suggested fields, operators and values
 - `builder.ts` – visual query builder rows ⇄ filter
-- `queryPane.ts` – where the collection tab puts its query (above or beside the results) and the pane's width
+- `queryPane.ts` – where the collection tab puts its query (above or at the right of the results, from the setting `mongoster.queryBar.position`) and the pane's width
 - `icons.ts` – the codicons of the query bar's buttons, as inline SVG
 - `dropZones.ts` – what a header or a cell dragged from the table offers on Sort and Project
 - `pipeline.ts` – aggregation stages, templates, text ⇄ stages

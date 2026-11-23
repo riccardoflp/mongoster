@@ -22,7 +22,7 @@ export function queryBarHtml(): string {
         <button id="watch" class="secondary not-view" title="Show the changes of the collection as they happen (change stream)">${ic('pulse')}<span class="label">Watch</span></button>
         <button id="insert" class="secondary editable" title="Insert documents: type them or paste a copied one">${ic('add')}<span class="label">Insert</span></button>
       </div>
-      <button id="layoutToggle" class="secondary icon-only not-indexes" title="Query beside the results" aria-label="Query beside the results" aria-pressed="false">${ic('layout-sidebar-left')}</button>
+      <button id="layoutToggle" class="secondary icon-only not-indexes" title="Query at the right of the results" aria-label="Query at the right of the results" aria-pressed="false">${ic('layout-sidebar-right')}</button>
       </div>
     </div>
   </header>

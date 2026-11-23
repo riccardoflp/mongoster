@@ -50,7 +50,7 @@ describe('query.pane: the markup', () => {
 describe('query.pane: the icons', () => {
   // The codicons package the icons come from: each path must be the codicon's own.
   const sprite = fs.readFileSync('node_modules/@vscode/codicons/dist/codicon.svg', 'utf8');
-  const names: IconName[] = ['add', 'clear-all', 'code', 'copy', 'discard', 'edit', 'export', 'history', 'json', 'layout-sidebar-left', 'list-filter', 'play', 'pulse', 'save-as', 'telescope', 'trash'];
+  const names: IconName[] = ['add', 'clear-all', 'code', 'copy', 'discard', 'edit', 'export', 'history', 'json', 'layout-sidebar-right', 'list-filter', 'play', 'pulse', 'save-as', 'telescope', 'trash'];
 
   it('are the paths of the codicons of the same name', () => {
     for (const name of names) {
