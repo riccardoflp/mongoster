@@ -45,6 +45,8 @@ import { highlight } from './highlight';
 import { FilterBuilder } from './builder';
 import { CompletionKind, FieldHint, fieldHints } from '../shared/complete';
 import { analyzeSchema } from '../shared/schema';
+import { FormatColor, FormatRule, TableFormat } from '../shared/formatting';
+import { FormatDialog, FormattingPanel } from './formatting';
 import { CollectionReferences, ReferenceTarget, referenceKeys, referenceTargets, referencingTargets } from '../shared/references';
 
 declare function acquireVsCodeApi(): {
@@ -297,6 +299,9 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       if (m.expanded.length) expanded = new Set(m.expanded);
       layout = m.layout ?? {};
       columnsPanel.update();
+      formatRules = m.formatRules ?? [];
+      tableFormat = new TableFormat(formatRules);
+      formattingPanel.update();
       document.body.classList.toggle('readonly', readOnly);
       el('docEdit').textContent = readOnly ? 'Open in editor' : 'Edit';
       el('docEdit').title = el('docEdit').dataset.title = readOnly
@@ -556,6 +561,8 @@ function renderGrid(): void {
       tr.dataset.row = String(rowIndex);
       return tr;
     });
+    const rowColor = tableFormat.rowColor(doc);
+    if (rowColor) tbody.dataset.fmt = rowColor;
     const num = rows[0].insertCell();
     num.className = 'rownum';
     num.rowSpan = height;
@@ -597,6 +604,8 @@ function renderGrid(): void {
         td.draggable = true;
       }
       if (elem !== undefined) td.classList.add('elem');
+      const cellColor = formatCell(doc, node, elem);
+      if (cellColor) td.dataset.fmt = cellColor;
       groupClasses(td, first.starts.length > 0, last.ends.length > 0);
       return td;
     };
@@ -622,9 +631,14 @@ function renderGrid(): void {
       if (array.length > shown) {
         const more = addCell(rows[next++], node, MISSING, 1);
         more.classList.replace('missing', 'more');
+        delete more.dataset.fmt;
         more.textContent = `… ${array.length - shown} more elements — open the document to see all`;
       }
-      if (next < height) addCell(rows[next], node, MISSING, height - next).classList.add('filler');
+      if (next < height) {
+        const filler = addCell(rows[next], node, MISSING, height - next);
+        filler.classList.add('filler');
+        delete filler.dataset.fmt;
+      }
     };
 
     renderNodes(columns, doc, 0, rows[0], height);
@@ -682,14 +696,64 @@ const layoutActions = new LayoutActions({ columns: () => allColumns, layout: () 
 const columnsPanel = new ColumnsPanel({ columns: () => allColumns, layout: () => layout, change: saveLayout }, layoutActions);
 const columnMenu = new ColumnMenu({ columns: () => allColumns, layout: () => layout, change: saveLayout }, layoutActions, () => columnsPanel.open(), fieldItems);
 
+// ---------------------------------------------------------------------------
+// Conditional formatting: rows and cells colored by the collection's formatting rules
+
+/** The collection's formatting rules, in their order, and the colors they give to the table. */
+let formatRules: FormatRule[] = [];
+let tableFormat = new TableFormat([]);
+
+function saveFormatRules(rules: FormatRule[]): void {
+  formatRules = rules;
+  tableFormat = new TableFormat(rules);
+  vscode.postMessage({ type: 'saveFormatRules', rules });
+  formattingPanel.update();
+  renderGrid();
+}
+
+/** The color a cell rule of its column gives a cell; in an expanded array, matched against that element alone. */
+function formatCell(doc: Record<string, unknown>, node: ColumnNode, elem: number | undefined): FormatColor | undefined {
+  if (tableFormat.empty) return undefined;
+  if (elem === undefined) return tableFormat.cellColor(doc, node.key);
+  const array = node.arrayDepth !== undefined ? node.path.slice(0, node.arrayDepth).join('.') : node.key;
+  return tableFormat.cellColor(doc, node.key, { array, index: elem });
+}
+
+/** The dotted keys of the page's columns, expanded or not, for a cell rule's field. */
+function columnKeys(): string[] {
+  const keys: string[] = [];
+  const walk = (nodes: ColumnNode[]) => {
+    for (const node of nodes) {
+      keys.push(node.key);
+      if (node.children) walk(node.children);
+    }
+  };
+  walk(allColumns);
+  return keys;
+}
+
+const formattingOptions = { rules: () => formatRules, change: saveFormatRules, errors: () => tableFormat.errors, fields: columnKeys };
+const formatDialog = new FormatDialog(formattingOptions);
+const formattingPanel = new FormattingPanel(formattingOptions, formatDialog);
+
+/** `Format Cells…` of a column header: a rule for the column's cells, on the selected cell's value when it is in that column. */
+function formatCells(key: string): void {
+  const cell = selectedCell?.dataset.col === key ? cellValue(selectedCell) : null;
+  const condition = toShell({ [key]: cell && cell.key === key ? cell.value : { $exists: true } });
+  formattingPanel.edit(undefined, { field: key, condition });
+}
+
 /** Rename, remove or convert the column's field in the documents matching the filter: in Find, on a collection that can be changed. */
 function fieldItems(key: string): ColumnMenuItem[] {
-  if (readOnly || state.mode !== 'find' || key === '_id' || key.startsWith('_id.')) return [];
+  // Formatting writes nothing to the database: offered on every column, in every mode.
+  const format: ColumnMenuItem = ['Format Cells…', () => formatCells(key), `Color the cells of ${key} when the document matches a condition`];
+  if (readOnly || state.mode !== 'find' || key === '_id' || key.startsWith('_id.')) return [format];
   const node = columnsByKey.get(key);
   // A field of the elements of an expanded array (items[].sku).
   const array = node?.arrayDepth !== undefined ? node.path.slice(0, node.arrayDepth).join('.') : undefined;
   const act = (action: FieldActionRequest['action']) => () => fieldAction(action, key, array);
   return [
+    format,
     ['Rename field…', act('rename'), '$rename in the documents matching the filter'],
     ['Remove field…', act('remove'), '$unset in the documents matching the filter'],
     ['Convert type…', act('convert'), 'Convert the values ($convert) in the documents matching the filter'],
@@ -1591,9 +1655,10 @@ filterInput.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (explainView.isOpen || bulk.isOpen || codeDialog.isOpen || indexDialog.isOpen || insertDialog.isOpen || searchIndexDialog.isOpen) {
+  if (explainView.isOpen || bulk.isOpen || codeDialog.isOpen || indexDialog.isOpen || insertDialog.isOpen || searchIndexDialog.isOpen || formatDialog.isOpen) {
     if (e.key === 'Escape' && !e.defaultPrevented) {
-      if (explainView.isOpen) explainView.close();
+      if (formatDialog.isOpen) formatDialog.close();
+      else if (explainView.isOpen) explainView.close();
       else if (codeDialog.isOpen) codeDialog.close();
       else if (indexDialog.isOpen) indexDialog.close();
       else if (insertDialog.isOpen) insertDialog.close();
@@ -1738,6 +1803,7 @@ completeWith(el<HTMLTextAreaElement>('bulkUpdate'), 'update');
 completeWith(el<HTMLTextAreaElement>('indexKeys'), 'index');
 completeWith(el<HTMLTextAreaElement>('indexPartialFilter'), 'filter');
 completeWith(el<HTMLTextAreaElement>('insertText'), 'document');
+completeWith(formatDialog.condition, 'filter');
 
 const pipeline = new PipelineEditor({
   run: () => run(true),

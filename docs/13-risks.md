@@ -20,7 +20,7 @@ file, a race).
 | RS10 | risk | `Duplicate` copies the relaxed row of the table: whole Doubles and safe Longs become Int32, and fields left out by the projection are not copied (`document.duplicate`). Inline edits keep only `Long` as an explicit type (`document.keep-numeric-types`). | A duplicated or edited document has other types, or fewer fields, than the user expects. | often | M3 |
 | RS11 | risk | Some confirmations do not say that the write cannot be undone: `Delete`, `Update many` and `Delete many` with the undo history off; dropping or rebuilding an index; an operation over 20 MB known only after reading (`document.delete`, `document.update-many`, `document.delete-many`, `undo.record`, `index.edit`, `index.drop`, `index.drop-search`). | The user expects an undo that does not exist. | sometimes | M3 |
 | RS13 | risk | When one operation's file is larger than `mongoster.history.maxSizeMB`, pruning deletes it and every older operation (`undo.limits`). | Older operations that fit are lost too. | rarely | M3 |
-| RS4 | debt | A dropped collection's query history, saved queries for me, layout and expanded columns stay in `globalState`, and come back if a collection of the same name is created. | Stale state; growth of `globalState`. | often | M5 (or M2, with the colors of collections) |
+| RS4 | debt | A dropped collection's query history, saved queries for me, layout, expanded columns and formatting rules stay in `globalState`, and come back if a collection of the same name is created. | Stale state; growth of `globalState`. | often | M5 (or M2, with the colors of collections) |
 
 ## Secrets and privacy
 

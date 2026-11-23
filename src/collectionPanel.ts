@@ -31,6 +31,7 @@ import type { ColumnLayout } from './shared/columns';
 import { RelationsCache } from './relationsAnalysis';
 import type { RelGraph } from './shared/relations';
 import { collectionReferences } from './shared/references';
+import { readFormatRules } from './shared/formatting';
 
 const { EJSON } = BSON;
 /** Documents sampled for the autocompletion of field names and values. */
@@ -55,10 +56,11 @@ export function readOnlyMessage(target: CollectionTarget): string {
 export const panelKey = (ref: CollectionRef) => `${ref.connectionId}/${ref.database}/${ref.collection}`;
 export const expandedStateKey = (ref: CollectionRef) => `mongoster.expanded.${panelKey(ref)}`;
 export const layoutStateKey = (ref: CollectionRef) => `mongoster.layout.${panelKey(ref)}`;
+export const formattingStateKey = (ref: CollectionRef) => `mongoster.formatting.${panelKey(ref)}`;
 
-/** Carries the recent and saved queries and the expanded columns of a renamed collection over to its new name. */
+/** Carries the recent and saved queries, the expanded columns, the layout and the formatting rules of a renamed collection over to its new name. */
 export async function moveCollectionState(state: vscode.Memento, from: CollectionRef, to: CollectionRef): Promise<void> {
-  const keys = (ref: CollectionRef) => [...QueryHistory.stateKeys(panelKey(ref)), expandedStateKey(ref), layoutStateKey(ref)];
+  const keys = (ref: CollectionRef) => [...QueryHistory.stateKeys(panelKey(ref)), expandedStateKey(ref), layoutStateKey(ref), formattingStateKey(ref)];
   const [fromKeys, toKeys] = [keys(from), keys(to)];
   for (let i = 0; i < fromKeys.length; i++) {
     const value = state.get(fromKeys[i]);
@@ -189,6 +191,7 @@ export class CollectionPanel {
       color: t.color,
       expanded: this.context.globalState.get<string[]>(expandedStateKey(t), []),
       layout: this.context.globalState.get<ColumnLayout>(layoutStateKey(t), {}),
+      formatRules: readFormatRules(this.context.globalState.get(formattingStateKey(t))),
     });
   }
 
@@ -248,6 +251,12 @@ export class CollectionPanel {
         const l = m.layout;
         const empty = !l.hidden?.length && !l.order?.length && !l.pinned?.length && !Object.keys(l.widths ?? {}).length;
         await this.context.globalState.update(layoutStateKey(this.target), empty ? undefined : l);
+        break;
+      }
+      case 'saveFormatRules': {
+        // Feature: query.format-rules. Kept for the user, like the layout; nothing is written to the database.
+        const rules = readFormatRules(m.rules);
+        await this.context.globalState.update(formattingStateKey(this.target), rules.length ? rules : undefined);
         break;
       }
       case 'saveExpanded':
@@ -1261,6 +1270,7 @@ export class CollectionPanel {
     <span id="selectionInfo" class="status-group selection-info hidden" aria-live="polite">
       <span id="selectionCount"></span><span aria-hidden="true">·</span><button id="selectionClear" class="link" title="Clear the selection (Esc)">Clear</button>
     </span>
+    <button id="formattingBtn" class="secondary columns-btn" title="Color rows and cells of the table by conditions" aria-haspopup="true" aria-expanded="false">Formatting</button>
     <button id="columnsBtn" class="secondary columns-btn" title="Show, hide, pin and reorder the columns" aria-haspopup="true" aria-expanded="false">Columns</button>
     <span class="status-group">
     <label for="limit">Page size</label>
@@ -1281,6 +1291,13 @@ export class CollectionPanel {
       <button id="columnsReset" class="secondary" title="Natural order, no hidden or pinned columns, automatic widths">Reset</button>
     </div>
     <div id="columnsList" class="columns-list"></div>
+  </div>
+  <div id="formattingPanel" class="columns-panel formatting-panel hidden" role="dialog" aria-label="Formatting rules">
+    <div id="formattingList" class="columns-list"></div>
+    <div class="formatting-foot">
+      <span class="formatting-hint">The first matching rule wins; a cell rule over a row rule.</span>
+      <button id="formattingAdd" class="secondary">+ Add rule…</button>
+    </div>
   </div>
   <div id="columnMenu" class="context-menu hidden" role="menu"></div>
   <div id="docMenu" class="context-menu hidden" role="menu"></div>
@@ -1323,6 +1340,31 @@ export class CollectionPanel {
       <div class="bulk-actions">
         <button id="codeOpen" class="secondary" title="Open the code in a new editor tab">Open in Editor</button>
         <button id="codeCopy" class="primary">Copy</button>
+      </div>
+    </div>
+  </div>
+  <div id="formatModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="formatTitle">
+    <div class="modal-box format-box">
+      <div class="modal-head">
+        <span id="formatTitle" class="doc-title">Add formatting rule</span>
+        <span class="spacer"></span>
+        <button id="formatClose" class="icon" title="Close (Esc)">✕</button>
+      </div>
+      <div class="format-body">
+        <div class="format-target" role="radiogroup" aria-label="What the rule colors">
+          <label><input type="radio" name="formatTarget" id="formatRow"> Color the row</label>
+          <label><input type="radio" name="formatTarget" id="formatCell"> Color the cell of</label>
+          <input id="formatField" list="formatFields" spellcheck="false" placeholder="field" aria-label="Field">
+          <datalist id="formatFields"></datalist>
+        </div>
+        <label for="formatCondition">When the document matches</label>
+        <textarea id="formatCondition" rows="3" spellcheck="false" placeholder="{ status: &quot;failed&quot; }  —  a filter, as in the query bar"></textarea>
+        <div id="formatError" class="error hidden"></div>
+        <div class="format-colors-row"><span>Color</span><div id="formatColors" class="format-colors" role="radiogroup" aria-label="Color"></div></div>
+      </div>
+      <div class="bulk-actions">
+        <button id="formatCancel" class="secondary">Cancel</button>
+        <button id="formatSave" class="primary" title="Ctrl+Enter">Save</button>
       </div>
     </div>
   </div>

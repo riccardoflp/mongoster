@@ -191,6 +191,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `src/queryHistory.ts` – recent and saved queries of a collection, for the user
 - `src/projectQueries.ts`, `src/savedQueryActions.ts`, `src/shared/savedQueries.ts` – saved queries in the project's repository: file format, watching the folder, saving, renaming and moving them
 - `src/webview/main.ts` – the table and the tab's wiring; with `history.ts`, `pipeline.ts`, `builder.ts`, `indexes.ts`, `indexDialog.ts`, `searchIndexes.ts`, `searchIndexDialog.ts`, `explainView.ts`, `bulk.ts`, `schemaView.ts`, `chartView.ts`, `columnsUi.ts`, `autocomplete.ts`, `insertDialog.ts`, `cellEditor.ts`, `popupMenu.ts`, `highlight.ts`, `codeDialog.ts` of `src/webview/`, and `media/webview.css`
+- `src/shared/formatting.ts`, `src/shared/match.ts`, `src/webview/formatting.ts` – conditional formatting: the formatting rules and how they are stored, the colors of rows and cells, the matcher of query operators over relaxed EJSON, the `Formatting` panel and the rule dialog
 - `src/webview/chartjs.ts` – Chart.js, a bundle of its own loaded only when the `Chart` tab is opened
 
 ### Shared logic (`src/shared/`, no `vscode` or `mongodb`)

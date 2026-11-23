@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Conditional formatting**: color the rows or the cells of a collection's table by conditions, as in a spreadsheet. `Formatting` in the bar above the table lists the collection's rules, and `+ Add rule…` or `Format Cells…` in a column header's menu adds one: a condition written as a filter (`{ status: "failed" }`, `{ amount: { $gt: 1000 } }`), one of six theme colors, and the whole row or one field's cell. The first matching rule wins, a cell rule over a row rule; rules can be reordered by dragging, turned off, edited and removed, and are kept for each collection, also after a rename. In an expanded array, a cell rule colors only the elements that match.
+
 ## 0.8.0
 
 - **Follow references from the table**: in a collection's tab, a field that references another collection (an id, an array of ids, a DBRef, or a field like `customerEmail` pointing to a unique field) is underlined on hover. Ctrl/Cmd+click on it, or `Open referenced document` in its right-click menu, opens the referenced collection filtered on `{ _id: … }`, or on `{ _id: { $in: [...] } }` for an array. `Find referencing documents ▸` in a row's menu lists the collections and fields that reference it and opens them filtered on that row's `_id`. The references are found in the background once per database and session (setting `mongoster.references.detect`), with the same analysis as the relationship diagram. On a reference cell Ctrl/Cmd+click now follows the link instead of selecting the row. The right-click menus can have submenus.

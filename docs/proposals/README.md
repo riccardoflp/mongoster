@@ -40,4 +40,4 @@ What gets harder, what breaks, the files that need reading in their old form (11
 
 ## The proposals
 
-None yet.
+- [0002 — Conditional formatting in the collection tab](0002-conditional-formatting.md): accepted (D16).
