@@ -1180,14 +1180,14 @@ export class CollectionPanel {
         <div class="q-option">
           <label for="sort">Sort</label>
           <div class="option-wrap" id="sortWrap">
-            <input id="sort" spellcheck="false" placeholder="{ field: -1 }  —  or drag a column here">
+            <input id="sort" spellcheck="false" placeholder="{ field: -1 }  —  or drag a column or a cell here">
             <div class="dropzones" id="sortDrop"></div>
           </div>
         </div>
         <div class="q-option">
           <label for="projection">Project</label>
           <div class="option-wrap" id="projectionWrap">
-            <input id="projection" spellcheck="false" placeholder="{ field: 1 }  —  or drag a column here">
+            <input id="projection" spellcheck="false" placeholder="{ field: 1 }  —  or drag a column or a cell here">
             <div class="dropzones" id="projectionDrop"></div>
           </div>
         </div>

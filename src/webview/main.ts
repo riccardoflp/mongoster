@@ -1375,7 +1375,8 @@ function showDropzones(p: DragPayload): void {
     if (p.kind === 'cell' && p.within) div.title += ` · same element of ${p.within} ($elemMatch)`;
     container.append(div);
   }
-  if (p.kind === 'column' && !aggregate) showOptionZones(p.key);
+  // Sort and Project take the field of a header or of a cell alike (only in Find: Aggregate has neither).
+  if (!aggregate) showOptionZones(p.key);
   document.body.classList.add('dragging');
 }
 
@@ -1398,7 +1399,7 @@ function dropzone(label: string, title: string, key: string, drop: () => void): 
   return div;
 }
 
-/** A column dropped on Sort sorts by it, on Project includes or excludes it; a field already there can be removed. */
+/** A column or a cell dropped on Sort sorts by its field, on Project includes or excludes it; a field already there can be removed. */
 function showOptionZones(key: string): void {
   const sortZones: [string, string, 1 | -1 | null][] = [
     ['▲ ascending', `${key}: 1 (after the fields already in the sort)`, 1],
