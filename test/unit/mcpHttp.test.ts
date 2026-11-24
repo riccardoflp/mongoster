@@ -109,6 +109,25 @@ describe('bearerMatches', () => {
 });
 
 describe('requestRelease', () => {
+  // RS34: whoever listens on the port gets a proof; the window that made it must not take it back.
+  it('sends a proof its own window refuses, and another window accepts once', async () => {
+    const mine = new ProofChecker();
+    let proof = '';
+    const listener = http.createServer((req, res) => {
+      proof = req.headers[PROOF_HEADER] as string;
+      res.writeHead(200).end();
+    });
+    await new Promise<void>((resolve) => listener.listen(0, '127.0.0.1', resolve));
+    const port = (listener.address() as { port: number }).port;
+    expect(await requestRelease(port, TOKEN, mine)).toBe(200);
+    await new Promise((resolve) => listener.close(resolve));
+    expect(proof).toMatch(/^v1\./);
+    expect(mine.accepts(proof, TOKEN, port)).toBe(false);
+    const other = new ProofChecker();
+    expect(other.accepts(proof, TOKEN, port)).toBe(true);
+    expect(other.accepts(proof, TOKEN, port)).toBe(false);
+  });
+
   it('never sends the access token to whoever listens on the port', async () => {
     // A program squatting the port, answering with Mongoster's mark to pass for it.
     const seen: { url?: string; headers: http.IncomingHttpHeaders }[] = [];

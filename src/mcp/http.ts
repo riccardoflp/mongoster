@@ -54,6 +54,16 @@ export class ProofChecker {
     this.seen.set(nonce, time + PROOF_MAX_AGE_MS);
     return true;
   }
+
+  /**
+   * A proof to send, which this checker will not accept: whoever listens on the port may not be Mongoster,
+   * and could send the proof back to the window that made it once that window has the port.
+   */
+  issue(token: string, port: number, now = Date.now()): string {
+    const nonce = randomBytes(16).toString('hex');
+    this.seen.set(nonce, now + PROOF_MAX_AGE_MS);
+    return releaseProof(token, port, now, nonce);
+  }
 }
 
 /** Whether the Authorization header carries the access token. */
@@ -181,12 +191,13 @@ export function probe(port: number): Promise<'free' | 'mongoster' | 'other'> {
 /**
  * Asks Mongoster in another window for the port; the HTTP status, 0 when it didn't answer. The mark only
  * says that the listener claims to be Mongoster, and any local program can claim it: the request carries
- * a proof of having the access token (releaseProof), never the token.
+ * a proof of having the access token (releaseProof), never the token, made by the asking window's own
+ * checker so that the window refuses it if it comes back.
  */
-export function requestRelease(port: number, token: string): Promise<number> {
+export function requestRelease(port: number, token: string, proofs = new ProofChecker()): Promise<number> {
   return new Promise((resolve) => {
     const req = http.request(
-      { host: '127.0.0.1', port, path: RELEASE_PATH, method: 'POST', timeout: PROBE_MS, agent: false, headers: { [PROOF_HEADER]: releaseProof(token, port), 'Content-Length': '0' } },
+      { host: '127.0.0.1', port, path: RELEASE_PATH, method: 'POST', timeout: PROBE_MS, agent: false, headers: { [PROOF_HEADER]: proofs.issue(token, port), 'Content-Length': '0' } },
       (res) => {
         res.resume();
         resolve(res.statusCode ?? 0);

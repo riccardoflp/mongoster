@@ -148,7 +148,7 @@ export class McpServer implements vscode.Disposable {
         return;
       }
       // The mark only says the listener claims to be Mongoster: it gets a proof of having the token, not the token.
-      const status = await requestRelease(port, this.token);
+      const status = await requestRelease(port, this.token, this.proofs);
       if (status === 401) {
         return this.blocked(port, `Port ${port} is used by Mongoster in another VS Code installation, which has a different access token, or by an older version of Mongoster in a window not reloaded since the update.`, take);
       }
