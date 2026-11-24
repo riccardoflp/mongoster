@@ -8,7 +8,7 @@ import packageJSON from '../../package.json';
 import { activate } from '../extension';
 import { Scheduler } from '../scheduler';
 import { TRAY_SETTING } from '../scheduledTasks';
-import { appFile } from './appFiles';
+import { appFile, appHost, mayNavigate } from './appFiles';
 import type { HostMessage, ShellMessage } from './protocol';
 import * as vscode from './vscode';
 import { THEMES, themePreview } from './theme';
@@ -95,7 +95,7 @@ function handleProtocol(): void {
  */
 function restrictPermissions(): void {
   const granted = (permission: string, origin: string | undefined) =>
-    (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') && !!origin?.startsWith(`${APP_PROTOCOL}://shell`);
+    (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') && appHost(origin, APP_PROTOCOL) === 'shell';
   session.defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) => callback(granted(permission, details.requestingUrl)));
   session.defaultSession.setPermissionCheckHandler((_contents, permission, origin) => granted(permission, origin));
 }
@@ -180,8 +180,7 @@ function createWindow(): void {
     return { action: 'deny' };
   });
   win.webContents.on('will-frame-navigate', (event) => {
-    const allowed = event.isMainFrame ? `${APP_PROTOCOL}://shell/` : `${APP_PROTOCOL}://`;
-    if (!event.url.startsWith(allowed)) event.preventDefault();
+    if (!mayNavigate(event.url, event.isMainFrame, APP_PROTOCOL)) event.preventDefault();
   });
 
   let closing = false;

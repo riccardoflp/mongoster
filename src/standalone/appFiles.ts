@@ -25,3 +25,23 @@ export function appFile(root: string, pathname: string, folders?: readonly strin
   if (folders ? !folders.some((f) => within(rules.join(root, f))) : file !== root && !within(root)) return { status: 403 };
   return { file };
 }
+
+/** The host of a URL of the app's protocol (`shell`, the resources' host, a tab's), compared whole; undefined for any other URL. */
+export function appHost(url: string | undefined, protocol: string): string | undefined {
+  try {
+    const parsed = new URL(url ?? '');
+    return parsed.protocol === `${protocol}:` ? parsed.host : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether a frame may go to `url`: the window only to the shell, and a tab's frame anywhere in the app but
+ * the shell. The shell's page can run any command; a tab shows what is in a database, and a frame that
+ * went to the shell's address would be the shell for the browser, same origin and all.
+ */
+export function mayNavigate(url: string, isMainFrame: boolean, protocol: string): boolean {
+  const host = appHost(url, protocol);
+  return host !== undefined && (host === 'shell') === isMainFrame;
+}

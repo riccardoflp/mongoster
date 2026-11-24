@@ -1,7 +1,7 @@
 // Which file a URL of the desktop app's protocol may read, with the path rules of both kinds of system.
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
-import { appFile } from '../../src/standalone/appFiles';
+import { appFile, appHost, mayNavigate } from '../../src/standalone/appFiles';
 
 const FOLDERS = ['dist', 'media'];
 
@@ -38,5 +38,31 @@ describe.each([
     expect(appFile(shell, '/index.html', undefined, rules)).toEqual({ file: rules.join(shell, 'index.html') });
     expect(appFile(shell, '/../../package.json', undefined, rules)).toEqual({ file: rules.join(shell, 'package.json') });
     expect(appFile(shell, '/..%5C..%5Cpackage.json', undefined, rules)).toEqual({ status: 403 });
+  });
+});
+
+// RS43: the shell's address is the shell's alone.
+describe('the addresses of the app', () => {
+  const P = 'mongoster-app';
+
+  it('reads the host of a URL of the app, whole', () => {
+    expect(appHost('mongoster-app://shell/shell.html', P)).toBe('shell');
+    expect(appHost('mongoster-app://shell', P)).toBe('shell');
+    expect(appHost('mongoster-app://shell.evil.example/', P)).toBe('shell.evil.example');
+    expect(appHost('mongoster-app://shellfish/', P)).toBe('shellfish');
+    expect(appHost('https://shell/', P)).toBeUndefined();
+    expect(appHost(undefined, P)).toBeUndefined();
+    expect(appHost('not a url', P)).toBeUndefined();
+  });
+
+  it('lets the window go to the shell only, and a tab anywhere in the app but the shell', () => {
+    expect(mayNavigate('mongoster-app://shell/shell.html', true, P)).toBe(true);
+    expect(mayNavigate('mongoster-app://view-3/index.html?v=1', true, P)).toBe(false);
+    expect(mayNavigate('https://example.com/', true, P)).toBe(false);
+    expect(mayNavigate('mongoster-app://view-3/index.html?v=2', false, P)).toBe(true);
+    expect(mayNavigate('mongoster-app://res/media/icon.png', false, P)).toBe(true);
+    expect(mayNavigate('mongoster-app://shell/shell.html', false, P)).toBe(false);
+    expect(mayNavigate('https://example.com/', false, P)).toBe(false);
+    expect(mayNavigate('file:///etc/passwd', false, P)).toBe(false);
   });
 });

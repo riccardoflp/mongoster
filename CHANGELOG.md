@@ -19,6 +19,7 @@
 - `Generate Code` now writes a `NumberLong` that is not a whole number as a string for the language to parse; a saved query from someone else could put its own code in the Python, Java, C# or Go that was generated.
 - A playground on a read-only connection can no longer change the profiler with `db.runCommand({ profile: … })` (reading its level with `-1` stays) or repair with `validate`.
 - The project's saved queries folder is now ignored when a symbolic link in the repository leads it out of the workspace folder: Mongoster would read, save and delete query files there.
+- In the desktop app a tab can no longer load the address of the window around it, which can run any command; no way to make a tab do so was known.
 
 ## 0.10.0
 
