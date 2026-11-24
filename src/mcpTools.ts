@@ -47,6 +47,35 @@ export interface ToolHost {
 
 const { EJSON } = BSON;
 export const SEARCH_LIMITS = [0, 1000, 10_000, 100_000];
+/** The documents open_search reads per collection when it is not told, on more than one collection. */
+export const SEARCH_DEFAULT_LIMIT = 10_000;
+/** The longest regular expression open_search takes. */
+export const SEARCH_REGEX_MAX = 200;
+
+/**
+ * Why open_search does not take a regular expression, if it doesn't. The search matches in the extension
+ * host, on every string of every document read, and a regular expression that repeats a group which
+ * itself repeats or has alternatives ((a+)+, (\w*)*, (a|ab)+) can take minutes on one string, with
+ * everything else stopped. This looks at the text only: it refuses what has that form, also when it would
+ * be harmless.
+ */
+export function slowRegex(source: string): string | undefined {
+  if (source.length > SEARCH_REGEX_MAX) return `The regular expression is longer than ${SEARCH_REGEX_MAX} characters.`;
+  // Escapes and character classes are single characters here. Groups are taken from the innermost.
+  let text = source.replace(/\\./g, 'x').replace(/\[[^\]]*\]/g, 'x');
+  for (;;) {
+    const group = /\(([^()]*)\)([*+?]|\{\d*,?\d*\})?/.exec(text);
+    if (!group) return undefined;
+    const [whole, inside, quantifier] = group;
+    const variable = /[*+|\u0000]|\{\d*,\d*\}/.test(inside);
+    const repeated = quantifier !== undefined && quantifier !== '?' && quantifier !== '{1}';
+    if (variable && repeated) {
+      return 'The regular expression repeats a group that repeats in itself or has alternatives (as in (a+)+ or (a|ab)+): it could take very long on a long text. Write it without that, or search a plain text.';
+    }
+    // What the groups around it see of this one: a mark when it can match in more than one way.
+    text = text.slice(0, group.index) + (variable || repeated ? '\u0000' : 'x') + text.slice(group.index + whole.length);
+  }
+}
 
 export function mcpTools(host: ToolHost): McpTool[] {
   const ctx = toolContext(host.connections, () => host.readDocuments());
@@ -285,7 +314,7 @@ export function mcpTools(host: ToolHost): McpTool[] {
           matchCase: { type: 'boolean', default: false },
           fieldNames: { type: 'boolean', default: false, description: 'Also match field names.' },
           views: { type: 'boolean', default: false, description: 'Also search views.' },
-          limit: { type: 'integer', enum: SEARCH_LIMITS, default: 0, description: 'Documents read per collection; 0 for all.' },
+          limit: { type: 'integer', enum: SEARCH_LIMITS, description: `Documents read per collection; 0 for all, only with a collection. Default: 0 with a collection, ${SEARCH_DEFAULT_LIMIT} without.` },
         },
         required: ['connection', 'text'],
         additionalProperties: false,
@@ -304,9 +333,13 @@ export function mcpTools(host: ToolHost): McpTool[] {
           } catch (err) {
             throw new ToolError(`Invalid regular expression: ${err instanceof Error ? err.message : String(err)}`);
           }
+          const slow = slowRegex(text.replace(/^\/(.*)\/[a-z]*$/s, '$1'));
+          if (slow) throw new ToolError(slow);
         }
-        const limit = intArg(args, 'limit', 0, 0, Number.MAX_SAFE_INTEGER);
+        // Every document only of one collection: of a database or a connection, a number of them per collection.
+        const limit = intArg(args, 'limit', collection ? 0 : SEARCH_DEFAULT_LIMIT, 0, Number.MAX_SAFE_INTEGER);
         if (!SEARCH_LIMITS.includes(limit)) throw new ToolError(`limit must be one of ${SEARCH_LIMITS.join(', ')}.`);
+        if (limit === 0 && !collection) throw new ToolError('limit 0 (every document) needs a collection: on a database or a connection, give 1000, 10000 or 100000.');
         if (database) {
           const db = (await client(info)).db(database);
           if (collection) {

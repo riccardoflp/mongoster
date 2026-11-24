@@ -926,7 +926,7 @@ search, a change stream, the server monitor, an explain plan or the undo history
 - **Uses**: `mcp.arguments`, `mcp.refuse-write-stages`, `undo.show`.
 - **Tested by**: `test/unit/mcpWorkspace.test.ts › 'open tools' › 'open_watch opens the scope, checking the collection and the deployment'`,
   `› 'open_monitor opens a section'`, `› 'open_explain opens a find query or a pipeline with explain'`,
-  `› 'open_history opens the Undo History tab'`. `open_query`, `open_aggregation` and `open_search` have no test.
+  `› 'open_history opens the Undo History tab'`. `open_query` and `open_aggregation` have no test; `open_search`: `test/unit/mcpTools.test.ts › 'open_search' › 'refuses a regular expression that repeats a group that repeats or has alternatives'`, `› 'reads every document only of one collection'`.
 
 The tools (all offered with `mongoster.mcp.readDocuments` off):
 
@@ -934,7 +934,7 @@ The tools (all offered with `mongoster.mcp.readDocuments` off):
 | --- | --- | --- |
 | `open_query` | `connection`, `database`, `collection`, `filter`, `sort`, `projection` | the collection tab with the query filled in and run; `Opened shop.orders on Local with the filter { a: 1 }, sort { b: -1 }.` |
 | `open_aggregation` | `connection`, `database`, `collection`, `pipeline` | the collection tab in Aggregate mode with the stages, run; `Opened shop.orders on Local in Aggregate mode with 2 stages: $match, $group.` |
-| `open_search` | `connection`, `database`, `collection`, `text`, `regex`, `matchCase`, `fieldNames`, `views` (all default false), `limit` (0, 1000, 10000 or 100000; default 0, all) | the global search tab, searching; `Opened the search for "…" in every database on Local. The results appear in Mongoster's Search tab.` |
+| `open_search` | `connection`, `database`, `collection`, `text`, `regex`, `matchCase`, `fieldNames`, `views` (all default false), `limit` (0, 1000, 10000 or 100000; 0, all, only with a `collection`; default 0 with a collection, 10000 without) | the global search tab, searching; `Opened the search for "…" in every database on Local. The results appear in Mongoster's Search tab.` |
 | `open_watch` | `connection`, `database`, `collection` | the Watch tab on the scope; `Opened the Watch tab on shop.orders of Local.` |
 | `open_monitor` | `connection`, `section` (`operations`, `slow-queries`, `stats`, `replication`, `sharding`) | the server monitor on that section; `Opened the server monitor of Prod on slow-queries.` |
 | `open_explain` | `connection`, `database`, `collection`, and either `filter`, `sort`, `projection` or `pipeline` | the collection tab with the query or the stages and its explain plan; `Opened shop.orders on Local with the filter { a: 1 }, sort { b: -1 } and its explain plan.` |
@@ -951,6 +951,12 @@ Acceptance:
   `Give either filter/sort/projection or pipeline, not both.`
 - [ ] `open_search` refuses `collection` without `database` (`collection needs database.`), an invalid regular
   expression (`Invalid regular expression: …`) and a `limit` not in the list (`limit must be one of 0, 1000, 10000, 100000.`).
+- [ ] `open_search` reads every document only of one collection: `limit` 0 without a `collection` is refused
+  (`limit 0 (every document) needs a collection: …`), and without `limit` a database or a connection is searched
+  10000 documents per collection.
+- [ ] `open_search` refuses a regular expression of more than 200 characters, and one that repeats a group which
+  repeats in itself or has alternatives (`(a+)+`, `(a|ab)+`), which could stop Mongoster on a long text. The check
+  reads the text of the expression: it also refuses harmless ones of that form, and is no proof for the others.
 - [ ] `open_watch` on a standalone server still opens the tab and adds
   `The server is a standalone: change streams need a replica set or a sharded cluster, so the tab shows an error.`
 - [ ] `open_monitor` refuses an unknown section: `section must be one of operations, slow-queries, stats, replication, sharding.`

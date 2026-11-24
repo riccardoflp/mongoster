@@ -8,6 +8,7 @@
 - With `mongoster.mcp.readDocuments` off, the MCP server no longer shows a value that starts with `$` (a password hash, a price), a command that the server cut short, or a number in a projection that is not 1, 0 or -1: `slow_queries`, `current_operations`, `index_advice` and `list_saved_queries` took them for part of the shape.
 - The MCP server now refuses the oplog as a collection (`local.oplog.rs`, named or joined in a pipeline): it holds the writes to the system collections, users and their credentials among them.
 - The MCP server now refuses a filter, a projection or a pipeline that runs JavaScript on the server (`$where`, `$function`, `$accumulator`).
+- The search an AI opens through the MCP server (`open_search`) can no longer stop Mongoster: every document is read only of one collection (a database or a connection is searched 10000 documents per collection unless a number is given), and a regular expression that repeats a group which repeats in itself, as `(a+)+`, is refused.
 
 ## 0.10.0
 
