@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.0
 
 - The desktop app's window no longer has the system's title bar: its own bar at the top, in the colors of the theme, holds the menus (`File`, `Edit`, `View`, `Tools`, `Help`; `Alt` and the underlined letter, or `F10`, open them), the name of the active tab and the buttons that minimize, maximize and close the window. Dragging the bar moves the window. On macOS the menus stay in the system's menu bar and the window's buttons at the left of the bar.
 - **Exclude from searches**: right-click a connection, a database, a collection, a view or a GridFS bucket → `Exclude From Searches` leaves it out of searches. It stays in the tree, dimmed and marked `excluded`; the tree's filter skips it (and no longer opens an excluded connection), `Search Documents…` on a connection or a database skips what is excluded inside it and says how many it left out, and the MCP server's lists of connections, databases and collections leave it out. Searching or opening it by name still works. `Include in Searches` puts it back. Several nodes can now be selected in the tree with `Ctrl+click` and `Shift+click`, to exclude or include them together. Mongoster's connection export carries the exclusions.

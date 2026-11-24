@@ -12,7 +12,7 @@ the MCP server, and the writes of compare, structure and indexes; the pages 01 t
 **Exit**: `python docs/catalog.py docs` says *no problems*; every card has **Tested by**; every gap found is a
 **Differs** line, a row of [13-risks.md](13-risks.md) or an open question.
 
-## M2 — Colors for collections, conditional formatting, names from comments in a list
+## M2 — Colors for collections, conditional formatting, names from comments in a list (done in 0.9.0)
 
 Three features asked by the user. Each follows the checklist *Every user-visible change* of `AGENTS.md`: its cards,
 its tests, the README's `Features`, an entry in `## Unreleased` of `CHANGELOG.md`. The second and third add data

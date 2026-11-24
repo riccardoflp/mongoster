@@ -23,14 +23,14 @@ being asked for passwords.
 
 | Key | Holds | May be lost? |
 | --- | --- | --- |
-| `mongoster.connections` | The list of connections: id, name, folder, color (a preset name, or `#rrggbb` added after 0.8.0, D17), the colors of collections (`collectionColors`: `database.collection` → a color or `none`, optional, added after 0.8.0, D16), what is excluded from searches (`excluded`: the connection, `true` or absent; `exclusions`: a sorted list of databases and `database.collection` keys; both optional, added after 0.8.0, D19), read-only, no undo history, SSH label, TLS flag, redis-oplog settings without the URL (`ConnectionInfo`) | **No**: the user's connections |
+| `mongoster.connections` | The list of connections: id, name, folder, color (a preset name, or `#rrggbb` added in 0.9.0, D17), the colors of collections (`collectionColors`: `database.collection` → a color or `none`, optional, added in 0.9.0, D16), what is excluded from searches (`excluded`: the connection, `true` or absent; `exclusions`: a sorted list of databases and `database.collection` keys; both optional, added in 0.9.0, D19), read-only, no undo history, SSH label, TLS flag, redis-oplog settings without the URL (`ConnectionInfo`) | **No**: the user's connections |
 | `mongoster.knownHosts` | The SSH host keys the user confirmed | No: losing it asks again, which is safe but surprising |
 | `mongoster.history.<connection>/<database>/<collection>` | The last 50 queries run on a collection | Yes |
 | `mongoster.saved.<connection>/<database>/<collection>` | The queries saved *for me* | **No** |
 | `mongoster.layout.<connection>/<database>/<collection>` | The columns' layout: hidden, order, widths, pinned | Yes |
 | `mongoster.expanded.<connection>/<database>/<collection>` | The expanded nested columns | Yes |
 | `mongoster.formatting.<connection>/<database>/<collection>` | The formatting rules, in their order: an array of `{ id, condition, field?, color, enabled? }` (`FormatRule`), read by `readFormatRules`, which drops the entries it can't use | **No**: the user wrote them |
-| `mongoster.queryPane` | The width of the query pane of every collection's tab: `{ width }` (added after 0.8.0), read by `readQueryPane`, which gives the default (380 px) for anything else; where the query goes is the setting `mongoster.queryBar.position`, and a `side` stored by a build before that setting is ignored | Yes |
+| `mongoster.queryPane` | The width of the query pane of every collection's tab: `{ width }` (added in 0.9.0), read by `readQueryPane`, which gives the default (380 px) for anything else; where the query goes is the setting `mongoster.queryBar.position`, and a `side` stored by a build before that setting is ignored | Yes |
 | `mongoster.playgroundTargets` | The connection and database of each playground file | Yes |
 | `mongoster.backupFolder` | The last folder used for a backup | Yes |
 | `mongoster.savedQueries.lastPlace` | *For me* or *In the project*, offered first | Yes |
@@ -73,7 +73,7 @@ connection file takes a hex color to its nearest old color and drops a new prese
 | `.mongoster/queries/<database>/<collection>/<name>.json` (or `mongoster.savedQueries.folder`) | JSON: `name`, `description`, `database`, `collection`, optional `connection`, `filter` / `sort` / `projection` or `pipeline` in mongosh syntax, text on several lines as an array of lines | Shared through git by teams: other versions of Mongoster read and write the same files; invalid ones are skipped with a warning and `Open File` (D15) |
 | Backups: `.agz`, `.archive`, folders of `.bson` and `.metadata.json` (gzipped or not) | mongodump's formats | Readable by `mongorestore` and from `mongodump` ([D10](08-decisions.md#d10--backups-in-mongodumps-formats-written-by-mongoster)) |
 | Exports: JSON, JSON Lines (canonical Extended JSON), CSV with a UTF-8 BOM | as `mongoexport` writes them, for JSON Lines | Importable again by Mongoster and `mongoimport` |
-| Connection files: Mongoster's JSON, Compass's JSON, lists of connection strings | `src/shared/connectionsFile.ts` | Compass reads Mongoster's Compass export, passwords included when encrypted with a passphrase. Mongoster's JSON may have `collectionColors`, `excluded` and `exclusions` per connection (added after 0.8.0); a file without them reads as before, and an older Mongoster ignores them |
+| Connection files: Mongoster's JSON, Compass's JSON, lists of connection strings | `src/shared/connectionsFile.ts` | Compass reads Mongoster's Compass export, passwords included when encrypted with a passphrase. Mongoster's JSON may have `collectionColors`, `excluded` and `exclusions` per connection (added in 0.9.0); a file without them reads as before, and an older Mongoster ignores them |
 
 ### The desktop app
 
