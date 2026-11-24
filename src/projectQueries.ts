@@ -71,6 +71,30 @@ export function staysInWorkspace(setting: string): boolean {
   return inside(root, path.resolve(root, setting));
 }
 
+/**
+ * Whether `folder` is inside `root` on the disk, symbolic links followed. A relative path that doesn't climb
+ * out (staysInWorkspace) can still lead out: a repository can have a link in place of `.mongoster/queries`,
+ * or of `.mongoster`. A folder that isn't there yet is judged by the deepest part of it that is.
+ */
+export function reallyInside(root: string, folder: string): boolean {
+  try {
+    const realRoot = fs.realpathSync(root);
+    const missing: string[] = [];
+    for (let existing = folder; ; ) {
+      try {
+        return inside(realRoot, path.join(fs.realpathSync(existing), ...missing));
+      } catch {
+        const parent = path.dirname(existing);
+        if (parent === existing) return false;
+        missing.unshift(path.basename(existing));
+        existing = parent;
+      }
+    }
+  } catch {
+    return false;
+  }
+}
+
 const nonEmpty = (value: unknown) => (typeof value === 'string' && value.trim()) || undefined;
 
 const exists = (p: string) => fs.promises.stat(p).then(
@@ -120,9 +144,13 @@ export class ProjectQueries implements vscode.Disposable {
     if (isHome(setting)) setting = path.join(os.homedir(), setting.slice(1));
     if (path.isAbsolute(setting)) return [{ folder: path.normalize(setting), label: path.basename(setting) }];
     const workspace = (vscode.workspace.workspaceFolders ?? []).filter((f) => f.uri.scheme === 'file');
-    const roots = workspace.length
-      ? workspace.map((f) => ({ root: f.uri.fsPath, label: f.name }))
-      : [this.context.globalState.get<string>(PROJECT_FOLDER_KEY)].filter((r): r is string => !!r).map((r) => ({ root: r, label: path.basename(r) }));
+    // A workspace folder is someone else's repository: its queries folder counts only when it is really in it.
+    if (workspace.length) {
+      return workspace
+        .map((f) => ({ folder: path.join(f.uri.fsPath, setting), root: f.uri.fsPath, label: f.name }))
+        .filter((f) => reallyInside(f.root, f.folder));
+    }
+    const roots = [this.context.globalState.get<string>(PROJECT_FOLDER_KEY)].filter((r): r is string => !!r).map((r) => ({ root: r, label: path.basename(r) }));
     return roots.map(({ root, label }) => ({ folder: path.join(root, setting), root, label }));
   }
 

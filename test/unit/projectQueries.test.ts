@@ -46,7 +46,7 @@ vi.mock('vscode', async () => {
   };
 });
 
-const { ProjectQueries, staysInWorkspace } = await import('../../src/projectQueries');
+const { ProjectQueries, reallyInside, staysInWorkspace } = await import('../../src/projectQueries');
 
 let dir: string;
 const context = () => ({ globalState: { get: () => undefined, update: () => Promise.resolve() } }) as never;
@@ -149,6 +149,22 @@ describe('ProjectQueries', () => {
     fake.workspaceSetting = '../outside';
     expect(await store.save(scope, 'Q', find('{}'))).toBe('.mongoster/queries/shop/orders/q.json');
     expect(fs.existsSync(path.join(dir, '..', 'outside'))).toBe(false);
+  });
+
+  // RS37: a repository can have a symbolic link where the queries folder is.
+  it('takes a folder for inside the workspace by where it really is', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mongoster-root-'));
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'mongoster-elsewhere-'));
+    fs.mkdirSync(path.join(root, 'real', 'queries'), { recursive: true });
+    expect(reallyInside(root, path.join(root, 'real', 'queries'))).toBe(true);
+    expect(reallyInside(root, path.join(root, 'not', 'there', 'yet'))).toBe(true);
+    fs.symlinkSync(elsewhere, path.join(root, '.mongoster'), 'dir');
+    expect(reallyInside(root, path.join(root, '.mongoster'))).toBe(false);
+    expect(reallyInside(root, path.join(root, '.mongoster', 'queries'))).toBe(false);
+    fs.symlinkSync(path.join(root, 'real'), path.join(root, 'alias'), 'dir');
+    expect(reallyInside(root, path.join(root, 'alias', 'queries'))).toBe(true);
+    fs.rmSync(root, { recursive: true });
+    fs.rmSync(elsewhere, { recursive: true });
   });
 
   it('knows which folders stay in the workspace', () => {

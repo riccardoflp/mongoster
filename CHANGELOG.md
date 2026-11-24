@@ -18,6 +18,7 @@
 - The desktop app on Linux without a keyring no longer encrypts new secrets with the key Electron uses there, which is the same on every machine: they are kept as on any system without a keychain, readable only by your account.
 - `Generate Code` now writes a `NumberLong` that is not a whole number as a string for the language to parse; a saved query from someone else could put its own code in the Python, Java, C# or Go that was generated.
 - A playground on a read-only connection can no longer change the profiler with `db.runCommand({ profile: … })` (reading its level with `-1` stays) or repair with `validate`.
+- The project's saved queries folder is now ignored when a symbolic link in the repository leads it out of the workspace folder: Mongoster would read, save and delete query files there.
 
 ## 0.10.0
 
