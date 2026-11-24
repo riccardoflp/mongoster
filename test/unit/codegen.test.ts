@@ -231,3 +231,20 @@ describe('every language', () => {
     }
   });
 });
+
+// RS35: a query can come from a file of someone else; nothing of it is code in what is generated.
+describe('a $numberLong that is not a whole number', () => {
+  const EVIL = "1); __import__('os').system('id'";
+  const query: CodeQuery = { kind: 'find', filter: { n: { $numberLong: EVIL }, m: { $numberLong: '-42' } } };
+
+  it('is never written as code', () => {
+    for (const language of CODE_LANGUAGES.map((l) => l.id)) {
+      const code = generateCode(language, query, snippet);
+      // Wherever its text is, it is inside a string literal.
+      expect(code.split(JSON.stringify(EVIL)).join(''), language).not.toContain('__import__');
+      expect(code, language).toContain('-42');
+    }
+    expect(generateCode('python', query, snippet)).toContain(`Int64(${JSON.stringify(EVIL)})`);
+    expect(generateCode('java', query, snippet)).toContain(`Long.parseLong(${JSON.stringify(EVIL)})`);
+  });
+});

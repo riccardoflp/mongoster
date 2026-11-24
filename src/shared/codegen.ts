@@ -28,6 +28,13 @@ export interface CodeTarget {
 const WIDTH = 80;
 const DEFAULT_URI = 'mongodb://localhost:27017';
 const q = JSON.stringify;
+
+/**
+ * The text of a $numberLong when it is a whole number, the only text that can be written in the code as it
+ * is. A query can come from a file someone else wrote (a saved query of the project): anything else would be
+ * code of theirs in what the user copies and runs, so it is written as a string for the language to parse.
+ */
+const wholeNumber = (val: unknown): string | undefined => (/^-?\d+$/.test(String(val)) ? String(val) : undefined);
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 /** True for a projection or sort worth passing (not missing, not {}). */
@@ -214,7 +221,7 @@ class PyPrinter extends Printer {
         return `datetime(${parts.join(', ')}, tzinfo=timezone.utc)`;
       }
       case '$numberLong':
-        return this.use('from bson.int64 import Int64', `Int64(${String(val)})`);
+        return this.use('from bson.int64 import Int64', `Int64(${wholeNumber(val) ?? q(String(val))})`);
       case '$numberDecimal':
         return this.use('from bson.decimal128 import Decimal128', `Decimal128(${q(String(val))})`);
       case '$numberInt':
@@ -288,7 +295,7 @@ class JavaPrinter extends Printer {
         this.imports.add('java.time.Instant');
         return this.use('java.util.Date', `Date.from(Instant.parse(${q(toDate(val).toISOString())}))`);
       case '$numberLong':
-        return `${String(val)}L`;
+        return wholeNumber(val) ? `${String(val)}L` : `Long.parseLong(${q(String(val))})`;
       case '$numberDecimal':
         return this.use('org.bson.types.Decimal128', `Decimal128.parse(${q(String(val))})`);
       case '$numberInt':
@@ -371,7 +378,7 @@ class CsPrinter extends Printer {
         return d.getUTCMilliseconds() ? `${base}.AddMilliseconds(${d.getUTCMilliseconds()})` : base;
       }
       case '$numberLong':
-        return `${String(val)}L`;
+        return wholeNumber(val) ? `${String(val)}L` : `long.Parse(${q(String(val))})`;
       case '$numberDecimal':
         return `Decimal128.Parse(${q(String(val))})`;
       case '$numberInt':
@@ -461,7 +468,7 @@ class GoPrinter extends Printer {
         return `bson.NewDateTimeFromTime(time.Date(${d.getUTCFullYear()}, time.${MONTHS[d.getUTCMonth()]}, ${d.getUTCDate()}, ${d.getUTCHours()}, ${d.getUTCMinutes()}, ${d.getUTCSeconds()}, ${d.getUTCMilliseconds() * 1_000_000}, time.UTC))`;
       }
       case '$numberLong':
-        return `int64(${String(val)})`;
+        return `int64(${wholeNumber(val) ?? '0'})`;
       case '$numberDecimal':
         this.helpers.add('decimal128');
         return `decimal128(${q(String(val))})`;

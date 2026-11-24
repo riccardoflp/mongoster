@@ -16,6 +16,7 @@
 - Exporting connections `Without passwords` or with a passphrase now takes a Redis password with an `@` in it whole; its end stayed in the file in clear text.
 - `Import Connections…` now says, in the list, when a connection signs in in a way that sends the password as it is or the machine's own credentials (`signs in with PLAIN`, `MONGODB-AWS`, `MONGODB-OIDC`, `GSSAPI`), and when its TLS or SSH key file is on another machine (`reads \\server\share\…`).
 - The desktop app on Linux without a keyring no longer encrypts new secrets with the key Electron uses there, which is the same on every machine: they are kept as on any system without a keychain, readable only by your account.
+- `Generate Code` now writes a `NumberLong` that is not a whole number as a string for the language to parse; a saved query from someone else could put its own code in the Python, Java, C# or Go that was generated.
 
 ## 0.10.0
 
