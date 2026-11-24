@@ -148,6 +148,27 @@ from backups and exports (an incomplete backup nobody asked for), a list kept pe
 export would lose it). New code that goes across databases or collections on its own decides whether it leaves the
 excluded out, with `leaveOutExcluded` in `src/shared/exclusions.ts`.
 
+## D20 — A tag publishes the release, once the maintainer approves
+
+*The maintainer's decision, 2026-11-24: the extension was published to the Marketplace by hand, and the Azure DevOps
+tokens `vsce publish` used stop working on 2026-12-01.*
+
+A release is a commit on `main` whose `package.json` has the version and whose `CHANGELOG.md` has its section, and a
+tag `vX.Y.Z` of that version, which the maintainer pushes. The tag runs `.github/workflows/release.yml`: it checks that
+the tag, the version and the changelog agree and that the commit is on `main`, runs the whole of `build.yml` on it, and
+once that is green:
+
+- the `.vsix` waits for the maintainer's approval in the GitHub environment `marketplace`, then is published on the
+  Marketplace by its trusted publishing (`vsce publish --oidc`), with no token stored anywhere: the Marketplace's
+  policy names the repository, the workflow and the environment;
+- a draft release on GitHub, on the tag, gets the `.vsix`, the installers of Windows, macOS and Linux and the
+  version's section of the changelog as notes; the maintainer reads it and publishes it.
+
+`build.yml` publishes nothing any more: it runs on pull requests, on demand and inside the release. Rejected: a token
+of Azure DevOps in a secret (they stop working, and a stored token can leak); publishing on every push of `main` (a
+release is the maintainer's choice); a GitHub release published at once (the installers are not signed, and the
+maintainer reads the notes first).
+
 ## Open questions
 
 - **Q1** — Adopt the target of [04-feature-contract.md](04-feature-contract.md#the-target-for-new-code-and-code-that-is-changed-anyway)

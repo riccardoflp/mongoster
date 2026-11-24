@@ -83,18 +83,32 @@ An installer is built on the system it is for (a macOS disk image can only be ma
 
 ## CI
 
-`.github/workflows/build.yml` runs on every pull request, on `v*` tags and on demand:
+`.github/workflows/build.yml` runs on every pull request, on demand, and inside each release. It publishes nothing:
 
 - **Extension** (Ubuntu): `npm ci`, typecheck, unit tests, integration tests, `npm run package`; the `.vsix` is kept as an artifact of the run.
 - **App** (Windows, macOS, Linux): `npm run package:app`; the installers are kept as artifacts.
-- **Release** (only on a `v*` tag, after both): publishes the GitHub release of the tag with the `.vsix` and the installers, and the tag's section of `CHANGELOG.md` as its notes. A release that already exists (a draft too) gets the files and is published, keeping notes written by hand.
+
+`.github/workflows/release.yml` runs on a `v*` tag ([D20](08-decisions.md#d20--a-tag-publishes-the-release-once-the-maintainer-approves)):
+
+- **The tag and the version**: the tag is `v` + the version of `package.json`, `CHANGELOG.md` has its `## <version>` section, and the tagged commit is on `main`; otherwise nothing else runs.
+- **Build**: the whole of `build.yml` on that commit.
+- **Publish on the Marketplace**: waits for the maintainer's approval in the GitHub environment `marketplace`, then publishes the `.vsix` that Build made with `vsce publish --oidc` (trusted publishing, no token stored). A version already on the Marketplace is skipped.
+- **The draft release on GitHub**: a draft release on the tag with the `.vsix`, the installers and the version's section of `CHANGELOG.md` as notes, for the maintainer to read and publish. A run again on the same tag replaces the files and keeps the notes.
+
+It can be run again by hand from the Actions tab, with the tag chosen in `Use workflow from`.
+
+### Setting up publishing (once)
+
+- On GitHub, `Settings › Environments`: an environment `marketplace` with the maintainer as required reviewer and deployment tags limited to `v*`.
+- On the Marketplace's publisher management page, for the publisher `RiccardoFilippozzi`: a trusted publishing policy for the repository `riccardoflp/mongoster`, the workflow `release.yml` and the environment `marketplace`.
 
 ## Releasing
 
-1. In `CHANGELOG.md`, rename `## Unreleased` to `## <version>` (the release job fails if the section is missing).
+1. In `CHANGELOG.md`, rename `## Unreleased` to `## <version>` (the release fails if the section is missing).
 2. Set the version in `package.json` and `package-lock.json` (`npm version <version> --no-git-tag-version` does both).
-3. Commit as `Release <version> with <the main features>`, e.g. `Release 0.7.0 with search indexes and transactions`.
-4. Tag `v<version>` and push the commit and the tag: the workflow publishes the GitHub release.
-5. Publish the extension to the Marketplace by hand (`npx vsce publish`, or upload the `.vsix` of the release).
+3. Commit as `Release <version> with <the main features>`, e.g. `Release 0.7.0 with search indexes and transactions`, and merge it into `main`.
+4. Tag `v<version>` on that commit of `main` and push the tag: `release.yml` builds everything.
+5. Approve the job `Publish on the Marketplace` in the run (it waits in the environment `marketplace`).
+6. Read the draft release on GitHub and publish it: the README sends users there for the installers.
 
 Versions are `0.x.0` for now: a minor version per batch of features.

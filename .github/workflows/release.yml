@@ -1,0 +1,131 @@
+# The release of a version: a tag vX.Y.Z pushed on a commit of main whose package.json has the version X.Y.Z
+# and whose CHANGELOG.md has the section "## X.Y.Z" runs the whole of build.yml on that commit. Once it is
+# green, the .vsix waits in the environment `marketplace` for the maintainer's approval and is then published
+# on the Marketplace by trusted publishing, with no token stored; beside that, a draft release on GitHub gets
+# the .vsix and the desktop app's installers, for the maintainer to read and publish. It can be run again by
+# hand on the same tag, from the Actions tab with the tag chosen in "Use workflow from": a version already on
+# the Marketplace is left as it is, and the files of the draft are replaced.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: The tag and the version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      # The whole history, for the check that the tag is on main.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: The tag names the version of package.json, which has its section in the changelog, on main
+        id: version
+        run: |
+          if [ "$GITHUB_REF_TYPE" != tag ]; then
+            echo "::error::A release runs on a tag: push vX.Y.Z, or choose the tag in \"Use workflow from\"."
+            exit 1
+          fi
+          version=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::The tag is $GITHUB_REF_NAME, but package.json has the version $version."
+            exit 1
+          fi
+          if ! grep -qx "## $version" CHANGELOG.md; then
+            echo "::error file=CHANGELOG.md::No '## $version' section in CHANGELOG.md."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::The commit of $GITHUB_REF_NAME is not on main."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Mongoster $version."
+
+  build:
+    name: Build
+    needs: version
+    uses: ./.github/workflows/build.yml
+
+  marketplace:
+    name: Publish on the Marketplace
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    # The maintainer's approval: the environment asks for it before this job starts, and the Marketplace's
+    # trusted publishing policy names it, so that no other job can publish.
+    environment: marketplace
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      # vsce at the version of package-lock.json, which has --oidc from 4.1.
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+      - uses: actions/download-artifact@v4
+        with:
+          name: mongoster-Extension
+          path: vsix
+      # The .vsix build.yml made, not a new one: what is published is what was tested. A version already
+      # published, by a run before this one on the same tag, is skipped.
+      - name: vsce publish --oidc
+        run: |
+          count=$(ls vsix/*.vsix | wc -l)
+          if [ "$count" -ne 1 ]; then
+            echo "::error::$count .vsix were made, not 1."
+            exit 1
+          fi
+          npx vsce publish --oidc --skip-duplicate --packagePath vsix/*.vsix
+
+  draft:
+    name: The draft release on GitHub
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+      # The .vsix and the installers of Windows, macOS and Linux, all in one folder.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mongoster-*
+          path: files
+          merge-multiple: true
+      - name: The notes, from the changelog
+        run: |
+          awk -v heading="## $VERSION" '$0 == heading { found = 1; next } /^## / { found = 0 } found' CHANGELOG.md > notes.md
+          cat notes.md
+      # A run again on the same tag replaces the files of the release it made, and leaves its notes as they are.
+      - name: The draft release
+        run: |
+          ls -l files
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" files/* --clobber
+          else
+            gh release create "$TAG" files/* --draft --verify-tag --title "Mongoster $VERSION" --notes-file notes.md
+          fi

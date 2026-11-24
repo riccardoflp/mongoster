@@ -43,6 +43,7 @@ have written (imports, connection files, backups, saved query files from git, pl
 | T12 | D, T | Retention of a scheduled task deletes files that are not its own outputs. | `task.retention` | Only the outputs recorded in the task's state are deleted, by exact path; names and patterns are never looked at | Mitigated; a file the user later puts at exactly a recorded path would be deleted (accepted) |
 | T13 | I | A Redis URL or a connection string is given to an AI. | `mcp.server` | Tools never return them (`redis_oplog_status` gives the channels, not the URL) | Mitigated |
 | T14 | S | TLS with `Allow invalid certificates` or `Allow invalid host names` lets a machine in the middle pose as the server. | the connection form | Off by default, said "only if really needed" | Accepted: the user's explicit choice |
+| T15 | T, S | A version the maintainer did not mean is published on the Marketplace: a tag pushed by someone else, a workflow changed on a branch, a token that leaked. | `.github/workflows/release.yml` | [D20](08-decisions.md#d20--a-tag-publishes-the-release-once-the-maintainer-approves): no token is stored; trusted publishing gives a credential of 15 minutes only to the workflow and the environment its policy names; the environment `marketplace` asks the maintainer's approval and takes only `v*` tags; the workflow publishes only a tag on `main` whose version and changelog agree, after the whole of `build.yml` | Mitigated while the environment keeps its required reviewer |
 
 ## What we do about it
 
@@ -59,6 +60,7 @@ planned.
 | Redis URL | `mongoster.redis.<id>` | `src/redisOplog.ts` | `ConnectionInfo`, the MCP server's answers |
 | MCP access token | `mongoster.mcp.token` | `src/mcpServer.ts`; the setup command copies it into the client's configuration | logs |
 | Passwords of new MongoDB users | not kept | shown once with `Copy Password` | anywhere after the tab is closed |
+| Marketplace credential of a release | nobody: the Marketplace makes it from GitHub's OIDC token, for 15 minutes | `vsce publish --oidc` in the job `marketplace` of `release.yml` (D20) | the repository, GitHub's secrets, the log |
 
 ## Input that is not trusted
 

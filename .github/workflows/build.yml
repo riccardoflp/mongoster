@@ -1,19 +1,21 @@
-# Builds the extension's package and the desktop app's installers. Each installer is built on its own
-# system: a macOS disk image can only be made on macOS.
+# Checks the extension and builds its package and the desktop app's installers, all kept as artifacts of the
+# run. Each installer is built on its own system: a macOS disk image can only be made on macOS. It publishes
+# nothing: on a version tag, release.yml calls it and publishes what it made.
 name: Build
 
 on:
-  push:
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
+  # From release.yml. A tag is not a trigger of its own here, or a release would build everything twice.
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
   group: build-${{ github.ref }}
-  cancel-in-progress: true
+  # A new push to a pull request replaces the run of the one before; a release is never cancelled halfway.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # The app's packager downloads the Electron it packages: the one of npm is only for `npm run app`.
@@ -34,7 +36,7 @@ jobs:
       - run: npm test
       # Against a mongod that mongodb-memory-server downloads.
       - run: npm run test:integration
-      # Only packaged: publishing to the Marketplace is done by hand.
+      # Only packaged: release.yml publishes this .vsix to the Marketplace.
       - run: npm run package
       - uses: actions/upload-artifact@v4
         with:
@@ -62,7 +64,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Never published from here: the release job below attaches the files.
+      # Never published from here: release.yml attaches the installers to the draft release.
       - run: npm run package:app -- --publish never
       - uses: actions/upload-artifact@v4
         with:
@@ -72,46 +74,3 @@ jobs:
             release/*.dmg
             release/*.AppImage
           if-no-files-found: error
-
-  # On a version tag, the release is published with the files and the version's section of the
-  # changelog as its notes. A release that already exists, a draft too, gets the files and is published.
-  release:
-    name: Release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [extension, app]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-      TAG: ${{ github.ref_name }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          sparse-checkout: CHANGELOG.md
-          sparse-checkout-cone-mode: false
-      - uses: actions/download-artifact@v4
-        with:
-          path: files
-          merge-multiple: true
-      - name: Take the notes from the changelog
-        run: |
-          VERSION="${TAG#v}"
-          awk -v heading="## $VERSION" '$0 == heading { found = 1; next } /^## / { found = 0 } found' CHANGELOG.md > notes.md
-          if ! grep -q '[^[:space:]]' notes.md; then
-            echo "::error file=CHANGELOG.md::No '## $VERSION' section in CHANGELOG.md"
-            exit 1
-          fi
-      - name: Publish the release
-        run: |
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release upload "$TAG" files/* --clobber
-            # Notes written by hand are kept.
-            if [ -z "$(gh release view "$TAG" --json body --jq .body)" ]; then
-              gh release edit "$TAG" --notes-file notes.md
-            fi
-            gh release edit "$TAG" --draft=false
-          else
-            gh release create "$TAG" files/* --verify-tag --title "Mongoster ${TAG#v}" --notes-file notes.md
-          fi

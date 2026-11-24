@@ -1165,7 +1165,7 @@
     "@types/ssh2": "^1.15.6",
     "@types/vscode": "^1.90.0",
     "@vscode/codicons": "^0.0.46-24",
-    "@vscode/vsce": "^3.2.0",
+    "@vscode/vsce": "^4.1.1",
     "electron": "^44.7.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.24.0",
