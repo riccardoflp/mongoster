@@ -29,7 +29,7 @@ import {
 import { onRequest, onShell, post } from './bridge';
 import { action, keybindings, menu } from './contributions';
 import { decorationColor, onDidChangeDecorations } from './decorations';
-import { themeFile } from '../theme';
+import { defaultTheme, findTheme, themeFile } from '../theme';
 import { outputText, showErrorMessage, showSaveDialog, showWarningMessage } from './ui';
 
 /** The scheme of the color theme files the app provides. */
@@ -47,7 +47,11 @@ export function registerFileSystemProvider(scheme: string, provider: FileSystemP
 export const fileSystem = {
   async readFile(uri: Uri): Promise<Uint8Array> {
     if (uri.scheme === 'file') return fs.promises.readFile(uri.fsPath);
-    if (uri.scheme === THEME_SCHEME) return new TextEncoder().encode(themeFile(uri.path.includes('light') ? 'light' : 'dark'));
+    if (uri.scheme === THEME_SCHEME) {
+      // `/themes/<id>.json`, as the themes are listed in appearance.ts.
+      const id = /([^/]+)\.json$/.exec(uri.path)?.[1] ?? '';
+      return new TextEncoder().encode(themeFile(findTheme(id) ?? defaultTheme('dark')));
+    }
     const provider = providers.get(uri.scheme);
     if (!provider) throw new Error(`No file system for ${uri.scheme}:`);
     return provider.readFile(uri);

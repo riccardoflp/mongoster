@@ -30,7 +30,7 @@ extension, `src/standalone/vscode/` in the desktop app ([D1](08-decisions.md#d1-
 | Larger files | `context.globalStorageUri` | the app's folder |
 | Settings | `workspace.getConfiguration('mongoster')` | `storage.ts`: `settings.json`; the Settings tab |
 | Watching saved query files | `createFileSystemWatcher` | `watcher.ts` (`fs.watch`) |
-| Theme colors | the active color theme's files, `--vscode-*` CSS variables | `theme.ts`: dark and light colors as the same variables |
+| Theme colors | the active color theme's files, `--vscode-*` CSS variables | `theme.ts`, `themes.ts`: seventeen themes as the same variables, chosen with `app.theme` |
 | Output channels | `createOutputChannel` (`Mongoster Playground`, `Mongoster MCP`) | `ui.ts` |
 | Clipboard, showing a file in the system's file manager | `env.clipboard`, the `revealFileInOS` command | Electron's `clipboard` and `shell` |
 | The MCP server's discovery by Copilot | `lm.registerMcpServerDefinitionProvider`, when the VS Code version has it | not available: clients are configured by hand |

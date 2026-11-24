@@ -5,6 +5,7 @@ import * as path from 'path';
 import { safeStorage } from 'electron';
 import { ConfigurationTarget, Event, EventEmitter } from './base';
 import { ConfigurationProperty, runtime } from './runtime';
+import { THEMES } from '../themes';
 
 /** A JSON object in a file: read once, written a moment after each change. */
 class JsonFile {
@@ -139,9 +140,18 @@ export interface WorkspaceConfiguration {
 const APP_PROPERTIES: Record<string, ConfigurationProperty> = {
   'app.theme': {
     type: 'string',
-    enum: ['system', 'dark', 'light'],
+    enum: ['system', ...THEMES.map((t) => t.id)],
+    enumItemLabels: ['Follow the System', ...THEMES.map((t) => t.label)],
     default: 'system',
-    description: 'Color theme: follow the operating system, or always dark or light.',
+    description: 'Color theme. `Follow the System` shows Mongoster Dark or Mongoster Light, as the operating system is set.',
+    order: -2,
+  },
+  'app.layout': {
+    type: 'string',
+    enum: ['islands', 'compact'],
+    enumItemLabels: ['Islands', 'Compact'],
+    default: 'islands',
+    description: 'Layout of the window. `Islands`: the side bar and the tabs are rounded panels apart. `Compact`: they are joined edge to edge, with no space between them.',
     order: -1,
   },
 };

@@ -228,6 +228,7 @@ function settingFields(): SettingField[] {
       minimum: p.minimum,
       maximum: p.maximum,
       options: p.enum,
+      optionLabels: p.enumItemLabels,
     }));
 }
 

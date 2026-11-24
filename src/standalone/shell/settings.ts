@@ -33,7 +33,7 @@ function field(f: SettingField): HTMLElement {
     control.addEventListener('change', () => host.send({ type: 'settingChange', key: f.key, value: (control as HTMLInputElement).checked }));
     row.append(heading, h('div', { class: 'setting-check' }, control, description));
   } else if (f.options) {
-    control = h('select', { id }, ...f.options.map((o) => h('option', { value: o }, o)));
+    control = h('select', { id }, ...f.options.map((o, i) => h('option', { value: o }, f.optionLabels?.[i] ?? o)));
     control.addEventListener('change', () => host.send({ type: 'settingChange', key: f.key, value: control.value }));
     row.append(heading, description, control);
   } else {

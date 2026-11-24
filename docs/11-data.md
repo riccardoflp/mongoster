@@ -74,6 +74,9 @@ connection file takes a hex color to its nearest old color and drops a new prese
 
 Besides the equivalents above, in its folder: `secrets.json`, the settings as `settings.json`, `globalState` as a JSON
 file, `window.json` (the window's bounds), written atomically by `JsonFile` in `src/standalone/vscode/storage.ts`.
+`settings.json` also has the app's own `app.theme` and `app.layout`. `app.theme` was `system`, `dark` or `light`
+before the other themes came; those values still name the same themes (Mongoster Dark and Light). An unknown value,
+from a later version, reads as the default.
 
 ## Versions
 

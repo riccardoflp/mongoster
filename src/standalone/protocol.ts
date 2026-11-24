@@ -3,7 +3,12 @@
 
 export type ThemeKind = 'dark' | 'light';
 
+/** How the window is laid out: the side bar and the tabs as panels apart, or joined edge to edge. */
+export type Layout = 'islands' | 'compact';
+
 export interface ThemeInfo {
+  /** The theme's id, the value of the `app.theme` setting. */
+  id: string;
   kind: ThemeKind;
   /** The `--vscode-*` CSS variables, without the leading dashes. */
   vars: Record<string, string>;
@@ -120,6 +125,8 @@ export interface SettingField {
   minimum?: number;
   maximum?: number;
   options?: string[];
+  /** What the options are shown as, when not as themselves. */
+  optionLabels?: string[];
 }
 
 export interface CompletionData {
@@ -152,8 +159,9 @@ export interface TabRef {
 
 /** Host → shell. */
 export type HostMessage =
-  | { type: 'init'; title: string; viewTitle: string; welcome: { text: string; button?: MenuAction }; theme: ThemeInfo; platform: string }
+  | { type: 'init'; title: string; viewTitle: string; welcome: { text: string; button?: MenuAction }; theme: ThemeInfo; layout: Layout; platform: string }
   | { type: 'theme'; theme: ThemeInfo }
+  | { type: 'layout'; layout: Layout }
   | { type: 'viewTitle'; actions: MenuAction[]; message?: string }
   | { type: 'treeChanged'; handle?: string }
   | { type: 'panelOpen'; id: number; title: string; icon?: string; color?: string; src: string; column: Column; preserveFocus: boolean }

@@ -2,7 +2,7 @@
 // the dialogs. It draws what the host (the main process, where Mongoster's code runs) tells it.
 import '@vscode/codicons/dist/codicon.css';
 import './shell.css';
-import type { HostMessage, StatusItem, ThemeInfo } from '../protocol';
+import type { HostMessage, Layout, StatusItem, ThemeInfo } from '../protocol';
 import { h, host, label } from './dom';
 import { closeEditor, editEditor, editorCommand, initEditors, openEditor, refreshLenses, revealEditor, revertActive, saveActive, selectInEditor, setLanguageProviders, themeEditors, updateEditor } from './editor';
 import { closeMessage, endProgress, showMessage, showProgress } from './notifications';
@@ -18,6 +18,11 @@ function applyTheme(theme: ThemeInfo): void {
   root.style.colorScheme = theme.kind;
   document.body.classList.toggle('vscode-dark', theme.kind === 'dark');
   document.body.classList.toggle('vscode-light', theme.kind === 'light');
+}
+
+/** Islands: the side bar and the tabs as rounded panels on the window's background (shell.css). */
+function applyLayout(layout: Layout): void {
+  document.body.classList.toggle('layout-islands', layout === 'islands');
 }
 
 // ---- status bar
@@ -48,6 +53,7 @@ function receive(m: HostMessage): void {
       document.body.dataset.platform = m.platform;
       document.getElementById('view-title')!.textContent = m.viewTitle;
       applyTheme(m.theme);
+      applyLayout(m.layout);
       setWelcome(m.welcome.text, m.welcome.button);
       if (!started) {
         started = true;
@@ -59,6 +65,9 @@ function receive(m: HostMessage): void {
       applyTheme(m.theme);
       themeEditors(m.theme);
       themePanels(m.theme);
+      break;
+    case 'layout':
+      applyLayout(m.layout);
       break;
     case 'viewTitle':
       setTitleActions(m.actions, m.message);

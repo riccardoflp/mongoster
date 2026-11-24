@@ -117,5 +117,7 @@ these words; `catalog.py` reports the words of the **Avoid** column anywhere in 
 | reference | A field whose values point to documents of another collection, as found by sampling. | a DBRef only | — | `Reference`, `Relation` |
 | the extension | Mongoster running in VS Code. | the desktop app | plugin | `src/extension.ts` |
 | the desktop app | Mongoster running in Electron, without VS Code, with the same code. | the extension | — | `src/standalone/` |
+| color theme | The colors of the desktop app's window, tabs, editor and values: one of seventeen, or Mongoster Dark or Light as the system is set. In VS Code, VS Code's own theme. | the color of a connection | skin | `ThemeDefinition`, `THEMES`, `app.theme` |
+| layout | How the desktop app's window is laid out: `Islands`, the side bar and the tabs as rounded panels apart, or `Compact`, joined edge to edge. | the query's place above or beside the results | view mode | `Layout`, `app.layout` |
 | host | The part of Mongoster that runs in Node: the extension host, or the desktop app's main process. | a MongoDB host | backend | — |
 | webview | The page of a tab, in a browser sandbox; it only posts messages to its host. | the tab | frontend | `src/webview/` |

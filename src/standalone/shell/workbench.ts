@@ -277,7 +277,8 @@ export function initWorkbench(): void {
   document.getElementById('sidebar-sash')!.addEventListener('pointerdown', (down) => {
     drag(
       down,
-      (e) => setSidebar(e.clientX),
+      // From the side bar's own left edge, which the islands layout moves away from the window's.
+      (e) => setSidebar(e.clientX - sidebar.getBoundingClientRect().left),
       () => remember(SIDEBAR_KEY, String(sidebar.getBoundingClientRect().width)),
     );
   });

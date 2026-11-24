@@ -22,6 +22,7 @@ export interface ConfigurationProperty {
   minimum?: number;
   maximum?: number;
   enum?: string[];
+  enumItemLabels?: string[];
   description?: string;
   markdownDescription?: string;
   order?: number;

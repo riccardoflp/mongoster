@@ -1,9 +1,12 @@
-// The two color themes of the standalone app. The webviews are styled with VS Code's `--vscode-*`
-// variables, so the app defines them: the colors below are those of VS Code's default themes.
+// The color themes of the standalone app as `--vscode-*` variables. The webviews are styled with VS Code's
+// variables, so the app defines them: each theme of themes.ts over the base of its kind below, which has the
+// colors of VS Code's default dark and light themes. No vscode or Electron dependency.
 import type { ThemeInfo, ThemeKind } from './protocol';
 import { PRESET_COLORS, PRESET_DEFAULTS, themeColorId } from '../shared/colors';
+import { Palette, SyntaxColors, THEMES, ThemeDefinition } from './themes';
 
-export const THEME_NAMES: Record<ThemeKind, string> = { dark: 'Mongoster Dark', light: 'Mongoster Light' };
+export { THEMES };
+export type { ThemeDefinition };
 
 const FONTS = {
   'font-family': process.platform === 'darwin' ? '-apple-system, BlinkMacSystemFont, sans-serif' : process.platform === 'win32' ? '"Segoe WPC", "Segoe UI", sans-serif' : 'system-ui, "Ubuntu", "Droid Sans", sans-serif',
@@ -272,60 +275,152 @@ function contributedColors(kind: ThemeKind): Record<string, string> {
   return Object.fromEntries(own.map((c) => [themeColorId(c).replace(/\./g, '-'), PRESET_DEFAULTS[c][kind]]));
 }
 
-export function themeInfo(kind: ThemeKind): ThemeInfo {
-  return { kind, vars: { ...FONTS, ...(kind === 'dark' ? DARK : LIGHT), ...contributedColors(kind) }, syntax: { ...SYNTAX[kind] } };
+/** `a` moved towards `b` by `amount` (0 to 1); both `#rrggbb`. */
+export function mix(a: string, b: string, amount: number): string {
+  const channel = (hex: string, i: number) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
+  const out = [0, 1, 2].map((i) => Math.round(channel(a, i) + (channel(b, i) - channel(a, i)) * amount));
+  return `#${out.map((n) => n.toString(16).padStart(2, '0')).join('')}`;
 }
 
-interface SyntaxColors {
-  comment: string;
-  string: string;
-  number: string;
-  keyword: string;
-  control: string;
-  constant: string;
-  variable: string;
-  property: string;
-  function: string;
-  type: string;
-  regexp: string;
+/** The variables a palette gives; what it leaves out stays as in the base of its kind. */
+function paletteColors(p: Palette, kind: ThemeKind, syntax: SyntaxColors): Record<string, string> {
+  const focus = p.focus ?? p.accent;
+  const link = p.link ?? p.accent;
+  const charts = Object.fromEntries(Object.entries(p.charts ?? {}).map(([name, value]) => [`charts-${name}`, value]));
+  return {
+    foreground: p.foreground,
+    descriptionForeground: p.muted,
+    focusBorder: focus,
+    'icon-foreground': p.foreground,
+    'editor-background': p.background,
+    'editor-foreground': p.foreground,
+    'editor-selectionBackground': p.editorSelection,
+    'editorLineNumber-foreground': p.muted,
+    'editorCodeLens-foreground': p.muted,
+    'editorWidget-background': p.surface,
+    'editorWidget-border': p.border,
+    'editorWidget-foreground': p.foreground,
+    'editorSuggestWidget-background': p.surface,
+    'editorSuggestWidget-border': p.border,
+    'editorSuggestWidget-foreground': p.foreground,
+    'editorSuggestWidget-highlightForeground': link,
+    'editorSuggestWidget-selectedBackground': p.selection,
+    'editorSuggestWidget-selectedForeground': p.selectionForeground,
+    'editorGroupHeader-tabsBackground': p.surface,
+    'editorGroupHeader-tabsBorder': p.border,
+    'editorGroup-border': p.border,
+    'tab-activeBackground': p.background,
+    'tab-activeForeground': p.foreground,
+    'tab-inactiveBackground': p.surface,
+    'tab-inactiveForeground': p.muted,
+    'tab-hoverBackground': p.background,
+    'tab-border': p.border,
+    'tab-activeBorderTop': p.accent,
+    'sideBar-background': p.surface,
+    'sideBar-foreground': p.foreground,
+    'sideBar-border': p.border,
+    'sideBarTitle-foreground': p.foreground,
+    'sideBarSectionHeader-background': p.surface,
+    'sideBarSectionHeader-border': p.border,
+    'statusBar-background': p.surface,
+    'statusBar-foreground': p.foreground,
+    'statusBar-border': p.border,
+    'statusBarItem-hoverBackground': mix(p.surface, p.foreground, 0.15),
+    'panel-border': p.border,
+    'button-background': p.button,
+    'button-foreground': p.buttonForeground,
+    'button-hoverBackground': mix(p.button, kind === 'dark' ? '#ffffff' : '#000000', 0.1),
+    'button-border': p.button,
+    'button-secondaryBackground': mix(p.background, p.foreground, 0.12),
+    'button-secondaryForeground': p.foreground,
+    'button-secondaryHoverBackground': mix(p.background, p.foreground, 0.2),
+    'input-background': p.input,
+    'input-foreground': p.foreground,
+    'input-border': p.inputBorder,
+    'input-placeholderForeground': p.muted,
+    'inputOption-activeBackground': mix(p.input, focus, 0.35),
+    'dropdown-background': p.input,
+    'dropdown-foreground': p.foreground,
+    'dropdown-border': p.inputBorder,
+    'checkbox-background': p.input,
+    'checkbox-border': p.inputBorder,
+    'badge-background': p.button,
+    'badge-foreground': p.buttonForeground,
+    'list-activeSelectionBackground': p.selection,
+    'list-activeSelectionForeground': p.selectionForeground,
+    'list-inactiveSelectionBackground': mix(p.surface, p.selection, 0.6),
+    'list-hoverBackground': p.hover,
+    'list-highlightForeground': link,
+    'menu-background': p.surface,
+    'menu-foreground': p.foreground,
+    'menu-border': p.border,
+    'menu-selectionBackground': p.selection,
+    'menu-selectionForeground': p.selectionForeground,
+    'quickInput-background': p.surface,
+    'quickInput-foreground': p.foreground,
+    'quickInputList-focusBackground': p.selection,
+    'quickInputList-focusForeground': p.selectionForeground,
+    'pickerGroup-border': p.border,
+    'notifications-background': p.surface,
+    'notifications-foreground': p.foreground,
+    'notifications-border': p.border,
+    'textLink-foreground': link,
+    'textLink-activeForeground': link,
+    'textBlockQuote-background': p.surface,
+    'textBlockQuote-border': p.border,
+    'textCodeBlock-background': p.surface,
+    'textPreformat-foreground': p.foreground,
+    'textPreformat-background': mix(p.background, p.foreground, 0.1),
+    'toolbar-hoverBackground': p.hover,
+    'widget-border': p.border,
+    'progressBar-background': p.accent,
+    'charts-foreground': p.foreground,
+    'charts-lines': `${p.foreground}80`,
+    ...charts,
+    // The values of the playground's results and of the server monitor, when the token colors are not known yet.
+    'debugTokenExpression-name': syntax.property,
+    'debugTokenExpression-string': syntax.string,
+    'debugTokenExpression-number': syntax.number,
+    'debugTokenExpression-boolean': syntax.keyword,
+  };
 }
 
-/** The syntax colors, shared by the editor and (through the theme file below) by the values in the webviews. */
-export const SYNTAX: Record<ThemeKind, SyntaxColors> = {
-  dark: {
-    comment: '#6a9955',
-    string: '#ce9178',
-    number: '#b5cea8',
-    keyword: '#569cd6',
-    control: '#c586c0',
-    constant: '#569cd6',
-    variable: '#9cdcfe',
-    property: '#9cdcfe',
-    function: '#dcdcaa',
-    type: '#4ec9b0',
-    regexp: '#d16969',
-  },
-  light: {
-    comment: '#008000',
-    string: '#a31515',
-    number: '#098658',
-    keyword: '#0000ff',
-    control: '#af00db',
-    constant: '#0000ff',
-    variable: '#001080',
-    property: '#0451a5',
-    function: '#795e26',
-    type: '#267f99',
-    regexp: '#811f3f',
-  },
-};
+/** The background around the panels in the islands layout: a step away from the side bar. */
+function windowColor(theme: ThemeDefinition, vars: Record<string, string>): string {
+  if (theme.window) return theme.window;
+  const side = vars['sideBar-background'].slice(0, 7);
+  return theme.kind === 'dark' ? mix(side, '#ffffff', 0.08) : mix(side, '#000000', 0.07);
+}
+
+export function findTheme(id: string): ThemeDefinition | undefined {
+  return THEMES.find((t) => t.id === id);
+}
+
+/** The theme the app shows for a kind when it follows the operating system. */
+export function defaultTheme(kind: ThemeKind): ThemeDefinition {
+  return findTheme(kind)!;
+}
+
+/** Feature: settings.appearance */
+export function themeInfo(theme: ThemeDefinition): ThemeInfo {
+  const vars: Record<string, string> = {
+    ...FONTS,
+    ...(theme.kind === 'dark' ? DARK : LIGHT),
+    ...contributedColors(theme.kind),
+    ...(theme.palette ? paletteColors(theme.palette, theme.kind, theme.syntax) : {}),
+    ...theme.colors,
+  };
+  vars['mongoster-window-background'] = windowColor(theme, vars);
+  vars['mongoster-island-border'] = theme.islandBorder ?? 'transparent';
+  return { id: theme.id, kind: theme.kind, vars, syntax: { ...theme.syntax } };
+}
 
 /** The theme as a VS Code color theme file: what the extension reads the syntax colors from. */
-export function themeFile(kind: ThemeKind): string {
-  const c = SYNTAX[kind];
+export function themeFile(theme: ThemeDefinition): string {
+  const c = theme.syntax;
   const rule = (scope: string[], foreground: string) => ({ scope, settings: { foreground } });
   return JSON.stringify({
-    name: THEME_NAMES[kind],
+    name: theme.label,
     tokenColors: [
       rule(['comment'], c.comment),
       rule(['string'], c.string),

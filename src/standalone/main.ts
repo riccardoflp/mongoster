@@ -9,9 +9,9 @@ import { activate } from '../extension';
 import { Scheduler } from '../scheduler';
 import { TRAY_SETTING } from '../scheduledTasks';
 import type { HostMessage, ShellMessage } from './protocol';
-import { themeInfo } from './theme';
 import * as vscode from './vscode';
-import { THEME_SETTING, initAppearance, themeKind } from './vscode/appearance';
+import { THEMES } from './theme';
+import { LAYOUT_SETTING, THEME_SETTING, activeThemeInfo, initAppearance, layout, windowBackground } from './vscode/appearance';
 import { answer, dispatch, onShell } from './vscode/bridge';
 import { runCommand } from './vscode/commands';
 import { action, paletteCommands } from './vscode/contributions';
@@ -144,7 +144,7 @@ function createWindow(): void {
     show: false,
     title: APP_NAME,
     icon: path.join(appRoot, 'media', 'icon.png'),
-    backgroundColor: themeInfo(themeKind()).vars['editor-background'],
+    backgroundColor: windowBackground(),
     webPreferences: {
       preload: path.join(shellDir, 'preload.js'),
       contextIsolation: true,
@@ -254,7 +254,8 @@ function shellStarted(): void {
     title: APP_NAME,
     viewTitle: view?.name ?? APP_NAME,
     welcome: { text: welcome.replace(/\[[^\]]+\]\([^)]+\)/g, '').trim(), button: link ? { command: link[2], title: link[1] } : undefined },
-    theme: themeInfo(themeKind()),
+    theme: activeThemeInfo(),
+    layout: layout(),
     platform: process.platform,
   });
   post({ type: 'viewTitle', actions: viewTitleActions() });
@@ -322,13 +323,13 @@ function buildMenu(): void {
     accelerator,
     click: () => post({ type: 'shellCommand', command: name }),
   });
-  const theme = settings.value(THEME_SETTING);
-  const themeItem = (label: string, value: string): MenuItemConstructorOptions => ({
+  const radio = (key: string, label: string, value: string): MenuItemConstructorOptions => ({
     label,
     type: 'radio',
-    checked: theme === value,
-    click: () => settings.set(THEME_SETTING, value),
+    checked: settings.value(key) === value,
+    click: () => settings.set(key, value),
   });
+  const themeItems = (kind: 'dark' | 'light') => THEMES.filter((t) => t.kind === kind).map((t) => radio(THEME_SETTING, t.label, t.id));
   const outputs = outputChannels();
   const mac = process.platform === 'darwin';
 
@@ -362,7 +363,11 @@ function buildMenu(): void {
         shellCommand('Next Tab', 'nextTab', 'Ctrl+PageDown'),
         shellCommand('Previous Tab', 'previousTab', 'Ctrl+PageUp'),
         { type: 'separator' },
-        { label: 'Theme', submenu: [themeItem('Follow the System', 'system'), themeItem('Dark', 'dark'), themeItem('Light', 'light')] },
+        {
+          label: 'Theme',
+          submenu: [radio(THEME_SETTING, 'Follow the System', 'system'), { type: 'separator' }, ...themeItems('dark'), { type: 'separator' }, ...themeItems('light')],
+        },
+        { label: 'Layout', submenu: [radio(LAYOUT_SETTING, 'Islands', 'islands'), radio(LAYOUT_SETTING, 'Compact', 'compact')] },
         { label: 'Output', enabled: outputs.length > 0, submenu: outputs.map((name) => ({ label: name, click: () => void showOutput(name) })) },
         { type: 'separator' },
         { role: 'resetZoom' },
@@ -427,11 +432,14 @@ else {
     activate(context as never);
 
     buildMenu();
-    // The theme's radio buttons follow the setting, wherever it was changed from.
+    // The radio buttons of the theme and the layout follow the settings, wherever they were changed from.
     settings.onDidChange((e) => {
-      if (e.affectsConfiguration(THEME_SETTING)) buildMenu();
+      if (e.affectsConfiguration(THEME_SETTING) || e.affectsConfiguration(LAYOUT_SETTING)) {
+        buildMenu();
+        window?.setBackgroundColor(windowBackground());
+      }
     });
-    nativeTheme.on('updated', () => window?.setBackgroundColor(themeInfo(themeKind()).vars['editor-background']));
+    nativeTheme.on('updated', () => window?.setBackgroundColor(windowBackground()));
     createWindow();
 
     // One window, and the open tabs live in it: closing it quits the app, on macOS too, unless it goes

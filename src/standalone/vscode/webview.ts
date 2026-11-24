@@ -1,10 +1,9 @@
 // vscode.window.createWebviewPanel: each panel is a tab of the shell showing a sandboxed frame. The
 // frame gets what VS Code gives a webview: acquireVsCodeApi(), the theme's CSS variables, the default styles.
 import type { Column, ThemeInfo } from '../protocol';
-import { themeInfo } from '../theme';
 import { Event, EventEmitter, Thenable, ThemeColor, Uri, ViewColumn } from './base';
 import { onShell, post } from './bridge';
-import { onDidChangeActiveColorTheme, themeKind } from './appearance';
+import { activeThemeInfo, onDidChangeActiveColorTheme, themeKind } from './appearance';
 import { cssColor } from './decorations';
 import { APP_PROTOCOL, RESOURCE_HOST, appResourceUri } from './resources';
 
@@ -241,7 +240,7 @@ export function panelDocument(id: number): string | undefined {
   const nonce = /'nonce-([^']+)'/.exec(html)?.[1] ?? '';
   const setup =
     `<link rel="stylesheet" href="${APP_PROTOCOL}://${RESOURCE_HOST}/dist/app/webview-default.css">` +
-    `<script nonce="${nonce}">(${bootstrap.toString()})(${JSON.stringify(themeInfo(themeKind())).replace(/</g, '\\u003c')});</script>`;
+    `<script nonce="${nonce}">(${bootstrap.toString()})(${JSON.stringify(activeThemeInfo()).replace(/</g, '\\u003c')});</script>`;
   const head = /<head[^>]*>/i.exec(html);
   return head ? html.slice(0, head.index + head[0].length) + setup + html.slice(head.index + head[0].length) : setup + html;
 }

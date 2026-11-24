@@ -1,6 +1,6 @@
 # The catalog of features
 
-Every feature, one card each, 155 in all. The template and the rules of the cards are in the
+Every feature, one card each, 156 in all. The template and the rules of the cards are in the
 feature contract. This index is written by `catalog.py --index`: change a status here in the commit that
 earns it, and run the script again after adding or renaming a card; the statuses are kept. A card with a
 **Differs** line is *Differs*; when the line goes, it becomes *Documented*.
@@ -22,7 +22,7 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | [13-compare.md](13-compare.md) | Comparing collections | 3 |
 | [14-structure.md](14-structure.md) | Comparing database structures | 3 |
 | [15-indexes.md](15-indexes.md) | Indexes | 11 |
-| [26-settings.md](26-settings.md) | Settings | 2 |
+| [26-settings.md](26-settings.md) | Settings | 3 |
 
 ## Connections
 
@@ -258,3 +258,4 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | --- | --- | --- | --- |
 | [`settings.read`](26-settings.md#settingsread--read-the-settings) | Read the settings | Read | Documented |
 | [`settings.page`](26-settings.md#settingspage--the-desktop-apps-settings-tab) | The desktop app's Settings tab | View | Documented |
+| [`settings.appearance`](26-settings.md#settingsappearance--the-desktop-apps-color-theme-and-layout) | The desktop app's color theme and layout | View | Specified |

@@ -173,6 +173,38 @@ body.dragging .editor {
   pointer-events: none;
 }
 
+/* ---- the islands layout: the side bar and the tabs as rounded panels apart, on the window's background
+   (--vscode-mongoster-window-background, from theme.ts). The compact layout is the one above. */
+
+body.layout-islands {
+  background: var(--vscode-mongoster-window-background);
+}
+
+body.layout-islands #app {
+  padding: 6px 6px 0;
+}
+
+body.layout-islands #sidebar,
+body.layout-islands #editors {
+  overflow: hidden;
+  border: 1px solid var(--vscode-mongoster-island-border);
+  border-radius: 8px;
+}
+
+/* The space between the two panels is the sash. */
+body.layout-islands #sidebar-sash {
+  width: 6px;
+}
+
+body.layout-islands #sidebar-sash::after {
+  left: 0;
+}
+
+body.layout-islands #statusbar {
+  background: var(--vscode-mongoster-window-background);
+  border-top-color: transparent;
+}
+
 /* ---- side bar */
 
 .view-header {
