@@ -52,23 +52,25 @@ The colors of the desktop app's window, tabs, editor and values, and whether the
   `app.layout`), `src/standalone/main.ts` (`View › Theme`, `View › Layout`), `src/standalone/shell/main.ts`
   (`applyTheme`, `applyLayout`), `src/standalone/shell/shell.css` (the islands layout),
   `src/standalone/vscode/documents.ts` (the theme files the extension reads the syntax colors from),
-  `src/standalone/shell/tree.ts` (`setWelcome`, the theme's list in the side bar's welcome).
-- **Entry points**: `View › Theme` and `View › Layout` in the menu bar; the Settings tab (`Ctrl+,`); `Color theme` in
-  the side bar while there are no connections.
+  `src/standalone/shell/themePreviews.ts` (the previews in the empty tab area, from `theme.ts › themePreview`).
+- **Entry points**: `View › Theme` and `View › Layout` in the menu bar; the Settings tab (`Ctrl+,`); the previews under
+  `Color theme` in the empty tab area.
 - **Settings**: `app.theme`, `app.layout`.
 - **Tested by**: `test/unit/appThemes.test.ts › 'settings.appearance: have their own ids and names, and keep the two of
   the earlier versions'`, `› 'settings.appearance: give every variable of the base of their kind, as colors'`,
   `› 'settings.appearance: have readable text on their backgrounds'`, `› 'settings.appearance: set the panels of the
   islands layout apart from the window'`, `› 'settings.appearance: are color theme files with their name and syntax
-  colors, for the extension'`.
+  colors, for the extension'`, `› 'settings.appearance: have a preview drawn with their own opaque colors'`.
 
 Acceptance:
 
 - [ ] `View › Theme` lists `Follow the System`, then the ten dark themes, then the seven light ones; the chosen one is
   checked, also when it was chosen in the Settings tab.
-- [ ] With no connections, the side bar shows `Color theme` under `Add Connection`, with `Follow the System`, the dark
-  themes and the light ones; choosing one recolors the window at once, and a theme chosen in the menu or the Settings
-  tab shows there too.
+- [ ] With no tab open, the empty area shows under the shortcuts a preview of `Follow the System` and of every theme,
+  dark then light, in the theme's own colors; clicking one recolors the window at once. The one in use is outlined,
+  also when it was chosen in the menu or the Settings tab.
+- [ ] When the area is too short for the previews under the logo and the shortcuts, they are hidden, and show again
+  when it grows.
 - [ ] `Follow the System` shows Mongoster Dark or Mongoster Light as the operating system is set, and changes with it.
 - [ ] Choosing a theme recolors the window, the open tabs and editors, and the values in the tables at once, with no
   reload; the syntax colors of the values come from the theme.

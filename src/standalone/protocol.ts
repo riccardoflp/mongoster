@@ -16,20 +16,20 @@ export interface ThemeInfo {
   syntax: Record<string, string>;
 }
 
-/** A color theme as the welcome of the side bar lists it. */
-export interface ThemeChoice {
+/** A color theme as its preview in the empty tab area draws it: a few of its colors, all `#rrggbb`. */
+export interface ThemePreview {
   id: string;
   label: string;
   kind: ThemeKind;
-}
-
-/** What the side bar shows when there are no connections yet. */
-export interface Welcome {
-  text: string;
-  button?: MenuAction;
-  /** The themes to choose from, and the value of the `app.theme` setting (`system` or a theme's id). */
-  themes: ThemeChoice[];
-  theme: string;
+  /** The window around the panels, the side bar, the strip of the tabs, the editor, its text, the primary button. */
+  window: string;
+  sideBar: string;
+  tabs: string;
+  editor: string;
+  foreground: string;
+  accent: string;
+  /** Syntax colors for the lines of code: keyword, property, string, number, comment. */
+  syntax: string[];
 }
 
 export interface MenuAction {
@@ -175,7 +175,11 @@ export interface TabRef {
 
 /** Host → shell. */
 export type HostMessage =
-  | { type: 'init'; title: string; viewTitle: string; welcome: Welcome; theme: ThemeInfo; layout: Layout; platform: string }
+  /** `menus`: the names of the menus in the title bar, with `&` before the letter that opens each with Alt; none on macOS. */
+  | { type: 'init'; title: string; viewTitle: string; welcome: { text: string; button?: MenuAction }; theme: ThemeInfo; layout: Layout; platform: string; themes: ThemePreview[]; themeSetting: string; menus: string[] }
+  | { type: 'window'; maximized: boolean; fullScreen: boolean; focused: boolean }
+  /** The menu opened from the title bar closed. */
+  | { type: 'menuClosed' }
   | { type: 'theme'; theme: ThemeInfo }
   | { type: 'layout'; layout: Layout }
   | { type: 'viewTitle'; actions: MenuAction[]; message?: string }
@@ -233,7 +237,10 @@ export type ShellMessage =
   | { type: 'progressCancel'; id: number }
   | { type: 'settingChange'; key: string; value: unknown }
   | { type: 'tabContext'; tab: TabRef; others: boolean }
-  | { type: 'openExternal'; url: string };
+  | { type: 'openExternal'; url: string }
+  /** Opens a menu of the title bar under its name: `x` and `y` in CSS pixels of the window. */
+  | { type: 'openMenu'; index: number; x: number; y: number }
+  | { type: 'windowControl'; action: 'minimize' | 'maximize' | 'close' };
 
 /** Shell → host, answered. */
 export interface ShellRequests {

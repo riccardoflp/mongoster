@@ -9,7 +9,8 @@ import { closeMessage, endProgress, showMessage, showProgress } from './notifica
 import { closePanel, initPanels, openPanel, postToPanel, revealPanel, themePanels, updatePanel } from './panels';
 import { hideQuickInput, inputValidation, showInputBox, showQuickPick } from './quickInput';
 import { openSettings, settingsValues } from './settings';
-import { collapseAll, focusTree, initTree, setTitleActions, setWelcome, treeChanged, welcomeTheme } from './tree';
+import { chosenTheme, showThemePreviews } from './themePreviews';
+import { collapseAll, focusTree, initTree, setTitleActions, setWelcome, treeChanged } from './tree';
 import { activeTab, closeAll, closeOthers, cycle, find, initWorkbench, move, requestClose, toggleSidebar } from './workbench';
 
 function applyTheme(theme: ThemeInfo): void {
@@ -54,7 +55,8 @@ function receive(m: HostMessage): void {
       document.getElementById('view-title')!.textContent = m.viewTitle;
       applyTheme(m.theme);
       applyLayout(m.layout);
-      setWelcome(m.welcome);
+      setWelcome(m.welcome.text, m.welcome.button);
+      showThemePreviews(m.themes, m.themeSetting);
       if (!started) {
         started = true;
         initEditors(m.theme);
@@ -149,7 +151,7 @@ function receive(m: HostMessage): void {
       break;
     case 'settingsValues':
       settingsValues(m.values);
-      welcomeTheme(m.values['app.theme']);
+      chosenTheme(m.values['app.theme']);
       break;
     case 'shellCommand': {
       const tab = activeTab();

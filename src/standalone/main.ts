@@ -10,7 +10,7 @@ import { Scheduler } from '../scheduler';
 import { TRAY_SETTING } from '../scheduledTasks';
 import type { HostMessage, ShellMessage } from './protocol';
 import * as vscode from './vscode';
-import { THEMES } from './theme';
+import { THEMES, themePreview } from './theme';
 import { LAYOUT_SETTING, THEME_SETTING, activeThemeInfo, initAppearance, layout, windowBackground } from './vscode/appearance';
 import { answer, dispatch, onShell } from './vscode/bridge';
 import { runCommand } from './vscode/commands';
@@ -253,15 +253,12 @@ function shellStarted(): void {
     type: 'init',
     title: APP_NAME,
     viewTitle: view?.name ?? APP_NAME,
-    welcome: {
-      text: welcome.replace(/\[[^\]]+\]\([^)]+\)/g, '').trim(),
-      button: link ? { command: link[2], title: link[1] } : undefined,
-      themes: THEMES.map((t) => ({ id: t.id, label: t.label, kind: t.kind })),
-      theme: String(settings.value(THEME_SETTING)),
-    },
+    welcome: { text: welcome.replace(/\[[^\]]+\]\([^)]+\)/g, '').trim(), button: link ? { command: link[2], title: link[1] } : undefined },
     theme: activeThemeInfo(),
     layout: layout(),
     platform: process.platform,
+    themes: THEMES.map(themePreview),
+    themeSetting: String(settings.value(THEME_SETTING)),
   });
   post({ type: 'viewTitle', actions: viewTitleActions() });
   announceLanguages();

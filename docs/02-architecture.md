@@ -266,7 +266,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `theme.ts` – the base dark and light colors, a theme's variables from its palette, the preset colors Mongoster contributes (`src/shared/colors.ts`), the color theme file the extension reads the syntax colors from
 - `themes.ts` – the seventeen themes as data: id, name, kind, palette or exact colors, syntax colors, the window's color in the islands layout
 - `vscode/` – the `vscode` module: `index.ts` (exports), `base.ts` (value types), `commands.ts`, `contributions.ts` (reads `package.json`), `documents.ts` (text documents, file systems, providers), `tree.ts`, `ui.ts` (messages, quick picks, dialogs, progress), `webview.ts`, `resources.ts` (the URLs of the app's own files), `storage.ts`, `decorations.ts`, `watcher.ts` (`fs.watch`), `appearance.ts`, `bridge.ts`, `runtime.ts`
-- `shell/` – the window: `main.ts`, `workbench.ts` (tabs), `tree.ts` (the side bar's tree: loading, keys, type-ahead, several rows selected), `editor.ts` (Monaco), `panels.ts` (webview frames), `quickInput.ts`, `notifications.ts`, `settings.ts`, `dom.ts`, `shell.html`, `shell.css`, `webview-default.css`
+- `shell/` – the window: `main.ts`, `workbench.ts` (tabs), `tree.ts` (the side bar's tree: loading, keys, type-ahead, several rows selected), `editor.ts` (Monaco), `panels.ts` (webview frames), `quickInput.ts`, `notifications.ts`, `settings.ts`, `themePreviews.ts` (the color themes to click in the empty tab area), `dom.ts`, `shell.html`, `shell.css`, `webview-default.css`
 - `electron-builder.yml`, `build/` – the installers
 
 ### Other files

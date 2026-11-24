@@ -1,7 +1,7 @@
 // The color themes of the desktop app: every theme gives every variable of its base, readable text, panels that stand
 // out from the window in the islands layout, and the ids the settings of earlier versions name.
 import { describe, expect, it } from 'vitest';
-import { THEMES, defaultTheme, findTheme, mix, themeFile, themeInfo } from '../../src/standalone/theme';
+import { THEMES, defaultTheme, findTheme, mix, themeFile, themeInfo, themePreview } from '../../src/standalone/theme';
 
 /** `#rgb`, `#rrggbb` or `#rrggbbaa` as [r, g, b, a] (0–255, a 0–1). */
 function rgba(color: string): [number, number, number, number] {
@@ -97,6 +97,21 @@ describe('the themes', () => {
     const file = JSON.parse(themeFile(findTheme('nord')!)) as { name: string; tokenColors: { scope: string[]; settings: { foreground: string } }[] };
     expect(file.name).toBe('Nord');
     expect(file.tokenColors.find((r) => r.scope.includes('string'))?.settings.foreground).toBe(findTheme('nord')!.syntax.string);
+  });
+
+  it('settings.appearance: have a preview drawn with their own opaque colors', () => {
+    for (const theme of THEMES) {
+      const preview = themePreview(theme);
+      const { vars } = themeInfo(theme);
+      expect(preview).toMatchObject({ id: theme.id, label: theme.label, kind: theme.kind });
+      for (const color of [preview.window, preview.sideBar, preview.tabs, preview.editor, preview.foreground, preview.accent, ...preview.syntax]) {
+        expect(color, theme.id).toMatch(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+      }
+      expect(preview.editor).toBe(vars['editor-background'].slice(0, 7));
+      expect(preview.syntax).toEqual([theme.syntax.keyword, theme.syntax.property, theme.syntax.string, theme.syntax.number, theme.syntax.comment].map((c) => c.slice(0, 7)));
+    }
+    // The previews tell the themes apart.
+    expect(new Set(THEMES.map((t) => JSON.stringify({ ...themePreview(t), id: '', label: '' }))).size).toBe(THEMES.length);
   });
 
   it('settings.appearance: mix two colors', () => {

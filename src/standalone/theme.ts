@@ -1,7 +1,7 @@
 // The color themes of the standalone app as `--vscode-*` variables. The webviews are styled with VS Code's
 // variables, so the app defines them: each theme of themes.ts over the base of its kind below, which has the
 // colors of VS Code's default dark and light themes. No vscode or Electron dependency.
-import type { ThemeInfo, ThemeKind } from './protocol';
+import type { ThemeInfo, ThemeKind, ThemePreview } from './protocol';
 import { PRESET_COLORS, PRESET_DEFAULTS, themeColorId } from '../shared/colors';
 import { Palette, SyntaxColors, THEMES, ThemeDefinition } from './themes';
 
@@ -417,6 +417,25 @@ export function themeInfo(theme: ThemeDefinition): ThemeInfo {
   vars['mongoster-window-background'] = windowColor(theme, vars);
   vars['mongoster-island-border'] = theme.islandBorder ?? 'transparent';
   return { id: theme.id, kind: theme.kind, vars, syntax: { ...theme.syntax } };
+}
+
+/** Feature: settings.appearance — the few colors the theme's preview in the empty tab area is drawn with. */
+export function themePreview(theme: ThemeDefinition): ThemePreview {
+  const { vars } = themeInfo(theme);
+  const solid = (color: string) => color.slice(0, 7);
+  const s = theme.syntax;
+  return {
+    id: theme.id,
+    label: theme.label,
+    kind: theme.kind,
+    window: solid(vars['mongoster-window-background']),
+    sideBar: solid(vars['sideBar-background']),
+    tabs: solid(vars['editorGroupHeader-tabsBackground']),
+    editor: solid(vars['editor-background']),
+    foreground: solid(vars['editor-foreground']),
+    accent: solid(vars['button-background']),
+    syntax: [s.keyword, s.property, s.string, s.number, s.comment].map(solid),
+  };
 }
 
 /** The theme as a VS Code color theme file: what the extension reads the syntax colors from. */

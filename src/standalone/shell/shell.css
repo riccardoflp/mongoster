@@ -342,22 +342,6 @@ body.layout-islands #statusbar {
   padding: 5px 12px;
 }
 
-.welcome-theme {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-width: 300px;
-  margin-top: 24px;
-}
-
-.welcome-theme select {
-  padding: 4px 6px;
-  border: 1px solid var(--vscode-dropdown-border, var(--vscode-input-border));
-  border-radius: 2px;
-  background: var(--vscode-dropdown-background, var(--vscode-input-background));
-  color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
-}
-
 /* ---- tabs and their contents */
 
 #editors {
@@ -589,6 +573,124 @@ body.layout-islands #statusbar {
 
 #watermark dd {
   margin: 0;
+}
+
+/* The color themes under the shortcuts: a small window in each theme's colors. */
+#theme-previews {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: min(860px, calc(100% - 48px));
+}
+
+#theme-previews h2 {
+  margin: 0;
+  font-size: inherit;
+  font-weight: normal;
+}
+
+.theme-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px 10px;
+}
+
+.theme-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 128px;
+  padding: 4px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.theme-tile:hover {
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-foreground);
+}
+
+.theme-tile:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+}
+
+.theme-tile[aria-checked='true'] {
+  color: var(--vscode-foreground);
+}
+
+.theme-tile[aria-checked='true'] .shots {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+.shots {
+  position: relative;
+  width: 120px;
+  height: 72px;
+  border-radius: 5px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+}
+
+.shot {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+}
+
+/* Following the system: the dark theme, and the light one over its lower right half. */
+.shot + .shot {
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+
+.shot-side,
+.shot-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-radius: 3px;
+}
+
+.shot-side {
+  width: 28%;
+  padding: 5px 4px;
+}
+
+.shot-editor {
+  flex: 1;
+  overflow: hidden;
+}
+
+.shot-tabs {
+  height: 8px;
+  margin-bottom: 1px;
+}
+
+.shot-line {
+  display: flex;
+  gap: 3px;
+  padding: 0 5px;
+}
+
+.shot-bar {
+  height: 3px;
+  border-radius: 1.5px;
+}
+
+.theme-name {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 kbd {
