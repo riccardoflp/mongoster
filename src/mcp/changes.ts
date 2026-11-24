@@ -225,8 +225,15 @@ export function changesTools(ctx: ToolContext): McpTool[] {
         let started = false;
         try {
           const deadline = Date.now() + waitSeconds * 1000;
+          // The server answers a tryNext within maxAwaitTimeMS once the stream is open, but opening it from
+          // an old `since` reads the oplog from there, for as long as it takes: the call is not left waiting.
+          const latest = deadline + MAX_TIME_MS;
           for (;;) {
-            const change = (await stream.tryNext()) as Document | null;
+            const change = (await within(stream.tryNext(), latest - Date.now())) as Document | null | typeof LATE;
+            if (change === LATE) {
+              if (!started) throw new ToolError(`${info.name} did not open the change stream within ${Math.round((waitSeconds * 1000 + MAX_TIME_MS) / 1000)} seconds${since ? ': there may be too much of the oplog to read from `since`, give a later time' : ''}.`);
+              break;
+            }
             started = true;
             if (change) {
               events.push(change);
@@ -242,6 +249,7 @@ export function changesTools(ctx: ToolContext): McpTool[] {
           }
           token = stream.resumeToken;
         } catch (err) {
+          if (err instanceof ToolError) throw err;
           throw watchError(err, info, !!resumeAfter && !started, !!since);
         } finally {
           await stream.close().catch(() => undefined);
@@ -530,4 +538,27 @@ function watchError(err: unknown, info: ConnectionInfo, resumed: boolean, since:
     return new ToolError(`Invalid resume token: the change stream could not start after it. Pass the token exactly as watch_changes returned it. (${text})`);
   }
   return err instanceof Error ? err : new Error(text);
+}
+
+/** What `within` gives when the time is over. */
+export const LATE = Symbol('late');
+
+/** The promise's value, or LATE after `ms` milliseconds; what the promise does after that is ignored. */
+export function within<T>(promise: Promise<T>, ms: number): Promise<T | typeof LATE> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      promise.catch(() => undefined);
+      resolve(LATE);
+    }, Math.max(0, ms));
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err as Error);
+      },
+    );
+  });
 }

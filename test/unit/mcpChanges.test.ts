@@ -1,6 +1,6 @@
 // The pure helpers of the change stream and oplog MCP tools: times, update changes, resume tokens.
 import { describe, expect, it } from 'vitest';
-import { clipped, parseTime, resumeToken, updateChanges } from '../../src/mcp/changes';
+import { LATE, clipped, parseTime, resumeToken, updateChanges, within } from '../../src/mcp/changes';
 
 describe('parseTime', () => {
   const now = Date.parse('2024-05-01T12:00:00Z');
@@ -44,5 +44,17 @@ describe('clipped', () => {
   it('cuts long values saying how much is left out', () => {
     expect(clipped({ a: 'x'.repeat(50) }, 20)).toMatch(/^\{ a: "x{14}… \(39 more characters\)$/);
     expect(clipped({ a: 1 })).toBe('{ a: 1 }');
+  });
+});
+
+// RS46: watch_changes does not wait for a server that never opens the stream.
+describe('within', () => {
+  it('gives the value of a promise that settles in time, and LATE for one that does not', async () => {
+    expect(await within(Promise.resolve(null), 50)).toBeNull();
+    await expect(within(Promise.reject(new Error('no')), 50)).rejects.toThrow('no');
+    expect(await within(new Promise(() => undefined), 10)).toBe(LATE);
+    // What a late promise does afterwards is nobody's: no unhandled rejection.
+    expect(await within(new Promise((_, reject) => setTimeout(() => reject(new Error('later')), 20)), 5)).toBe(LATE);
+    await new Promise((resolve) => setTimeout(resolve, 40));
   });
 });
