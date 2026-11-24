@@ -253,7 +253,12 @@ function shellStarted(): void {
     type: 'init',
     title: APP_NAME,
     viewTitle: view?.name ?? APP_NAME,
-    welcome: { text: welcome.replace(/\[[^\]]+\]\([^)]+\)/g, '').trim(), button: link ? { command: link[2], title: link[1] } : undefined },
+    welcome: {
+      text: welcome.replace(/\[[^\]]+\]\([^)]+\)/g, '').trim(),
+      button: link ? { command: link[2], title: link[1] } : undefined,
+      themes: THEMES.map((t) => ({ id: t.id, label: t.label, kind: t.kind })),
+      theme: String(settings.value(THEME_SETTING)),
+    },
     theme: activeThemeInfo(),
     layout: layout(),
     platform: process.platform,

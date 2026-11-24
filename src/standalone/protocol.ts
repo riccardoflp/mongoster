@@ -16,6 +16,22 @@ export interface ThemeInfo {
   syntax: Record<string, string>;
 }
 
+/** A color theme as the welcome of the side bar lists it. */
+export interface ThemeChoice {
+  id: string;
+  label: string;
+  kind: ThemeKind;
+}
+
+/** What the side bar shows when there are no connections yet. */
+export interface Welcome {
+  text: string;
+  button?: MenuAction;
+  /** The themes to choose from, and the value of the `app.theme` setting (`system` or a theme's id). */
+  themes: ThemeChoice[];
+  theme: string;
+}
+
 export interface MenuAction {
   command: string;
   title: string;
@@ -159,7 +175,7 @@ export interface TabRef {
 
 /** Host → shell. */
 export type HostMessage =
-  | { type: 'init'; title: string; viewTitle: string; welcome: { text: string; button?: MenuAction }; theme: ThemeInfo; layout: Layout; platform: string }
+  | { type: 'init'; title: string; viewTitle: string; welcome: Welcome; theme: ThemeInfo; layout: Layout; platform: string }
   | { type: 'theme'; theme: ThemeInfo }
   | { type: 'layout'; layout: Layout }
   | { type: 'viewTitle'; actions: MenuAction[]; message?: string }

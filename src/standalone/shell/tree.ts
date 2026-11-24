@@ -1,6 +1,6 @@
 // The tree of the side bar. The host has the data: the shell asks for the children of the nodes that
 // are open, and remembers which ones are.
-import type { MenuAction, TreeItemData } from '../protocol';
+import type { MenuAction, TreeItemData, Welcome } from '../protocol';
 import { typeAheadTarget, typedText } from '../../shared/typeAhead';
 import { h, host, icon, iconButton } from './dom';
 
@@ -16,6 +16,8 @@ const list = document.getElementById('tree')!;
 const welcome = document.getElementById('welcome')!;
 const titleActions = document.getElementById('view-actions')!;
 const viewMessage = document.getElementById('view-message')!;
+/** The welcome's choice of color theme, once the host has said what the themes are. */
+let themeSelect: HTMLSelectElement | undefined;
 
 let roots: Node[] = [];
 let loaded = false;
@@ -251,12 +253,30 @@ export function setTitleActions(actions: MenuAction[], message: string | undefin
   );
 }
 
-export function setWelcome(text: string, button: MenuAction | undefined): void {
-  welcome.replaceChildren(h('p', {}, text));
-  if (!button) return;
-  const el = h('button', { class: 'button', type: 'button' }, button.title);
-  el.addEventListener('click', () => host.send({ type: 'execute', command: button.command }));
-  welcome.append(el);
+/**
+ * The first thing a new user sees: how to add a connection, and the color theme, chosen here before any
+ * tab is open. The theme is the `app.theme` setting, as in `View › Theme` and the Settings tab.
+ */
+export function setWelcome(w: Welcome): void {
+  welcome.replaceChildren(h('p', {}, w.text));
+  if (w.button) {
+    const { command, title } = w.button;
+    const el = h('button', { class: 'button', type: 'button' }, title);
+    el.addEventListener('click', () => host.send({ type: 'execute', command }));
+    welcome.append(el);
+  }
+  if (!w.themes.length) return;
+  const group = (kind: string, label: string) =>
+    h('optgroup', { label }, ...w.themes.filter((t) => t.kind === kind).map((t) => h('option', { value: t.id }, t.label)));
+  themeSelect = h('select', { id: 'welcome-theme' }, h('option', { value: 'system' }, 'Follow the System'), group('dark', 'Dark'), group('light', 'Light'));
+  themeSelect.value = w.theme;
+  themeSelect.addEventListener('change', () => host.send({ type: 'settingChange', key: 'app.theme', value: themeSelect!.value }));
+  welcome.append(h('div', { class: 'welcome-theme' }, h('label', { for: 'welcome-theme' }, 'Color theme'), themeSelect));
+}
+
+/** The theme was changed elsewhere (the menu, the Settings tab): the welcome shows it. */
+export function welcomeTheme(value: unknown): void {
+  if (themeSelect && typeof value === 'string') themeSelect.value = value;
 }
 
 export function focusTree(): void {

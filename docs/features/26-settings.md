@@ -51,8 +51,10 @@ The colors of the desktop app's window, tabs, editor and values, and whether the
 - **Implemented in**: `src/standalone/themes.ts` (the themes), `src/standalone/vscode/storage.ts` (`app.theme`,
   `app.layout`), `src/standalone/main.ts` (`View › Theme`, `View › Layout`), `src/standalone/shell/main.ts`
   (`applyTheme`, `applyLayout`), `src/standalone/shell/shell.css` (the islands layout),
-  `src/standalone/vscode/documents.ts` (the theme files the extension reads the syntax colors from).
-- **Entry points**: `View › Theme` and `View › Layout` in the menu bar; the Settings tab (`Ctrl+,`).
+  `src/standalone/vscode/documents.ts` (the theme files the extension reads the syntax colors from),
+  `src/standalone/shell/tree.ts` (`setWelcome`, the theme's list in the side bar's welcome).
+- **Entry points**: `View › Theme` and `View › Layout` in the menu bar; the Settings tab (`Ctrl+,`); `Color theme` in
+  the side bar while there are no connections.
 - **Settings**: `app.theme`, `app.layout`.
 - **Tested by**: `test/unit/appThemes.test.ts › 'settings.appearance: have their own ids and names, and keep the two of
   the earlier versions'`, `› 'settings.appearance: give every variable of the base of their kind, as colors'`,
@@ -64,6 +66,9 @@ Acceptance:
 
 - [ ] `View › Theme` lists `Follow the System`, then the ten dark themes, then the seven light ones; the chosen one is
   checked, also when it was chosen in the Settings tab.
+- [ ] With no connections, the side bar shows `Color theme` under `Add Connection`, with `Follow the System`, the dark
+  themes and the light ones; choosing one recolors the window at once, and a theme chosen in the menu or the Settings
+  tab shows there too.
 - [ ] `Follow the System` shows Mongoster Dark or Mongoster Light as the operating system is set, and changes with it.
 - [ ] Choosing a theme recolors the window, the open tabs and editors, and the values in the tables at once, with no
   reload; the syntax colors of the values come from the theme.

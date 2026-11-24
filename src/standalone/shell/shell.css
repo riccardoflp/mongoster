@@ -342,6 +342,22 @@ body.layout-islands #statusbar {
   padding: 5px 12px;
 }
 
+.welcome-theme {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 300px;
+  margin-top: 24px;
+}
+
+.welcome-theme select {
+  padding: 4px 6px;
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-input-border));
+  border-radius: 2px;
+  background: var(--vscode-dropdown-background, var(--vscode-input-background));
+  color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
+}
+
 /* ---- tabs and their contents */
 
 #editors {
