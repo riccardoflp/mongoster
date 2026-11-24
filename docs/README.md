@@ -5,8 +5,9 @@ are for whoever changes its code, person or agent: how it is built, the rules it
 and why. What Mongoster does for its users is in the [README](../README.md), which is the user manual; the two are
 kept apart.
 
-The state of the work: version 0.9.0 is released, with the colors of collections, conditional formatting and names
-from comments in a list of connection strings (M2); the catalog has cards for the riskiest areas (writes, undo,
+The state of the work: version 0.10.0 is released, with formatting by a field's values, the Formatting pane,
+formatting rules for a database, a connection or everywhere and their export and import
+([proposal 0003](proposals/0003-formatting-by-field-scopes-and-pane.md)), and the color of a database; the catalog has cards for the riskiest areas (writes, undo,
 connections and secrets, the MCP server, backups, scheduled tasks), and the other areas get theirs when they are next
 changed. Next ([07-roadmap.md](07-roadmap.md)): the known risks (M3 to M5).
 

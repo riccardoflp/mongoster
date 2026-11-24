@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0
 
 - **Formatting by a field's values**: right-click a column header → `Color by This Field` colors the table by that field with no condition to write: `true` green and `false` red, numbers and dates on a scale (one color growing stronger, or `Red to green` / `Green to red`, between two ends taken from the page that you can change, or take again with `From This Page`), anything else with one color per distinct value, the same on every page. Click a value's color in the rule's legend to pin it to a color of its own (`"failed"` red), or type one in `+ Pin a Value…`; no other value takes a pinned color. `Palette` chooses where the other values take theirs: `All Colors`, or the shades of one (`Shades of Gray` …). A rule colors its field's cell or the whole row.
 - **The Formatting pane**: `Formatting` above the table now opens a pane at the right of the table, in place of the popup and the dialog, which stays open while you work: click a rule to edit it there and watch the table change, give it a `Name` (`F2`), drag it to reorder, `+ Add Rule…` → `Condition…` or `By Field…`. A field rule shows its legend: each value of the page with its color and how many there are, or the scale with its ends. `Hide Formatting` shows every table without colors and `Show Formatting` brings them back, the rules untouched. The pane's width, whether it is open and whether the colors are hidden hold for every collection's tab.
