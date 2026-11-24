@@ -300,3 +300,86 @@ export function readFormattingPane(value: unknown): FormattingPane {
     hidden: o.hidden === true,
   };
 }
+
+/**
+ * Where a formatting rule applies, from the nearest: the one collection, every collection of its database, of its
+ * connection, or every collection there is. The nearest scope's rules come first, so they win.
+ */
+export const FORMAT_SCOPES = ['collection', 'database', 'connection', 'global'] as const;
+export type FormatScope = (typeof FORMAT_SCOPES)[number];
+
+/** The rules that reach a collection, by scope. */
+export type ScopedRules = Record<FormatScope, FormatRule[]>;
+
+export const noRules = (): ScopedRules => ({ collection: [], database: [], connection: [], global: [] });
+
+export function isFormatScope(value: unknown): value is FormatScope {
+  return typeof value === 'string' && (FORMAT_SCOPES as readonly string[]).includes(value);
+}
+
+/** The scopes a collection has turned off, as stored: the known ones, once each. */
+export function readScopesOff(value: unknown): FormatScope[] {
+  if (!Array.isArray(value)) return [];
+  return FORMAT_SCOPES.filter((scope) => value.includes(scope));
+}
+
+/** What a tab sends to store: the scopes it changed, each read like anything stored; the rest is dropped. */
+export function readScopedChanges(value: unknown): Partial<ScopedRules> {
+  const out: Partial<ScopedRules> = {};
+  if (!isPlainObject(value)) return out;
+  for (const scope of FORMAT_SCOPES) if (scope in value) out[scope] = readFormatRules(value[scope]);
+  return out;
+}
+
+/**
+ * Feature: query.format-table
+ * The rules that color a collection's table, in the order they are tried: the collection's, then the database's, the
+ * connection's and the global ones, without the scopes turned off for the collection. A rule whose id was seen in a
+ * nearer scope is left out.
+ */
+export function rulesInOrder(rules: ScopedRules, off: readonly FormatScope[] = []): FormatRule[] {
+  const seen = new Set<string>();
+  const out: FormatRule[] = [];
+  for (const scope of FORMAT_SCOPES) {
+    if (off.includes(scope)) continue;
+    for (const rule of rules[scope]) {
+      if (seen.has(rule.id)) continue;
+      seen.add(rule.id);
+      out.push(rule);
+    }
+  }
+  return out;
+}
+
+/** The scope a rule is in. */
+export function scopeOfRule(rules: ScopedRules, id: string): FormatScope | undefined {
+  return FORMAT_SCOPES.find((scope) => rules[scope].some((r) => r.id === id));
+}
+
+export const SCOPE_FULL = `A scope keeps at most ${MAX_FORMAT_RULES} formatting rules.`;
+
+/**
+ * Feature: query.format-rules
+ * Moves a rule to a scope, or within its own: before or after the rule `beside` when given, else last. A copy leaves
+ * the rule where it is and gives the new one `copyId`. Returns the lists of the scopes that changed, nothing when the
+ * rule is not there or would not move, or why it can't be done.
+ */
+export function moveRule(
+  rules: ScopedRules,
+  id: string,
+  to: FormatScope,
+  place: { beside?: string; after?: boolean; copyId?: string } = {},
+): Partial<ScopedRules> | string | undefined {
+  const from = scopeOfRule(rules, id);
+  if (!from || place.beside === id) return undefined;
+  const rule = rules[from].find((r) => r.id === id)!;
+  const moving = place.copyId ? { ...rule, id: place.copyId } : rule;
+  const source = place.copyId ? rules[from] : rules[from].filter((r) => r.id !== id);
+  const target = from === to ? source : rules[to];
+  if ((from !== to || place.copyId) && target.length >= MAX_FORMAT_RULES) return SCOPE_FULL;
+  const beside = place.beside === undefined ? -1 : target.findIndex((r) => r.id === place.beside);
+  const at = beside < 0 ? target.length : beside + (place.after ? 1 : 0);
+  const next = [...target.slice(0, at), moving, ...target.slice(at)];
+  if (from === to) return next.every((r, i) => r === rules[to][i]) && next.length === rules[to].length ? undefined : { [to]: next };
+  return place.copyId ? { [to]: next } : { [from]: source, [to]: next };
+}

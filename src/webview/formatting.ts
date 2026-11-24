@@ -2,34 +2,50 @@
 // formatting rules (reorder, turn on and off, name, remove), edits a rule in place while the table repaints, shows
 // the legend of a field rule (its values with their colors, or the ends of its scale), and hides or shows every color
 // with one button. The colors themselves are decided by TableFormat in src/shared/formatting.ts and painted by
-// renderGrid, with `applyPaint`.
+// renderGrid, with `applyPaint`. The rules are in four sections, one per scope (this collection, its database, its
+// connection, everywhere); a rule is moved or copied from one to another by dragging it or from its menu.
 import { cssColorOf, colorLabel } from '../shared/colors';
 import { Legend, LegendEntry, VALUE_COLORS, fieldLegend, resolveField, valueText } from '../shared/formatField';
 import {
   ConditionRule,
   FORMATTING_PANE_WIDTH,
   FORMAT_COLORS,
+  FORMAT_SCOPES,
   FieldRule,
   FormatColor,
   FormatPaint,
   FormatRule,
+  FormatScope,
   FormattingPane,
   MAX_FORMAT_RULES,
   MAX_PINNED,
+  SCOPE_FULL,
+  ScopedRules,
   conditionError,
   isFieldRule,
+  moveRule,
   newRuleId,
   paintLevel,
   readFormattingPane,
   ruleSummary,
+  rulesInOrder,
+  scopeOfRule,
 } from '../shared/formatting';
 import { parseQuery } from '../shared/query';
-import { PopupMenu } from './popupMenu';
+import { MenuItem, PopupMenu } from './popupMenu';
 
 export interface FormattingOptions {
-  rules(): FormatRule[];
-  /** Saves the rules and colors the table again. */
-  change(rules: FormatRule[]): void;
+  /** The rules that reach the collection, by scope. */
+  rules(): ScopedRules;
+  /** Saves the rules of the scopes that changed and colors the table again. */
+  change(changes: Partial<ScopedRules>): void;
+  /** The scopes whose rules this collection does not take. */
+  off(): FormatScope[];
+  setOff(off: FormatScope[]): void;
+  /** `Export Formatting…` and `Import Formatting…`: the host asks what and where. */
+  transfer(what: 'export' | 'import'): void;
+  /** The names the sections of the database and the connection show. */
+  names(): { database: string; connection: string };
   /** Why each invalid rule colors nothing, by rule id. */
   errors(): Map<string, string>;
   /** The columns' dotted keys, offered for a rule's field. */
@@ -112,7 +128,7 @@ export class FormattingPaneUi {
   private pane: FormattingPane = readFormattingPane(undefined);
   /** The rule open for editing. */
   private openId: string | null = null;
-  /** A rule being added that can't color anything yet (no condition, no field): shown last, not stored. */
+  /** A rule being added that can't color anything yet (no condition, no field): shown last in the collection's, not stored. */
   private draft: FormatRule | null = null;
   /** The value of the open field rule whose color is being chosen. */
   private pinning: string | null = null;
@@ -132,6 +148,13 @@ export class FormattingPaneUi {
       this.menu.openBelow(add, [
         { label: 'Condition…', title: 'Color the row or a cell of the documents matching a filter', action: () => this.addCondition() },
         { label: 'By Field…', title: "Color by a field's values: true and false, a scale for numbers and dates, a color per value", action: () => this.addField() },
+      ]),
+    );
+    const more = document.getElementById('formattingMore')!;
+    more.addEventListener('click', () =>
+      this.menu.openBelow(more, [
+        { label: 'Export Formatting…', title: 'Write formatting rules to a file, to share them; nothing of the connection is in it', action: () => this.opts.transfer('export') },
+        { label: 'Import Formatting…', title: 'Add the formatting rules of a file to the ones already here', action: () => this.opts.transfer('import') },
       ]),
     );
     this.dragging();
@@ -159,7 +182,7 @@ export class FormattingPaneUi {
 
   /** The rules or the page changed: the button's label, and the list when the pane is open. */
   update(): void {
-    const on = this.opts.rules().filter((r) => r.enabled !== false).length;
+    const on = rulesInOrder(this.opts.rules(), this.opts.off()).filter((r) => r.enabled !== false).length;
     this.button.textContent = this.pane.hidden ? 'Formatting (off)' : on ? `Formatting (${on})` : 'Formatting';
     if (this.pane.open && !this.typing) this.render();
   }
@@ -179,7 +202,7 @@ export class FormattingPaneUi {
    */
   addField(field = ''): void {
     if (this.full()) return;
-    const first = !this.opts.rules().some(isFieldRule);
+    const first = !this.own().some(isFieldRule);
     this.add(this.withEnds({ id: newRuleId(), kind: 'field', field, target: first ? 'row' : 'cell', mode: 'auto' }), '.fmt-rule-field');
   }
 
@@ -188,7 +211,7 @@ export class FormattingPaneUi {
     this.pinning = null;
     if (isValid(rule)) {
       this.draft = null;
-      this.opts.change([...this.opts.rules(), rule]);
+      this.opts.change({ collection: [...this.own(), rule] });
     } else {
       this.draft = rule;
     }
@@ -199,8 +222,13 @@ export class FormattingPaneUi {
     if (this.draft) el?.focus();
   }
 
+  /** The collection's own rules: where a new rule goes. */
+  private own(): FormatRule[] {
+    return this.opts.rules().collection;
+  }
+
   private full(): boolean {
-    if (this.opts.rules().length < MAX_FORMAT_RULES) return false;
+    if (this.own().length < MAX_FORMAT_RULES) return false;
     if (!this.pane.open) this.setPane({ ...this.pane, open: true });
     this.note(`A collection keeps at most ${MAX_FORMAT_RULES} formatting rules.`);
     return true;
@@ -222,7 +250,7 @@ export class FormattingPaneUi {
 
   /** A new rule takes the first color no rule uses yet, so that two rules are told apart. */
   private unusedColor(): FormatColor {
-    const used = new Set(this.opts.rules().map((r) => (isFieldRule(r) ? undefined : r.color)));
+    const used = new Set(rulesInOrder(this.opts.rules()).map((r) => (isFieldRule(r) ? undefined : r.color)));
     return FORMAT_COLORS.find((c) => !used.has(c)) ?? 'red';
   }
 
@@ -286,38 +314,94 @@ export class FormattingPaneUi {
   // -------------------------------------------------------------------------
   // The list
 
-  private all(): FormatRule[] {
-    return this.draft ? [...this.opts.rules(), this.draft] : this.opts.rules();
-  }
-
   private render(): void {
     // The control that had the focus gets it back in the rebuilt list.
     const focused = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('#formattingList [data-k]')?.dataset.k;
     const scroll = this.list.scrollTop;
-    const rules = this.all();
+    const rules = this.opts.rules();
     const errors = this.opts.errors();
+    const off = this.opts.off();
+    const fields = new Set(this.opts.fields());
     this.note('');
-    this.fieldList.replaceChildren(...this.opts.fields().map((k) => Object.assign(make('option'), { value: k })));
+    this.fieldList.replaceChildren(...[...fields].map((k) => Object.assign(make('option'), { value: k })));
     this.list.replaceChildren();
-    if (!rules.length) {
+    if (!this.draft && !rulesInOrder(rules).length) {
       this.list.append(make('div', 'columns-empty', "No formatting rules. Add one, or use Color by This Field or Format Cells… in a column header's menu."));
-      return;
     }
-    for (const rule of rules) this.list.append(this.row(rule, errors.get(rule.id)));
+    for (const scope of FORMAT_SCOPES) {
+      const list = scope === 'collection' && this.draft ? [...rules[scope], this.draft] : rules[scope];
+      const section = make('div', 'fmt-section');
+      section.classList.toggle('off', off.includes(scope));
+      section.append(this.sectionHead(scope, list.length, off));
+      // A rule about a field this table does not have colors nothing here: usual for the rules of a wider scope.
+      const absent = (r: FormatRule) => scope !== 'collection' && !!r.field && fields.size > 0 && !fields.has(r.field);
+      for (const rule of list) section.append(this.row(rule, scope, errors.get(rule.id), absent(rule)));
+      this.list.append(section);
+    }
     this.list.scrollTop = scroll;
     if (focused) this.list.querySelector<HTMLElement>(`.fmt-rule.open [data-k="${focused}"]`)?.focus();
   }
 
-  /** Replaces a rule (or removes it), saves, and rebuilds the list. */
+  private scopeTitle(scope: FormatScope): string {
+    const { database, connection } = this.opts.names();
+    return { collection: 'This collection', database: `Database ${database}`, connection: `Connection ${connection}`, global: 'Everywhere' }[scope];
+  }
+
+  /** A section's head: whether this collection takes the scope's rules, its name, how many rules. A rule dropped on it goes last in the scope. */
+  private sectionHead(scope: FormatScope, count: number, off: FormatScope[]): HTMLElement {
+    const head = make('div', 'fmt-section-head');
+    const box = make('input');
+    box.type = 'checkbox';
+    box.checked = !off.includes(scope);
+    const title = this.scopeTitle(scope);
+    box.title = box.checked ? `Leave these rules out of this collection's table` : `Color this collection's table by these rules too`;
+    box.setAttribute('aria-label', `${title}: ${box.title}`);
+    box.addEventListener('change', () => this.opts.setOff(FORMAT_SCOPES.filter((s) => (s === scope ? !box.checked : off.includes(s)))));
+    const name = make('span', 'fmt-section-title', title);
+    name.title = {
+      collection: 'Rules for this collection only',
+      database: 'Rules for every collection of this database',
+      connection: 'Rules for every collection of this connection',
+      global: 'Rules for every collection of every connection',
+    }[scope];
+    head.append(box, name, make('span', 'fmt-section-count', count ? String(count) : 'no rules'));
+    head.addEventListener('dragover', (e) => {
+      if (!this.dragId) return;
+      e.preventDefault();
+      head.classList.add('drop-after');
+    });
+    head.addEventListener('dragleave', () => head.classList.remove('drop-after'));
+    head.addEventListener('drop', (e) => {
+      e.preventDefault();
+      head.classList.remove('drop-after');
+      if (this.dragId) this.moveTo(this.dragId, scope);
+      this.dragId = null;
+    });
+    return head;
+  }
+
+  /**
+   * Feature: query.format-rules
+   * Moves a rule to a scope (or within its own), or copies it there: beside a rule, or last.
+   */
+  private moveTo(id: string, scope: FormatScope, place: { beside?: string; after?: boolean; copy?: boolean } = {}): void {
+    const changes = moveRule(this.opts.rules(), id, scope, { beside: place.beside, after: place.after, ...(place.copy && { copyId: newRuleId() }) });
+    if (typeof changes === 'string') return this.note(changes === SCOPE_FULL ? `${this.scopeTitle(scope)} keeps at most ${MAX_FORMAT_RULES} formatting rules.` : changes);
+    if (changes) this.opts.change(changes);
+  }
+
+  /** Replaces a rule (or removes it) in its scope, saves, and rebuilds the list. */
   private replace(id: string, change: (r: FormatRule) => FormatRule | undefined): void {
     if (this.draft?.id === id) {
       const next = change(this.draft);
       this.draft = null;
-      if (next && isValid(next)) return this.opts.change([...this.opts.rules(), next]);
+      if (next && isValid(next)) return this.opts.change({ collection: [...this.own(), next] });
       this.draft = next ?? null;
       return this.render();
     }
-    this.opts.change(this.opts.rules().flatMap((r) => (r.id === id ? (change(r) ?? []) : [r])));
+    const rules = this.opts.rules();
+    const scope = scopeOfRule(rules, id);
+    if (scope) this.opts.change({ [scope]: rules[scope].flatMap((r) => (r.id === id ? (change(r) ?? []) : [r])) });
   }
 
   /**
@@ -332,10 +416,12 @@ export class FormattingPaneUi {
         if (isValid(this.draft)) {
           const rule = this.draft;
           this.draft = null;
-          this.opts.change([...this.opts.rules(), rule]);
+          this.opts.change({ collection: [...this.own(), rule] });
         }
       } else {
-        this.opts.change(this.opts.rules().map((r) => (r.id === id ? change(r) : r)));
+        const rules = this.opts.rules();
+        const scope = scopeOfRule(rules, id);
+        if (scope) this.opts.change({ [scope]: rules[scope].map((r) => (r.id === id ? change(r) : r)) });
       }
     } finally {
       this.typing = false;
@@ -344,12 +430,13 @@ export class FormattingPaneUi {
   }
 
   private find(id: string): FormatRule | undefined {
-    return this.all().find((r) => r.id === id);
+    return this.draft?.id === id ? this.draft : rulesInOrder(this.opts.rules()).find((r) => r.id === id);
   }
 
-  private row(rule: FormatRule, error: string | undefined): HTMLElement {
+  private row(rule: FormatRule, scope: FormatScope, error: string | undefined, absent: boolean): HTMLElement {
     const open = this.openId === rule.id;
     const row = make('div', 'fmt-rule');
+    row.classList.toggle('absent', absent);
     row.classList.toggle('open', open);
     row.classList.toggle('dim', rule.enabled === false);
     row.classList.toggle('invalid', !!error);
@@ -374,7 +461,12 @@ export class FormattingPaneUi {
       if (this.openId === rule.id) this.openId = null;
       this.replace(rule.id, () => undefined);
     });
-    head.append(grip, box, swatches, target, label, warn, remove);
+    const more = make('button', 'icon', '⋯');
+    more.title = 'Move or copy the rule to another scope';
+    more.setAttribute('aria-haspopup', 'menu');
+    more.classList.toggle('hidden', rule === this.draft);
+    more.addEventListener('click', () => this.menu.openBelow(more, this.scopeItems(rule.id, scope)));
+    head.append(grip, box, swatches, target, label, warn, more, remove);
 
     /** What the head says of the rule; called again when the rule changes while it is open. */
     const describe = (r: FormatRule, problem: string | undefined) => {
@@ -389,7 +481,7 @@ export class FormattingPaneUi {
       row.classList.toggle('invalid', !!problem);
       head.title = `${r.name ? `${r.name}\n` : ''}${
         isFieldRule(r) ? `The ${r.target === 'row' ? 'row' : `cell of ${r.field}`} by the value of ${r.field}` : `${r.field ? `The cell of ${r.field}` : 'The row'} when the document matches ${r.condition}`
-      }${problem ? `\n${problem}` : ''}\nDrag to reorder: the first rule that gives a color wins · click to ${open ? 'close' : 'edit'} · F2 to name`;
+      }${problem ? `\n${problem}` : ''}${absent ? `\nNo ${r.field} in this table.` : ''}\nDrag to reorder, or into another scope: the first rule that gives a color wins · click to ${open ? 'close' : 'edit'} · F2 to name`;
     };
     describe(rule, error);
 
@@ -414,7 +506,7 @@ export class FormattingPaneUi {
         this.list.querySelector<HTMLElement>('.fmt-rule.open .fmt-name')?.focus();
       }
     });
-    this.reordering(head, rule);
+    this.reordering(head, rule, scope);
     row.append(head);
     if (open) row.append(this.editor(rule, error, describe));
     return row;
@@ -438,7 +530,18 @@ export class FormattingPaneUi {
     return bar;
   }
 
-  private reordering(head: HTMLElement, rule: FormatRule): void {
+  /** `Move To ▸` and `Copy To ▸` of a rule's menu: the other scopes. */
+  private scopeItems(id: string, from: FormatScope): MenuItem[] {
+    const labels: Record<FormatScope, string> = { collection: 'This Collection', database: 'This Database', connection: 'This Connection', global: 'Everywhere' };
+    const others = FORMAT_SCOPES.filter((s) => s !== from);
+    const items = (copy: boolean): MenuItem[] => others.map((scope) => ({ label: labels[scope], title: this.scopeTitle(scope), action: () => this.moveTo(id, scope, { copy }) }));
+    return [
+      { label: 'Move To', title: 'The rule leaves this scope for another', items: items(false) },
+      { label: 'Copy To', title: 'A copy of the rule in another scope', items: items(true) },
+    ];
+  }
+
+  private reordering(head: HTMLElement, rule: FormatRule, scope: FormatScope): void {
     head.addEventListener('dragstart', (e) => {
       this.dragId = rule.id;
       e.dataTransfer!.setData('text/plain', rule.id);
@@ -457,19 +560,9 @@ export class FormattingPaneUi {
     head.addEventListener('drop', (e) => {
       e.preventDefault();
       head.classList.remove('drop-before', 'drop-after');
-      if (this.dragId) this.move(this.dragId, rule.id, e.offsetY > head.offsetHeight / 2);
+      if (this.dragId) this.moveTo(this.dragId, scope, { beside: rule.id, after: e.offsetY > head.offsetHeight / 2 });
       this.dragId = null;
     });
-  }
-
-  private move(source: string, target: string, after: boolean): void {
-    const rules = this.opts.rules();
-    const moving = rules.find((r) => r.id === source);
-    if (!moving || source === target) return;
-    const rest = rules.filter((r) => r.id !== source);
-    const at = rest.findIndex((r) => r.id === target) + (after ? 1 : 0);
-    rest.splice(at, 0, moving);
-    this.opts.change(rest);
   }
 
   // -------------------------------------------------------------------------

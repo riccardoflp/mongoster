@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { ConditionRule, FormatColor, FormatRule, MAX_FORMAT_RULES, TableFormat, conditionError, readFormatRules, withElement } from '../../src/shared/formatting';
 import { FieldRule, paintLevel, readFormattingPane } from '../../src/shared/formatting';
 import { SHADES, VALUE_COLORS, fieldLegend, fieldMode, fieldPaint, paletteOf, resolveField, valuesOf } from '../../src/shared/formatField';
+import { SCOPE_FULL, ScopedRules, moveRule, noRules, readScopedChanges, readScopesOff, rulesInOrder, scopeOfRule } from '../../src/shared/formatting';
+import { formattingKey, readFormatting, readFormattingOff, removeConnectionFormatting, scopeReaches, writeFormatting, writeFormattingOff } from '../../src/formattingStore';
+import { formattingFile, groupLabel, importSummary, mergeImport, readFormattingFile } from '../../src/shared/formattingFile';
 import { parseQuery } from '../../src/shared/query';
 
 const doc = (text: string) => parseQuery(text);
@@ -274,5 +277,174 @@ describe('query.format-rules: field rules and the pane', () => {
     expect(readFormattingPane(undefined)).toEqual({ open: false, width: 320, hidden: false });
     expect(readFormattingPane({ open: true, width: 5000, hidden: true })).toEqual({ open: true, width: 700, hidden: true });
     expect(readFormattingPane('x')).toEqual({ open: false, width: 320, hidden: false });
+  });
+});
+
+const scoped = (extra: Partial<ScopedRules>): ScopedRules => ({ ...noRules(), ...extra });
+const ids = (changes: unknown) => Object.fromEntries(Object.entries(changes as Partial<ScopedRules>).map(([k, v]) => [k, v!.map((r) => r.id)]));
+
+describe('query.format-table: scopes', () => {
+  it('tries the nearest scope first and leaves out the scopes turned off', () => {
+    const rules = scoped({ global: [rule('g', '{}', 'red')], collection: [rule('c', '{}', 'blue')], database: [rule('d', '{}', 'green'), rule('c', '{}', 'pink')], connection: [rule('n', '{}', 'teal')] });
+    expect(rulesInOrder(rules).map((r) => r.id)).toEqual(['c', 'd', 'n', 'g']);
+    expect(rulesInOrder(rules, ['database', 'global']).map((r) => r.id)).toEqual(['c', 'n']);
+    expect(new TableFormat(rulesInOrder(rules)).rowPaint({})?.color).toBe('blue');
+    expect(new TableFormat(rulesInOrder(rules, ['collection'])).rowPaint({})?.color).toBe('green');
+  });
+});
+
+describe('query.format-rules: scopes', () => {
+  const rules = scoped({ collection: [rule('a', '{}', 'red'), rule('b', '{}', 'blue')], global: [rule('g', '{}', 'green')] });
+
+  it('moves a rule to another scope, last or beside a rule', () => {
+    expect(ids(moveRule(rules, 'a', 'global'))).toEqual({ collection: ['b'], global: ['g', 'a'] });
+    expect(ids(moveRule(rules, 'a', 'global', { beside: 'g' }))).toEqual({ collection: ['b'], global: ['a', 'g'] });
+    expect(ids(moveRule(rules, 'g', 'database'))).toEqual({ global: [], database: ['g'] });
+    expect(scopeOfRule(rules, 'g')).toBe('global');
+  });
+
+  it('reorders within a scope and says nothing changed when it did not', () => {
+    expect(ids(moveRule(rules, 'a', 'collection', { beside: 'b', after: true }))).toEqual({ collection: ['b', 'a'] });
+    expect(moveRule(rules, 'a', 'collection', { beside: 'b' })).toBeUndefined();
+    expect(moveRule(rules, 'a', 'collection', { beside: 'a' })).toBeUndefined();
+    expect(moveRule(rules, 'nope', 'global')).toBeUndefined();
+  });
+
+  it('copies a rule with a new id and leaves the first where it is', () => {
+    const changes = moveRule(rules, 'a', 'connection', { copyId: 'a2' }) as Partial<ScopedRules>;
+    expect(ids(changes)).toEqual({ connection: ['a2'] });
+    expect(changes.connection![0]).toMatchObject({ condition: '{}', color: 'red' });
+    expect(ids(moveRule(rules, 'a', 'collection', { copyId: 'a2' }))).toEqual({ collection: ['a', 'b', 'a2'] });
+  });
+
+  it('refuses a rule more than a scope keeps', () => {
+    const full = scoped({ collection: [rule('a', '{}', 'red')], global: Array.from({ length: MAX_FORMAT_RULES }, (_, i) => rule(`g${i}`, '{}', 'red')) });
+    expect(moveRule(full, 'a', 'global')).toBe(SCOPE_FULL);
+    expect(moveRule(full, 'g0', 'global', { copyId: 'x' })).toBe(SCOPE_FULL);
+    expect(ids(moveRule(full, 'g0', 'global', { beside: 'g5', after: true })).global).toHaveLength(MAX_FORMAT_RULES);
+  });
+
+  it('reads the scopes turned off and the changes a tab sends', () => {
+    expect(readScopesOff(['global', 'nope', 'global', 'database'])).toEqual(['database', 'global']);
+    expect(readScopesOff('global')).toEqual([]);
+    expect(readScopedChanges({ global: [rule('g', '{}', 'red'), 'x'], other: [], database: 'x' })).toEqual({ global: [rule('g', '{}', 'red')], database: [] });
+    expect(readScopedChanges(null)).toEqual({});
+  });
+
+  it('keeps each scope under its own key and reads what reaches a collection', async () => {
+    const data = new Map<string, unknown>();
+    const state = { get: (k: string) => data.get(k), update: async (k: string, v: unknown) => void (v === undefined ? data.delete(k) : data.set(k, v)), keys: () => [...data.keys()] };
+    const orders = { connectionId: 'c1', database: 'shop', collection: 'orders' };
+    expect(formattingKey('collection', orders)).toBe('mongoster.formatting.c1/shop/orders');
+    await writeFormatting(state, orders, 'collection', [rule('a', '{}', 'red')]);
+    await writeFormatting(state, orders, 'database', [rule('d', '{}', 'red')]);
+    await writeFormatting(state, orders, 'connection', [rule('n', '{}', 'red')]);
+    await writeFormatting(state, orders, 'global', [rule('g', '{}', 'red')]);
+    await writeFormattingOff(state, orders, ['global']);
+    expect([...data.keys()].sort()).toEqual([
+      'mongoster.formatting.c1/shop/orders',
+      'mongoster.formattingConnection.c1',
+      'mongoster.formattingDatabase.c1/shop',
+      'mongoster.formattingGlobal',
+      'mongoster.formattingOff.c1/shop/orders',
+    ]);
+    expect(ids(readFormatting(state, { connectionId: 'c1', database: 'shop', collection: 'customers' }))).toEqual({ collection: [], database: ['d'], connection: ['n'], global: ['g'] });
+    expect(ids(readFormatting(state, { connectionId: 'c2', database: 'shop', collection: 'orders' }))).toEqual({ collection: [], database: [], connection: [], global: ['g'] });
+    expect(readFormattingOff(state, orders)).toEqual(['global']);
+    await removeConnectionFormatting(state, 'c1');
+    expect([...data.keys()].sort()).toEqual(['mongoster.formatting.c1/shop/orders', 'mongoster.formattingGlobal', 'mongoster.formattingOff.c1/shop/orders']);
+    await writeFormatting(state, orders, 'global', []);
+    expect(data.has('mongoster.formattingGlobal')).toBe(false);
+  });
+
+  it('knows which other collections a changed scope reaches', () => {
+    const a = { connectionId: 'c1', database: 'shop', collection: 'orders' };
+    const sameDb = { ...a, collection: 'customers' };
+    const sameConn = { ...a, database: 'crm' };
+    const other = { ...a, connectionId: 'c2' };
+    expect([sameDb, sameConn, other].map((o) => scopeReaches('global', a, o))).toEqual([true, true, true]);
+    expect([sameDb, sameConn, other].map((o) => scopeReaches('connection', a, o))).toEqual([true, true, false]);
+    expect([sameDb, sameConn, other].map((o) => scopeReaches('database', a, o))).toEqual([true, false, false]);
+    expect([sameDb, sameConn, other].map((o) => scopeReaches('collection', a, o))).toEqual([false, false, false]);
+  });
+});
+
+describe('query.format-transfer', () => {
+  const rules = scoped({
+    collection: [rule('a', '{ status: "failed" }', 'red', { name: 'Failed' })],
+    database: [by('status', { pinned: [{ value: '"paid"', color: 'green' }] })],
+    global: [rule('g', '{ deleted: true }', 'gray')],
+  });
+  const place = { database: 'shop', collection: 'orders' };
+
+  it('writes the chosen scopes that have rules, the widest first, with nothing of the connection', () => {
+    const text = formattingFile(rules, ['collection', 'database', 'connection', 'global'], place);
+    const file = JSON.parse(text);
+    expect(file.mongosterFormatting).toBe(1);
+    expect(file.groups.map((g: { scope: string; database?: string; collection?: string }) => [g.scope, g.database, g.collection])).toEqual([
+      ['global', undefined, undefined],
+      ['database', 'shop', undefined],
+      ['collection', 'shop', 'orders'],
+    ]);
+    expect(text.endsWith('\n')).toBe(true);
+    expect(JSON.parse(formattingFile(rules, ['global'], place)).groups).toHaveLength(1);
+  });
+
+  it('reads back what it wrote', () => {
+    const file = readFormattingFile(formattingFile(rules, ['collection', 'database', 'global'], place));
+    expect(file).toEqual({
+      groups: [
+        { scope: 'global', rules: rules.global },
+        { scope: 'database', database: 'shop', rules: rules.database },
+        { scope: 'collection', database: 'shop', collection: 'orders', rules: rules.collection },
+      ],
+      dropped: 0,
+    });
+    expect((file as { groups: Parameters<typeof groupLabel>[0][] }).groups.map(groupLabel)).toEqual(['Everywhere', 'Database shop', 'Collection shop.orders']);
+  });
+
+  it('keeps the rules it can use, counts the others, and leaves out what is not a group', () => {
+    const text = JSON.stringify({
+      mongosterFormatting: 1,
+      groups: [
+        { scope: 'global', rules: [{ id: 'a', condition: '{}', color: 'red', run: 'rm -rf' }, { id: 'b', condition: 1 }, 'x'] },
+        { scope: 'planet', rules: [{ id: 'c', condition: '{}', color: 'red' }] },
+        { scope: 'database', database: 7, rules: [] },
+        'text',
+      ],
+    });
+    expect(readFormattingFile(text)).toEqual({ groups: [{ scope: 'global', rules: [{ id: 'a', condition: '{}', color: 'red' }] }], dropped: 3 });
+  });
+
+  it('says why a file can not be read', () => {
+    expect(readFormattingFile('{ not json')).toMatchObject({ error: expect.stringMatching(/^The file is not JSON: /) });
+    expect(readFormattingFile('[]')).toEqual({ error: 'The file is not a file of formatting rules exported from Mongoster.' });
+    expect(readFormattingFile('{ "groups": [] }')).toEqual({ error: 'The file is not a file of formatting rules exported from Mongoster.' });
+    expect(readFormattingFile('{ "mongosterFormatting": 2, "groups": [] }')).toEqual({ error: 'The file was exported by a newer Mongoster: update Mongoster to import it.' });
+    expect(readFormattingFile(' '.repeat(1_000_001))).toEqual({ error: 'The file is larger than 1 MB: it is not a file of formatting rules.' });
+  });
+
+  it('adds imported rules after the ones there, with new ids, and skips the ones already there', () => {
+    let n = 0;
+    const existing = [rule('x', '{ a: 1 }', 'red')];
+    const merged = mergeImport(existing, [rule('x', '{ b: 1 }', 'blue'), rule('other', '{ a: 1 }', 'red'), rule('y', '{ a: 1 }', 'green')], () => `new${n++}`);
+    expect(merged.rules.map((r) => r.id)).toEqual(['x', 'new0', 'new1']);
+    expect(merged).toMatchObject({ added: 2, already: 1, over: 0 });
+    expect(existing).toHaveLength(1);
+    const again = mergeImport(merged.rules, [rule('q', '{ b: 1 }', 'blue')], () => 'never');
+    expect(again).toMatchObject({ added: 0, already: 1 });
+  });
+
+  it('leaves out what would pass the limit of a scope', () => {
+    const full = Array.from({ length: MAX_FORMAT_RULES - 1 }, (_, i) => rule(`r${i}`, `{ n: ${i} }`, 'red'));
+    const merged = mergeImport(full, [rule('a', '{ a: 1 }', 'red'), rule('b', '{ b: 1 }', 'red')], () => 'id');
+    expect(merged).toMatchObject({ added: 1, over: 1 });
+    expect(merged.rules).toHaveLength(MAX_FORMAT_RULES);
+  });
+
+  it('says what was imported', () => {
+    expect(importSummary(7, 2, 0, 0)).toBe('Imported 7 formatting rules, 2 were already there.');
+    expect(importSummary(1, 1, 3, 0)).toBe('Imported 1 formatting rule, 1 was already there. 3 rules could not be read.');
+    expect(importSummary(0, 0, 0, 2)).toBe('Imported 0 formatting rules. 2 rules did not fit: a scope keeps at most 100.');
   });
 });

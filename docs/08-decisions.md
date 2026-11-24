@@ -176,7 +176,7 @@ of Azure DevOps in a secret (they stop working, and a stored token can leak); pu
 release is the maintainer's choice); a GitHub release published at once (the installers are not signed, and the
 maintainer reads the notes first).
 
-## D21 — Formatting by a field's values, in a pane beside the table; rules of wider scopes to follow
+## D21 — Formatting by a field's values, in a pane beside the table, with rules for a database, a connection and everywhere
 
 A formatting rule is a condition rule (D18) or a **field rule**, which colors by the values of one field with no
 condition: green and red for booleans, a scale for numbers and dates whose ends are stored in the rule, one color per
@@ -185,10 +185,14 @@ pins to a color and a palette (all colors, or the shades of one) for the others.
 wins, of either kind, a cell over a row; rows are mixed fainter than cells. The colors are the eleven presets (D17),
 no custom ones. The rules can be named and are edited in place in the **Formatting pane**, docked at the right of the
 table, in place of D18's popup and dialog; the pane's state and `Hide Formatting` hold for every tab. This replaces
-D18 where they differ (six colors, a condition in every rule, the popup); the matcher and where a collection's rules
-are kept stand. Still to build, in this order: rules for a database, a connection and everywhere; export and import
-of rules as a file. Rejected: scale ends recomputed on each page (a value would change color from a page to the
-next), a rainbow scale (hue has no order), the pane under the query (it takes height from the table). The cost: 0.9.0
+D18 where they differ (six colors, a condition in every rule, the popup, rules for one collection only); the matcher
+and where a collection's rules are kept stand. A rule has a **scope**: the collection, its database, its connection,
+or everywhere, each kept under its own `globalState` key; the nearest scope's rules are tried first, a collection can
+leave a scope out, and a rule is moved or copied between scopes in the pane. Rules are shared as a file, exported
+from the pane and imported into it: JSON, one group per scope, with nothing of a connection in it; an import adds
+to the rules already there and replaces none. Rejected: scale ends recomputed on each page (a value would change color from a page to the
+next), a rainbow scale (hue has no order), the pane under the query (it takes height from the table), the wider
+scopes kept on the connection's entry (the export of connections would carry them, with what reaches servers). The cost: 0.9.0
 drops the field rules it reads and loses them if it then saves that collection's rules. *Accepted by the maintainer on
 2026-11-24, [proposal 0003](proposals/0003-formatting-by-field-scopes-and-pane.md), to build in three stages.*
 

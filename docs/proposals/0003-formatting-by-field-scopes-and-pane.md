@@ -1,6 +1,6 @@
 # 0003 — Formatting by a field's values, rules beyond one collection, the Formatting pane
 
-**Status**: accepted (D21), built in three stages: see [Stages](#stages)
+**Status**: accepted (D21), built in three stages, all done: see [Stages](#stages)
 
 ## Summary
 
@@ -279,6 +279,19 @@ Accepted to be built in three stages, each usable by itself.
    fainter than cells, names, the Formatting pane with its legends and `Hide Formatting`, `Color by This Field`. The
    pane lists the collection's rules only; `init` keeps `formatRules` and gains `formattingPane`, saved with
    `saveFormattingPane`. Open question 1 is settled as proposed: `Hide Formatting` holds for every tab and is kept.
-2. **Scopes**: the database's, the connection's and the global rules, the four sections, moving and copying a rule
-   between them, `src/formattingStore.ts`. Open question 2.
-3. **Export and import**: the file, the two commands, the line in 10-security.md. Open question 5.
+2. **Scopes** (built): the database's, the connection's and the global rules, the four sections, moving and copying a
+   rule between them (dragging, or `⋯` → `Move To ▸` / `Copy To ▸`), `src/formattingStore.ts`. `init` has
+   `formatting` (the four lists) and `formattingOff` in place of `formatRules`; `saveFormatRules` carries the lists of
+   the scopes that changed, and the other tabs a scope reaches get them with `formatRules`. Open question 2 is
+   settled: a section's checkbox is kept, per collection, in `mongoster.formattingOff.<connection>/<database>/<collection>`,
+   because a rule made for everywhere must be easy to leave out of the one collection it does not suit. A rule with
+   a field the table does not have is dimmed, with `No <field> in this table.` in its tooltip. Removing a connection
+   removes its rules and its databases'; its collections' own stay, like their layouts.
+3. **Export and import** (built): `⋯` at the top of the pane → `Export Formatting…`, `Import Formatting…`
+   (`src/shared/formattingFile.ts`, `src/formattingTransfer.ts`), T20 in 10-security.md. The questions are quick
+   picks of the host, not a form in the pane: which scopes to export; which groups of the file to import, then where
+   (`The Same Scopes`, each group in its own scope of the tab's connection, database and collection, or all into one
+   scope). Open question 5 is settled for now: only what the tab sees is exported; `Export All Formatting…` is not
+   built, since a file with the rules of several connections needs a way to say which is which at the import.
+
+Open questions 3 (colors by hash or by first appearance) and 4 (a palette of the user's own colors) stay open.

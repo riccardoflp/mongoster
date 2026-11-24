@@ -3,6 +3,7 @@ import { MongoClient } from 'mongodb';
 import { ConnectionOptions, HostKeyCheck, openClient, SshTunnel } from './transport';
 import type { RedisOplogSettings } from './shared/oplog';
 import type { Color } from './shared/colors';
+import { removeConnectionFormatting } from './formattingStore';
 
 /** A connection's color: one of the presets or a custom `#rrggbb` (`src/shared/colors.ts`, D17). */
 export type ConnectionColor = Color;
@@ -154,6 +155,7 @@ export class ConnectionManager implements vscode.Disposable {
     await this.context.secrets.delete(secretKey(id));
     await this.context.secrets.delete(optionsKey(id));
     await this.context.secrets.delete(redisKey(id));
+    await removeConnectionFormatting(this.context.globalState, id);
     await this.context.globalState.update(
       STATE_KEY,
       this.list().filter((c) => c.id !== id),

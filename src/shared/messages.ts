@@ -10,7 +10,7 @@ import type { ColumnLayout } from './columns';
 import type { PipelineStage } from './pipeline';
 import type { ExplainSummary } from './explain';
 import type { CollectionReferences } from './references';
-import type { FormatRule, FormattingPane } from './formatting';
+import type { FormatScope, FormattingPane, ScopedRules } from './formatting';
 import type { QueryPane } from './queryPane';
 
 export interface QueryRequest {
@@ -155,8 +155,13 @@ export type WebviewMessage =
   | { type: 'insertInEditor'; text: string }
   | { type: 'saveExpanded'; expanded: string[] }
   | { type: 'saveLayout'; layout: ColumnLayout }
-  /** Stores the collection's formatting rules, in their order (`query.format-rules`). */
-  | { type: 'saveFormatRules'; rules: FormatRule[] }
+  /** Stores the formatting rules of the scopes that changed, each list whole and in its order (`query.format-rules`). */
+  | { type: 'saveFormatRules'; changes: Partial<ScopedRules> }
+  /** `Export Formatting…` and `Import Formatting…` of the Formatting pane (`query.format-transfer`). */
+  | { type: 'exportFormatting' }
+  | { type: 'importFormatting' }
+  /** Stores the scopes whose rules this collection does not take. */
+  | { type: 'saveFormattingOff'; off: FormatScope[] }
   /** Stores the Formatting pane's state (open, width, colors hidden) for every collection's tab. */
   | { type: 'saveFormattingPane'; pane: FormattingPane }
   /** Stores where the query goes (above or beside the results) for every collection's tab. */
@@ -220,13 +225,17 @@ export type HostMessage =
       color?: string;
       expanded: string[];
       layout: ColumnLayout;
-      /** The collection's formatting rules, in their order. */
-      formatRules: FormatRule[];
+      /** The formatting rules that reach the collection, by scope, each list in its order. */
+      formatting: ScopedRules;
+      /** The scopes whose rules this collection does not take. */
+      formattingOff: FormatScope[];
       formattingPane: FormattingPane;
       queryPane: QueryPane;
     }
   /** The query was moved (or its pane resized) in another collection's tab. */
   | { type: 'queryPane'; pane: QueryPane }
+  /** The rules of a database, a connection or the global ones were changed in another collection's tab. */
+  | { type: 'formatRules'; changes: Partial<ScopedRules> }
   /** The Formatting pane was opened, closed or resized, or the colors hidden or shown, in another collection's tab. */
   | { type: 'formattingPane'; pane: FormattingPane }
   /** Shows a tab of the panel, e.g. Indexes when opened from the tree. */

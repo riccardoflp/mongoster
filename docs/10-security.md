@@ -23,7 +23,7 @@ Worth protecting, in order:
 The trust boundaries: between Mongoster and everything in **Not trusted** on the diagram (the deployments, SSH
 servers, Redis), between the host and its webviews (a webview shows data from the database), between Mongoster and
 other programs on the same machine (the MCP port), and between Mongoster and the files it reads that someone else may
-have written (imports, connection files, backups, saved query files from git, playgrounds).
+have written (imports, connection files, formatting files, backups, saved query files from git, playgrounds).
 
 ## What can go wrong
 
@@ -48,6 +48,7 @@ have written (imports, connection files, backups, saved query files from git, pl
 | T17 | T, E | A repository's `.vscode/settings.json` changes what Mongoster does on the user's machine. | settings | The MCP settings are application settings; `mongoster.savedQueries.folder` from a workspace must stay inside it (`src/projectQueries.ts`) | Mitigated; playgrounds remain (T6) |
 | T18 | S | A name or an error text from the database shows as a link in a VS Code notification, and the user clicks it. | notifications | `noLinks` (`src/shared/plainText.ts`) on error texts and on the messages that carry names | Mitigated for errors; some messages with names are not covered yet |
 | T19 | E | Another program starts the installed desktop app as a plain Node.js, or with injected code, to act with the app's identity (the keychain entry of the secrets). | the desktop app | Electron fuses in `electron-builder.yml`: no `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` or `--inspect`, code only from `app.asar` | Mitigated, partly: the asar's integrity is not validated and the installers are not signed |
+| T20 | T, D | A file of formatting rules from someone else (`Import Formatting…`) carries something other than rules: code, a huge list, a condition written to hang the table. | `query.format-transfer` | The file is JSON, 1 MB at most, read by `readFormattingFile` and `readFormatRules`, which keep known properties of known kinds only and 100 rules per scope; a condition stays text, parsed as a filter (`parseQuery`) and matched by `query.match`, which has no `$where` and runs nothing; a regular expression in a condition runs on the page shown only (500 documents at most). Imported rules are added, never replace, and no connection is named in the file | Mitigated; a slow regular expression can still make one page slow to paint |
 
 ## What we do about it
 

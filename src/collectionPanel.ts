@@ -32,7 +32,9 @@ import type { ColumnLayout } from './shared/columns';
 import { RelationsCache } from './relationsAnalysis';
 import type { RelGraph } from './shared/relations';
 import { collectionReferences } from './shared/references';
-import { readFormatRules, readFormattingPane } from './shared/formatting';
+import { FORMAT_SCOPES, FormatScope, ScopedRules, readFormattingPane, readScopedChanges, readScopesOff } from './shared/formatting';
+import { exportFormatting, importFormatting } from './formattingTransfer';
+import { formattingKey, formattingOffKey, readFormatting, readFormattingOff, scopeReaches, writeFormatting, writeFormattingOff } from './formattingStore';
 import { noLinks } from './shared/plainText';
 import { queryBarHtml } from './queryBarHtml';
 import { POSITION_SETTING, QueryPane, queryPaneSave, readQueryPane } from './shared/queryPane';
@@ -60,15 +62,15 @@ export function readOnlyMessage(target: CollectionTarget): string {
 export const panelKey = (ref: CollectionRef) => `${ref.connectionId}/${ref.database}/${ref.collection}`;
 export const expandedStateKey = (ref: CollectionRef) => `mongoster.expanded.${panelKey(ref)}`;
 export const layoutStateKey = (ref: CollectionRef) => `mongoster.layout.${panelKey(ref)}`;
-export const formattingStateKey = (ref: CollectionRef) => `mongoster.formatting.${panelKey(ref)}`;
+export const formattingStateKey = (ref: CollectionRef) => formattingKey('collection', ref);
 /** The Formatting pane, for every collection's tab: `{ open, width, hidden }`. */
 export const FORMATTING_PANE_KEY = 'mongoster.formattingPane';
 /** The width of the query pane, for every collection's tab: `{ width }`. Its place is the setting `mongoster.queryBar.position`. */
 export const QUERY_PANE_KEY = 'mongoster.queryPane';
 
-/** Carries the recent and saved queries, the expanded columns, the layout and the formatting rules of a renamed collection over to its new name. */
+/** Carries the recent and saved queries, the expanded columns, the layout, the formatting rules and the scopes turned off of a renamed collection over to its new name. */
 export async function moveCollectionState(state: vscode.Memento, from: CollectionRef, to: CollectionRef): Promise<void> {
-  const keys = (ref: CollectionRef) => [...QueryHistory.stateKeys(panelKey(ref)), expandedStateKey(ref), layoutStateKey(ref), formattingStateKey(ref)];
+  const keys = (ref: CollectionRef) => [...QueryHistory.stateKeys(panelKey(ref)), expandedStateKey(ref), layoutStateKey(ref), formattingStateKey(ref), formattingOffKey(ref)];
   const [fromKeys, toKeys] = [keys(from), keys(to)];
   for (let i = 0; i < fromKeys.length; i++) {
     const value = state.get(fromKeys[i]);
@@ -194,6 +196,15 @@ export class CollectionPanel {
     return colorOf(this.connections.get(this.target.connectionId), this.target.database, this.target.collection);
   }
 
+  /** Tells the open tabs a changed scope reaches, and this one when the change was not made in its pane. */
+  private formatRulesChanged(changes: Partial<ScopedRules>, self: boolean): void {
+    for (const p of CollectionPanel.panels.values()) {
+      if (p === this && !self) continue;
+      const theirs = Object.fromEntries(Object.entries(changes).filter(([scope]) => p === this || scopeReaches(scope as FormatScope, this.target, p.target)));
+      if (Object.keys(theirs).length) p.post({ type: 'formatRules', changes: theirs });
+    }
+  }
+
   private postInit(): void {
     const t = this.target;
     paintTab(this.panel, this.context.extensionUri, this.color(), 'collection.svg');
@@ -208,7 +219,8 @@ export class CollectionPanel {
       color: this.color(),
       expanded: this.context.globalState.get<string[]>(expandedStateKey(t), []),
       layout: this.context.globalState.get<ColumnLayout>(layoutStateKey(t), {}),
-      formatRules: readFormatRules(this.context.globalState.get(formattingStateKey(t))),
+      formatting: readFormatting(this.context.globalState, t),
+      formattingOff: readFormattingOff(this.context.globalState, t),
       formattingPane: readFormattingPane(this.context.globalState.get(FORMATTING_PANE_KEY)),
       queryPane: this.queryPane(),
     });
@@ -279,10 +291,26 @@ export class CollectionPanel {
       }
       case 'saveFormatRules': {
         // Feature: query.format-rules. Kept for the user, like the layout; nothing is written to the database.
-        const rules = readFormatRules(m.rules);
-        await this.context.globalState.update(formattingStateKey(this.target), rules.length ? rules : undefined);
+        // The rules of a database, a connection and the global ones are also other open tabs': they hear of them here.
+        const changes = readScopedChanges(m.changes);
+        for (const scope of FORMAT_SCOPES) {
+          const rules = changes[scope];
+          if (rules) await writeFormatting(this.context.globalState, this.target, scope, rules);
+        }
+        this.formatRulesChanged(changes, false);
         break;
       }
+      case 'exportFormatting':
+        await exportFormatting(this.context.globalState, this.target);
+        break;
+      case 'importFormatting': {
+        const changes = await importFormatting(this.context.globalState, this.target);
+        if (changes) this.formatRulesChanged(changes, true);
+        break;
+      }
+      case 'saveFormattingOff':
+        await writeFormattingOff(this.context.globalState, this.target, readScopesOff(m.off));
+        break;
       case 'saveFormattingPane': {
         // One pane for every collection's tab: open or closed, its width, the colors hidden or shown.
         const pane = readFormattingPane(m.pane);
@@ -1282,6 +1310,7 @@ ${queryBarHtml()}
       <span class="spacer"></span>
       <button id="formattingEye" class="secondary" aria-pressed="false">Hide Formatting</button>
       <button id="formattingAdd" class="secondary" aria-haspopup="menu" title="Add a formatting rule: a condition, or by a field's values">+ Add Rule…</button>
+      <button id="formattingMore" class="icon" aria-haspopup="menu" title="Export the formatting rules to a file, or import them from one">⋯</button>
       <button id="formattingClose" class="icon" title="Close the pane">✕</button>
     </div>
     <div id="formattingNote" class="error hidden"></div>

@@ -10,28 +10,36 @@ builder, the pipeline and the columns get theirs when they change. The place of 
 results, and dropping a field on Sort or Project have theirs since they changed.
 
 Conditional formatting writes nothing to the database. Its rules are Mongoster's own state, kept for the user in
-`globalState` under `mongoster.formatting.<connection>/<database>/<collection>` ([11-data.md](../11-data.md)), sent to
-the webview with `init` (`formatRules`) and stored back with `{ type: 'saveFormatRules', rules }`
+`globalState`, one key per formatting scope (`mongoster.formatting.<connection>/<database>/<collection>`,
+`mongoster.formattingDatabase.…`, `mongoster.formattingConnection.…`, `mongoster.formattingGlobal`:
+[11-data.md](../11-data.md), `src/formattingStore.ts`), sent to the webview with `init` (`formatting`, the four
+lists) and stored back with `{ type: 'saveFormatRules', changes }`, the lists of the scopes that changed
 (`src/shared/messages.ts`). The decision of which row and cell gets which color is pure, in
 `src/shared/formatting.ts`, `src/shared/formatField.ts` and `src/shared/match.ts`; `renderGrid` in
 `src/webview/main.ts` only sets it on the document's `tbody` and on the cells (`applyPaint`: `data-fmt`, and a
 strength or a mixed color for scales and shades), and `media/webview.css` paints them.
 
-### `query.format-rules` — Add, edit, name, reorder and turn off formatting rules
+### `query.format-rules` — Add, edit, name, reorder, move between scopes and turn off formatting rules
 
-The user keeps, for each collection, a list of formatting rules that color the rows or cells of the table, and edits
-them in the Formatting pane beside the table.
+The user keeps lists of formatting rules that color the rows or cells of the table, for a collection, a database, a
+connection and everywhere, and edits them in the Formatting pane beside the table.
 
 - **Kind**: Operation
 - **Function**: `src/webview/formatting.ts › FormattingPaneUi` (`addCondition`, `addField`); stored by
-  `src/collectionPanel.ts › CollectionPanel.onMessage` (`case 'saveFormatRules'`, `case 'saveFormattingPane'`).
+  `src/collectionPanel.ts › CollectionPanel.onMessage` (`case 'saveFormatRules'`, `case 'saveFormattingOff'`,
+  `case 'saveFormattingPane'`).
 - **Implemented in**: `src/shared/formatting.ts › readFormatRules`, `conditionError`, `newRuleId`, `ruleSummary`,
-  `readFormattingPane`; `src/webview/main.ts › saveFormatRules`, `compileFormat`, `formatCells`, `fieldItems`;
+  `readFormattingPane`, `moveRule`, `scopeOfRule`, `readScopedChanges`, `readScopesOff`; `src/formattingStore.ts ›
+  readFormatting`, `writeFormatting`, `scopeReaches`, `removeConnectionFormatting`; `src/webview/main.ts ›
+  saveFormatRules`, `saveFormatOff`, `compileFormat`, `formatCells`, `fieldItems`;
   `src/collectionPanel.ts › formattingStateKey`, `FORMATTING_PANE_KEY`, `moveCollectionState`, `postInit`;
   `src/shared/messages.ts`; `media/webview.css`.
 - **Entry points**: the `Formatting` button in the bar above the table (`Formatting (n)` with `n` rules on,
   `Formatting (off)` while the colors are hidden), which opens and closes the Formatting pane at the right of the
-  table; in the pane, `+ Add Rule…` → `Condition…` or `By Field…`, `Hide Formatting` / `Show Formatting`, `✕`; in a
+  table; in the pane, `+ Add Rule…` → `Condition…` or `By Field…`, `Hide Formatting` / `Show Formatting`, `✕`, the
+  four sections `This collection`, `Database <name>`, `Connection <name>`, `Everywhere`, each with a checkbox and its
+  count, and on a rule `⋯` → `Move To ▸` / `Copy To ▸` → `This Collection`, `This Database`, `This Connection`,
+  `Everywhere`; in a
   column header's right-click menu, `Color by This Field` and `Format Cells…` (tooltip `Color the cells of <field>
   when the document matches a condition`).
 - **Offered when**: always, in every mode, on views and on read-only connections: nothing is written to the database.
@@ -49,24 +57,32 @@ them in the Formatting pane beside the table.
     Colors`; `Scale`, its color, the two ends and `From This Page`; `Palette`, the legend whose colors pin a value,
     `Unpin` and `+ Pin a Value…`. `Color by This Field` adds one in `Automatic` for that column: the first field rule
     of the list colors the row, the next ones their cell, and a scale takes its ends from the page.
-- **Reads**: the rules from `globalState`, through `readFormatRules`, when the tab opens and when its connection
-  changes; the pane's state from `mongoster.formattingPane`, through `readFormattingPane`.
-- **Writes**: no database. The whole list, in its order, to `globalState` at each change (add, edit, name, remove,
-  reorder, turn on or off), as it is typed; the key is removed when the list is empty. The pane's state (open, width,
+- **Reads**: the rules of the four scopes from `globalState`, through `readFormatRules`, and the scopes the
+  collection leaves out, when the tab opens and when its connection changes; the pane's state from `mongoster.formattingPane`, through `readFormattingPane`.
+- **Writes**: no database. The whole list of each scope that changed, in its order, to that scope's key at each
+  change (add, edit, name, remove, reorder, move, copy, turn on or off), as it is typed; a key is removed when its
+  list is empty. A new rule is the collection's. Moving a rule to another scope takes it out of the first and keeps
+  its id; a copy gets a new id; either goes beside the rule it is dropped on, or last. The scopes a section's
+  checkbox leaves out, per collection, to `mongoster.formattingOff.…`. The pane's state (open, width,
   colors hidden) to `mongoster.formattingPane`, for every collection's tab: the other open tabs follow at once.
 - **Danger**: None. Removing a rule asks nothing; turning it off keeps it aside.
 - **Read-only**: Allowed, because it writes nothing to the database.
 - **Undo**: Cannot be undone: the undo history is for writes to databases; a removed rule is made again.
 - **redis-oplog**: Not published.
-- **After**: the table is colored again at once, the legends follow the page shown, and the button's count changes.
-  The rules follow a renamed collection (`moveCollectionState`); they stay when the collection is dropped (RS4).
+- **After**: the table is colored again at once, the legends follow the page shown, and the button's count changes
+  (the rules on, of the scopes the collection takes). The other open tabs a changed scope reaches (the same
+  database, the same connection, all) are colored again too. A collection's rules and the scopes it leaves out follow
+  a renamed collection (`moveCollectionState`) and stay when it is dropped (RS4); `Remove Connection` removes the
+  rules of the connection and of its databases.
 - **Refuses**: a condition that does not parse (`Invalid syntax: …`) or that `query.match` refuses (its message),
   shown under it: the rule keeps its last usable condition, and a new rule is not stored until it has one; a field
   starting with `$` or, for a field rule, empty (the box is outlined, the rule unchanged); an end of a scale that is
-  not a number or a date; a 101st rule (`A collection keeps at most 100 formatting rules.`, at the top of the pane).
-- **Uses**: `query.format-table`, `query.format-field`, `query.match`.
+  not a number or a date; a 101st rule in a scope (`A collection keeps at most 100 formatting rules.`, or `<section>
+  keeps at most 100 formatting rules.` for a move or a copy, at the top of the pane).
+- **Uses**: `query.format-table`, `query.format-field`, `query.format-transfer`, `query.match`.
 - **Tested by**: `test/unit/formatting.test.ts › 'query.format-rules: the stored rules'`, `'query.format-rules: field
-  rules and the pane'` (`readFormatRules`, `conditionError`, `readFormattingPane`). The pane itself: none.
+  rules and the pane'`, `'query.format-rules: scopes'` (`readFormatRules`, `conditionError`, `readFormattingPane`,
+  `moveRule`, the store). The pane itself: none.
 
 Acceptance:
 
@@ -81,6 +97,63 @@ Acceptance:
   target, mode, palette or scale color keeps its field with `cell` and `auto`; a pinned entry without a string value
   or a known color, or seen already, is dropped; an entry of a kind that is neither is dropped.
 - [ ] `readFormattingPane(undefined)` is closed, 320 px, colors shown; a width of 5000 is kept as 700.
+- [ ] Moving the collection's rule `a` to everywhere leaves the collection `b` and makes the global list `g`, `a`;
+  beside `g`, `a`, `g`. A copy to the connection leaves the collection as it was and adds a rule with a new id.
+- [ ] Moving or copying into a scope that has 100 rules is refused; reordering within it is not.
+- [ ] The rules of `c1/shop/orders` written in the four scopes are read from `c1/shop/customers` without the
+  collection's, and from another connection with the global ones only; removing `c1` removes its connection's and
+  its databases' rules and keeps its collections' and the global ones.
+- [ ] A changed database scope reaches the other collections of that database only; a connection's, every
+  collection of the connection; the global one, every tab.
+
+### `query.format-transfer` — Export formatting rules to a file and import them
+
+The user writes formatting rules to a file to share them, and adds the rules of such a file to their own.
+
+- **Kind**: Operation
+- **Function**: `src/formattingTransfer.ts › exportFormatting`, `importFormatting`
+- **Implemented in**: `src/shared/formattingFile.ts › formattingFile`, `readFormattingFile`, `mergeImport`,
+  `groupLabel`, `importSummary`; `src/collectionPanel.ts › CollectionPanel.onMessage` (`case 'exportFormatting'`,
+  `case 'importFormatting'`), `formatRulesChanged`; `src/webview/formatting.ts › FormattingPaneUi` (the `⋯` menu).
+- **Entry points**: `⋯` at the top of the Formatting pane → `Export Formatting…`, `Import Formatting…`.
+- **Offered when**: always, also on views and read-only connections: nothing is written to the database.
+- **Asks**: export: `Choose the rules to export`, the scopes that have rules (`Collection <name>`, `Database <name>`,
+  `Connection <name>`, `Everywhere`, each with its count, all ticked), then where to save
+  `<collection>.mongoster-formatting.json`. Import: the file, then `Choose the rules to import`, the file's groups
+  with their counts, all ticked, then `Where do the rules go?`: `The Same Scopes` (each group in its own scope of the
+  tab's connection, database and collection, whatever names the file has) or `All Into` one of the four.
+- **Reads**: the rules of the four scopes from `globalState`; for an import, the chosen file, 1 MB at most.
+- **Writes**: no database. Export: the file, JSON, `{ mongosterFormatting: 1, groups: [{ scope, database?,
+  collection?, rules }] }`, the widest scope first, with nothing of the connection (no id, no name, no host). Import:
+  the lists of the scopes that got rules, to their `globalState` keys.
+- **Danger**: None: an import adds rules after the ones already there, each with a new id, and replaces none.
+- **Read-only**: Allowed, because it writes nothing to the database.
+- **Undo**: Cannot be undone; an imported rule is removed in the pane.
+- **redis-oplog**: Not published.
+- **After**: export: `<n> rules exported to <file>. The file has nothing of the connection: no name, no address, no
+  password.` Import: `Imported <n> formatting rules, <m> were already there.`, with `<k> rules could not be read.`
+  and `<j> rules did not fit: a scope keeps at most 100.` when so; this tab and the other open tabs the scopes reach
+  are colored again.
+- **Refuses**: export with no rule in any scope (`There are no formatting rules to export.`); a file over 1 MB, that
+  is not JSON (`The file is not JSON: …`), not a formatting file (`The file is not a file of formatting rules exported
+  from Mongoster.`), or of a later version (`The file was exported by a newer Mongoster: update Mongoster to import
+  it.`); a file without a usable rule (`The file has no formatting rules.`).
+- **Uses**: `query.format-rules`.
+- **Tested by**: `test/unit/formatting.test.ts › 'query.format-transfer'` (the file and the merge). The questions and
+  the dialogs: none.
+
+Acceptance:
+
+- [ ] The file of a collection with rules in the collection, the database and everywhere has the groups `global`,
+  `database` (with the database's name) and `collection` (with both names), in that order, and is read back as
+  written.
+- [ ] From a group with a usable rule (with an unknown property), a rule without a condition and a string, the first
+  is kept without the property and two are counted as dropped; a group of an unknown scope is dropped with its rules.
+- [ ] `[]`, an object without `mongosterFormatting`, a version 2 and a text over 1 MB are each refused with their
+  message.
+- [ ] Importing three rules where one equals a rule already there (all but its id) adds two with new ids after the
+  existing ones and counts one as already there; importing the same file again adds none.
+- [ ] Importing two rules into a scope that has 99 adds one and counts one as not fitting.
 
 ### `query.format-table` — Color the table by the formatting rules
 
@@ -88,13 +161,14 @@ The rows and cells take the color of the first rule that gives them one: a condi
 document matches, or a field rule whose field has a value.
 
 - **Kind**: View
-- **Function**: `src/shared/formatting.ts › TableFormat` (`rowPaint`, `cellPaint`)
+- **Function**: `src/shared/formatting.ts › TableFormat` (`rowPaint`, `cellPaint`), `rulesInOrder`
 - **Implemented in**: `src/shared/formatting.ts › withElement`, `paintLevel`; `src/webview/formatting.ts ›
   applyPaint`; `src/webview/main.ts › renderGrid`, `compileFormat`, `formatCell`; `media/webview.css` (`[data-fmt]`).
 - **Entry points**: the table, in `Find` and in the output of `Aggregate`, each time it is drawn.
 - **Uses**: `query.match`, `query.format-field`, `query.format-rules`, `connection.set-color` (the same eleven
   colors).
-- **Tested by**: `test/unit/formatting.test.ts › 'query.format-table'`, `'query.format-table: field rules'`.
+- **Tested by**: `test/unit/formatting.test.ts › 'query.format-table'`, `'query.format-table: field rules'`,
+  `'query.format-table: scopes'`.
 
 Rules:
 
@@ -110,6 +184,8 @@ Rules:
   (`query.format-field`), and gives nothing to the others, which the rules after it may color. Rules of both kinds
   are in one order: the first that gives a color wins.
 - In an expanded array, a field rule of a field of the elements colors each element's cell by that element's value.
+- The rules are tried scope by scope, the nearest first: the collection's, the database's, the connection's, the
+  ones for everywhere, each list in its order, without the scopes the collection leaves out (`rulesInOrder`).
 - A rule turned off, or whose condition can't be used, colors nothing; the pane marks the second with `⚠` and the
   reason. While `Hide Formatting` is on, no rule colors anything.
 - The colors are the eleven presets, theme colors (`--vscode-charts-red` …, `--vscode-mongoster-color-pink` …), mixed
@@ -143,6 +219,8 @@ Acceptance:
 - [ ] For `{ items: [ { qty: 0 }, { qty: 10 } ] }` and the cell rule `by items.qty`, the element 0 is at the faint
   end of the scale and the element 1 at the strong end.
 - [ ] A row's plain color is mixed at 12 % and a cell's at 28 %.
+- [ ] With a row rule `{}` in each scope, the collection's colors the row; with the collection's scope left out, the
+  database's does.
 
 ### `query.format-field` — The color a field rule gives a value
 

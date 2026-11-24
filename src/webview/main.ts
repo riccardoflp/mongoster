@@ -45,7 +45,7 @@ import { highlight } from './highlight';
 import { FilterBuilder } from './builder';
 import { CompletionKind, FieldHint, fieldHints } from '../shared/complete';
 import { analyzeSchema } from '../shared/schema';
-import { FormatPaint, FormatRule, TableFormat } from '../shared/formatting';
+import { FormatPaint, FormatScope, ScopedRules, TableFormat, noRules, rulesInOrder } from '../shared/formatting';
 import { FormattingPaneUi, applyPaint } from './formatting';
 import { CollectionReferences, ReferenceTarget, referenceKeys, referenceTargets, referencingTargets } from '../shared/references';
 import { paintStripe } from './stripe';
@@ -300,7 +300,9 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       if (m.expanded.length) expanded = new Set(m.expanded);
       layout = m.layout ?? {};
       columnsPanel.update();
-      formatRules = m.formatRules ?? [];
+      formatRules = m.formatting ?? noRules();
+      formatOff = m.formattingOff ?? [];
+      formatNames = { database: m.database, connection: m.connectionName };
       formattingPane.apply(m.formattingPane);
       queryPane.apply(m.queryPane);
       document.body.classList.toggle('readonly', readOnly);
@@ -327,6 +329,10 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       break;
     case 'queryPane':
       queryPane.apply(m.pane);
+      break;
+    case 'formatRules':
+      formatRules = { ...formatRules, ...m.changes };
+      renderGrid();
       break;
     case 'formattingPane': {
       const recolor = m.pane.hidden !== formattingPane.hidden;
@@ -714,19 +720,28 @@ const queryPane = new QueryPaneUi(el<HTMLButtonElement>('layoutToggle'), el('pan
 // ---------------------------------------------------------------------------
 // Conditional formatting: rows and cells colored by the collection's formatting rules
 
-/** The collection's formatting rules, in their order, and the colors they give to the page shown. */
-let formatRules: FormatRule[] = [];
+/** The formatting rules that reach the collection, by scope, and the colors they give to the page shown. */
+let formatRules: ScopedRules = noRules();
+/** The scopes whose rules this collection does not take. */
+let formatOff: FormatScope[] = [];
+let formatNames = { database: '', connection: '' };
 let tableFormat = new TableFormat([]);
 
-function saveFormatRules(rules: FormatRule[]): void {
-  formatRules = rules;
-  vscode.postMessage({ type: 'saveFormatRules', rules });
+function saveFormatRules(changes: Partial<ScopedRules>): void {
+  formatRules = { ...formatRules, ...changes };
+  vscode.postMessage({ type: 'saveFormatRules', changes });
+  renderGrid();
+}
+
+function saveFormatOff(off: FormatScope[]): void {
+  formatOff = off;
+  vscode.postMessage({ type: 'saveFormattingOff', off });
   renderGrid();
 }
 
 /** The rules compiled for the page about to be painted: none while `Hide Formatting` is on. */
 function compileFormat(docs: unknown[]): void {
-  tableFormat = new TableFormat(formattingPane.hidden ? [] : formatRules, docs);
+  tableFormat = new TableFormat(formattingPane.hidden ? [] : rulesInOrder(formatRules, formatOff), docs);
 }
 
 /** The color a cell rule of its column gives a cell; in an expanded array, decided for that element alone. */
@@ -761,7 +776,11 @@ function columnKeys(): string[] {
 const formattingPane = new FormattingPaneUi({
   rules: () => formatRules,
   change: saveFormatRules,
-  errors: () => new TableFormat(formatRules).errors,
+  errors: () => new TableFormat(rulesInOrder(formatRules)).errors,
+  off: () => formatOff,
+  setOff: saveFormatOff,
+  names: () => formatNames,
+  transfer: (what) => vscode.postMessage({ type: what === 'export' ? 'exportFormatting' : 'importFormatting' }),
   fields: columnKeys,
   docs: () => docs,
   complete: (field) => completeWith(field, 'filter'),
