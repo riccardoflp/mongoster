@@ -1,5 +1,6 @@
 import * as esbuild from 'esbuild';
 import * as fs from 'node:fs';
+import { isBuiltin } from 'node:module';
 import * as path from 'node:path';
 
 const watch = process.argv.includes('--watch');
@@ -14,20 +15,45 @@ const common = {
   logLevel: 'info',
 };
 
-// Optional native/peer deps of the mongodb driver: loaded lazily inside try/catch.
-const optional = [
-  'kerberos',
-  'snappy',
-  'socks',
-  'aws4',
-  'gcp-metadata',
-  'mongodb-client-encryption',
-  '@mongodb-js/zstd',
-  '@aws-sdk/credential-providers',
-  // Optional native speedups of ssh2, also loaded inside try/catch.
-  'cpu-features',
-  '*.node',
-];
+// Optional native/peer dependencies of the mongodb driver, and the optional native speedup of ssh2: each is
+// loaded inside try/catch, and none is shipped (the .vsix and the app carry no node_modules). Left as plain
+// `require("name")`, Node would look for them in every node_modules folder above the bundle, up to the root
+// of the disk: folders that someone else may be able to write (/tmp for the mounted AppImage, C:\ on
+// Windows). So each is bundled as a module that throws, which is what the callers expect of a missing one.
+const absent = ['kerberos', 'snappy', 'socks', 'aws4', 'gcp-metadata', 'mongodb-client-encryption', '@mongodb-js/zstd', '@aws-sdk/credential-providers', 'cpu-features'];
+
+const absentModules = {
+  name: 'absent-modules',
+  setup(build) {
+    const names = absent.map((name) => name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')).join('|');
+    build.onResolve({ filter: new RegExp(`^(${names})(/|$)`) }, (args) => ({ path: args.path, namespace: 'absent' }));
+    build.onLoad({ filter: /.*/, namespace: 'absent' }, (args) => ({
+      contents: `throw new Error(${JSON.stringify(`${args.path} is not shipped with Mongoster`)});`,
+      loader: 'js',
+    }));
+  },
+};
+
+/**
+ * Fails the build of a bundle that runs in Node when it still asks for a module by name, other than
+ * Node's own and the ones its host provides: such a name is looked for outside what is shipped.
+ */
+const onlyShippedCode = (provided) => ({
+  name: 'only-shipped-code',
+  setup(build) {
+    build.initialOptions.metafile = true;
+    build.onEnd((result) => {
+      const names = new Set();
+      for (const output of Object.values(result.metafile?.outputs ?? {})) {
+        for (const i of output.imports) if (i.external && !/^[./]/.test(i.path) && !i.path.startsWith('node:') && !isBuiltin(i.path) && !provided.includes(i.path)) names.add(i.path);
+      }
+      return names.size ? { errors: [{ text: `Asked for by name, and not shipped: ${[...names].join(', ')}. Bundle it, or add it to absentModules.` }] } : undefined;
+    });
+  },
+});
+
+// Native addons are never bundled; the ones asked for are beside their own code (ssh2's), not looked for by name.
+const native = ['*.node'];
 
 const monaco = 'node_modules/monaco-editor/esm/vs';
 
@@ -52,8 +78,8 @@ const appContexts = () => [
     format: 'cjs',
     target: 'node20',
     alias: { vscode: path.resolve('src/standalone/vscode/index.ts') },
-    external: ['electron', ...optional],
-    plugins: [copyStatic],
+    external: ['electron', ...native],
+    plugins: [absentModules, onlyShippedCode(['electron']), copyStatic],
   }),
   esbuild.context({
     ...common,
@@ -63,6 +89,7 @@ const appContexts = () => [
     format: 'cjs',
     target: 'node20',
     external: ['electron'],
+    plugins: [onlyShippedCode(['electron'])],
   }),
   // The window, with the editor (Monaco) and its workers.
   esbuild.context({
@@ -99,7 +126,8 @@ const contexts = await Promise.all([
     platform: 'node',
     format: 'cjs',
     target: 'node18',
-    external: ['vscode', ...optional],
+    external: ['vscode', ...native],
+    plugins: [absentModules, onlyShippedCode(['vscode'])],
   }),
   esbuild.context({
     ...common,

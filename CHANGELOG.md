@@ -4,6 +4,7 @@
 
 - A document's history now keeps a field named `__proto__` or `constructor` inside the document: an update written through such a name by someone else could change every object of the extension, and of the extensions running beside it.
 - Importing a CSV file whose header names a field `__proto__` or `constructor` now gives documents with that field; reading the file could change every object of the extension.
+- Mongoster no longer looks for the optional modules of its MongoDB and SSH libraries in `node_modules` folders outside itself: on a machine with other accounts, one of them could have its code loaded from such a folder (`/tmp` for the AppImage, `C:\` on Windows).
 
 ## 0.10.0
 
