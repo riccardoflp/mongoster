@@ -4,12 +4,13 @@
 import { BSON, Db, Document, MongoClient, MongoServerError } from 'mongodb';
 import { McpTool, ToolError, boolArg, intArg, stringArg, truncate } from '../shared/mcp';
 import { ExplainSummary, PlanNode, suggestIndex, summarizeExplain } from '../shared/explain';
-import { SlowOp, SlowOpGroup, fromLogLine, fromProfileDoc, groupOps, indexableQuery, isNoise, splitNs } from '../shared/profile';
+import { SlowOp, SlowOpGroup, fromLogLine, fromProfileDoc, groupOps, indexableQuery, isNoise, shapeOf, splitNs } from '../shared/profile';
 import { Advice, AdvisorCollection, AdvisorIndex, UNUSED_AFTER_MS, analyze } from '../shared/advisor';
 import { relaxEjson, toShell } from '../shared/query';
 import {
   MAX_OUTPUT,
   MAX_TIME_MS,
+  READ_DOCUMENTS,
   ToolContext,
   collectionProp,
   connectionProp,
@@ -19,6 +20,7 @@ import {
   pipelineProp,
   plural,
   projectionProp,
+  refuseSystemCollection,
   shell,
   sortProp,
 } from './context';
@@ -65,9 +67,9 @@ export function inNamespace(ns: string, filter: string | undefined): boolean {
 const isUnauthorized = (err: unknown): boolean =>
   (err instanceof MongoServerError && (err.code === 13 || err.codeName === 'Unauthorized')) || /not authorized|requires authentication/i.test(message(err));
 
-/** The error as the model can act on it: which role is missing when the user isn't authorized. */
-function refused(err: unknown, action: string, role: string): ToolError {
-  return new ToolError(isUnauthorized(err) ? `Not authorized to ${action}: the user needs the ${role} role (${message(err)}).` : `Could not ${action}: ${message(err)}`);
+/** The error as the model can act on it: which role is missing when the user isn't authorized. `say` gives the error's text (ctx.errorText). */
+function refused(err: unknown, action: string, role: string, say: (err: unknown) => string): ToolError {
+  return new ToolError(isUnauthorized(err) ? `Not authorized to ${action}: the user needs the ${role} role (${say(err)}).` : `Could not ${action}: ${say(err)}`);
 }
 
 // ---- explain
@@ -132,7 +134,7 @@ interface ProfilerStatus {
 
 async function profilerStatus(db: Db): Promise<ProfilerStatus> {
   try {
-    const s = await db.command({ profile: -1 });
+    const s = await db.command({ profile: -1, maxTimeMS: MAX_TIME_MS });
     return { level: Number(s.was), slowms: Number(s.slowms) };
   } catch (error) {
     return { error };
@@ -150,12 +152,12 @@ async function readProfiler(db: Db, since?: Date): Promise<{ ops: SlowOp[]; limi
 }
 
 /** The "Slow query" lines of the server's recent log (the server keeps its last 1,024 lines). */
-async function readLog(client: MongoClient, since?: Date): Promise<{ ops: SlowOp[]; limited: boolean }> {
+async function readLog(client: MongoClient, say: (err: unknown) => string, since?: Date): Promise<{ ops: SlowOp[]; limited: boolean }> {
   let res: Document;
   try {
-    res = await client.db('admin').command({ getLog: 'global' });
+    res = await client.db('admin').command({ getLog: 'global', maxTimeMS: MAX_TIME_MS });
   } catch (err) {
-    throw refused(err, 'read the server log (getLog)', 'clusterMonitor');
+    throw refused(err, 'read the server log (getLog)', 'clusterMonitor', say);
   }
   const lines = (res.log ?? []) as string[];
   const ops = lines.map(fromLogLine).filter((op): op is SlowOp => !!op && (!since || new Date(op.ts) >= since));
@@ -182,15 +184,25 @@ export function groupText(g: SlowOpGroup, i: number): string {
 
 // ---- running operations
 
-/** The command of an operation on one line, without session noise. */
-export function commandLine(command: unknown, max = 300): string {
+/**
+ * The command of an operation on one line, without session noise. Without `values` (readDocuments off)
+ * it is the command's shape, as slow_queries gives it: its literal values are replaced by ?, and only
+ * the name of the collection it runs on stays.
+ */
+export function commandLine(command: unknown, max = 300, values = true): string {
   if (!command || typeof command !== 'object') return '';
-  const text = shell(Object.fromEntries(Object.entries(command as Document).filter(([k]) => !NOISE.has(k))));
+  const entries = Object.entries(command as Document).filter(([k]) => !NOISE.has(k));
+  let text: string;
+  if (values) text = shell(Object.fromEntries(entries));
+  else {
+    const parts = entries.map(([k, v], i) => `${k}: ${i === 0 && typeof v === 'string' ? JSON.stringify(v) : shapeOf(relaxed(v), k === 'sort' || k === 'projection')}`);
+    text = parts.length ? `{ ${parts.join(', ')} }` : '{}';
+  }
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-/** An entry of currentOp as text. */
-export function operationText(op: Document): string {
+/** An entry of currentOp as text; without `values` the command is given as its shape. */
+export function operationText(op: Document, values = true): string {
   const micros = op.microsecs_running !== undefined ? Number(op.microsecs_running) : op.secs_running !== undefined ? Number(op.secs_running) * 1e6 : undefined;
   const head = [
     `opid ${String(op.opid)}`,
@@ -201,7 +213,7 @@ export function operationText(op: Document): string {
     op.planSummary && `plan ${op.planSummary}`,
   ].filter(Boolean);
   const lines = [`- ${head.join(' · ')}`];
-  const command = commandLine(op.command ?? op.query);
+  const command = commandLine(op.command ?? op.query, 300, values);
   if (command) lines.push(`  ${command}`);
   const users = (op.effectiveUsers as { user: string; db: string }[] | undefined)?.map((u) => `${u.user}@${u.db}`).join(', ');
   const client = op.client ?? op.client_s;
@@ -331,7 +343,7 @@ export function performanceTools(ctx: ToolContext): McpTool[] {
     if (source !== 'log' && database) {
       const db = mongo.db(database);
       status = await profilerStatus(db);
-      if (source === 'profiler' && status.error) throw refused(status.error, `read the profiler status of ${database}`, 'dbAdmin');
+      if (source === 'profiler' && status.error) throw refused(status.error, `read the profiler status of ${database}`, 'dbAdmin', ctx.errorText);
       let entries = false;
       let readError: unknown;
       try {
@@ -339,10 +351,10 @@ export function performanceTools(ctx: ToolContext): McpTool[] {
       } catch (err) {
         readError = err;
       }
-      if (source === 'profiler' && readError) throw refused(readError, `read ${database}.system.profile`, 'dbAdmin');
+      if (source === 'profiler' && readError) throw refused(readError, `read ${database}.system.profile`, 'dbAdmin', ctx.errorText);
       if (!readError && (source === 'profiler' || (status.level ?? 0) > 0 || entries)) {
         const { ops, limited } = await readProfiler(db, since).catch((err) => {
-          throw refused(err, `read ${database}.system.profile`, 'dbAdmin');
+          throw refused(err, `read ${database}.system.profile`, 'dbAdmin', ctx.errorText);
         });
         if (status.level === 0) {
           notes.push(
@@ -355,7 +367,7 @@ export function performanceTools(ctx: ToolContext): McpTool[] {
         return { ops: ops.filter((op) => !isNoise(op)), used: 'profiler', status, notes, limited };
       }
       if (status.error || readError) {
-        notes.push(`The profiler of ${database} couldn't be read (${message(status.error ?? readError)}; it needs the dbAdmin role): showing the slow operations of the server log.`);
+        notes.push(`The profiler of ${database} couldn't be read (${ctx.errorText(status.error ?? readError)}; it needs the dbAdmin role): showing the slow operations of the server log.`);
       } else {
         notes.push(
           `The profiler of ${database} is off (level 0) and has recorded nothing: showing the slow operations of the server log. The profiler can be turned on in Mongoster's server monitor (Profiler) or with db.setProfilingLevel(1, { slowms: 100 }) on ${database}.`,
@@ -366,7 +378,7 @@ export function performanceTools(ctx: ToolContext): McpTool[] {
       const admin = await profilerStatus(mongo.db(database ?? 'admin'));
       status = { ...status, slowms: admin.slowms };
     }
-    const { ops, limited } = await readLog(mongo, since);
+    const { ops, limited } = await readLog(mongo, ctx.errorText, since);
     if (limited) notes.push('The server keeps only its most recent 1,024 log lines in memory: older slow operations are not in them.');
     return { ops: ops.filter((op) => !isNoise(op) && (!database || splitNs(op.ns).database === database)), used: 'log', status, notes, limited };
   };
@@ -393,6 +405,9 @@ export function performanceTools(ctx: ToolContext): McpTool[] {
         additionalProperties: false,
       },
       readOnly: true,
+      // The plan quotes the query's bounds and a failed explain the values it failed on, and
+      // "documents examined vs returned" per filter is a count per filter: offered with readDocuments only.
+      documents: true,
       run: async (args) => {
         const isPipeline = stringArg(args, 'pipeline') !== undefined;
         const limit = intArg(args, 'limit', 0, 0, Number.MAX_SAFE_INTEGER);
@@ -413,7 +428,7 @@ export function performanceTools(ctx: ToolContext): McpTool[] {
             indexable = { filter: relaxed(q!.filter), sort: q!.sort && relaxed(q!.sort) };
           }
         } catch (err) {
-          throw new ToolError(`Explain failed: ${message(err)}`);
+          throw new ToolError(`Explain failed: ${ctx.errorText(err)}`);
         }
         const summary = summarizeExplain(raw);
         const suggestion = summary.collscan || summary.inMemorySort ? suggestIndex(indexable.filter, indexable.sort) : null;
@@ -478,7 +493,7 @@ export function performanceTools(ctx: ToolContext): McpTool[] {
       name: 'current_operations',
       title: 'Current operations',
       description:
-        'The operations running on the server now (currentOp), longest first: opid, running time, type, namespace, the command on one line, plan, client and app name, user, locks and whether it is waiting for one, transaction (txnNumber, time open). Never kills anything. Use it to see what the server is busy with or what is blocking.',
+        `The operations running on the server now (currentOp), longest first: opid, running time, type, namespace, the command on one line (with ${READ_DOCUMENTS} off its shape, the values replaced by ?), plan, client and app name, user, locks and whether it is waiting for one, transaction (txnNumber, time open). Never kills anything. Use it to see what the server is busy with or what is blocking.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -506,15 +521,15 @@ export function performanceTools(ctx: ToolContext): McpTool[] {
         let res: Document;
         let own = false;
         try {
-          res = await admin.command({ currentOp: 1, $all: includeIdle });
+          res = await admin.command({ currentOp: 1, $all: includeIdle, maxTimeMS: MAX_TIME_MS });
         } catch (err) {
-          if (!isUnauthorized(err)) throw new ToolError(`currentOp failed: ${message(err)}`);
+          if (!isUnauthorized(err)) throw new ToolError(`currentOp failed: ${ctx.errorText(err)}`);
           // Without the inprog privilege a user can still see its own operations.
           try {
-            res = await admin.command({ currentOp: 1, $all: includeIdle, $ownOps: true });
+            res = await admin.command({ currentOp: 1, $all: includeIdle, $ownOps: true, maxTimeMS: MAX_TIME_MS });
             own = true;
           } catch {
-            throw refused(err, 'list the operations (currentOp)', 'clusterMonitor');
+            throw refused(err, 'list the operations (currentOp)', 'clusterMonitor', ctx.errorText);
           }
         }
         const all = ((res.inprog ?? []) as Document[]).filter((op) => !(op.command && 'currentOp' in op.command));
@@ -527,7 +542,8 @@ export function performanceTools(ctx: ToolContext): McpTool[] {
           `${plural(ops.length, 'operation')}${filters.length ? ` ${filters.join(', ')}` : ''} (of ${count(all.length)} ${includeIdle ? 'including idle ones' : 'active'})${ops.length > limit ? `, the first ${limit}` : ''}.`,
         ];
         if (own) lines.push("Only the user's own operations: seeing all of them needs the clusterMonitor role (inprog).");
-        if (ops.length) lines.push('', ...ops.slice(0, limit).map(operationText));
+        const values = ctx.readDocuments();
+        if (ops.length) lines.push('', ...ops.slice(0, limit).map((op) => operationText(op, values)));
         return truncate(lines.join('\n'), MAX_OUTPUT);
       },
     },
@@ -547,9 +563,10 @@ export function performanceTools(ctx: ToolContext): McpTool[] {
         const info = connection(args);
         const database = required(args, 'database');
         const only = stringArg(args, 'collection');
+        if (only) refuseSystemCollection(database, only);
         const mongo = await client(info);
         const db = mongo.db(database);
-        const infos = await db.listCollections(only ? { name: only } : {}, { nameOnly: false, authorizedCollections: true }).toArray();
+        const infos = await db.listCollections(only ? { name: only } : {}, { nameOnly: false, authorizedCollections: true, maxTimeMS: MAX_TIME_MS }).toArray();
         if (only && !infos.length) throw new ToolError(`${database}.${only} doesn't exist on ${info.name}: use list_collections.`);
         if (only && infos[0].type === 'view') return `${database}.${only} is a view: it has no indexes of its own (the indexes of ${String((infos[0] as Document).options?.viewOn)} serve it).`;
         const list: AdvisorCollection[] = infos.filter((c) => c.type !== 'view' && !c.name.startsWith('system.')).map((c) => ({ database, collection: c.name, indexes: [] }));
@@ -559,7 +576,7 @@ export function performanceTools(ctx: ToolContext): McpTool[] {
           const coll = db.collection(c.collection);
           try {
             const [indexes, stats, storage, documents] = await Promise.all([
-              coll.listIndexes().toArray(),
+              coll.listIndexes({ maxTimeMS: MAX_TIME_MS }).toArray(),
               coll
                 .aggregate<Document>([{ $indexStats: {} }], { maxTimeMS: MAX_TIME_MS })
                 .toArray()
@@ -591,7 +608,7 @@ export function performanceTools(ctx: ToolContext): McpTool[] {
               };
             });
           } catch (err) {
-            failed.push(`${database}.${c.collection}: ${message(err)}`);
+            failed.push(`${database}.${c.collection}: ${ctx.errorText(err)}`);
           }
         });
         const collections = list.filter((c) => c.indexes.length);
@@ -601,7 +618,7 @@ export function performanceTools(ctx: ToolContext): McpTool[] {
         try {
           read = await slowOps(mongo, 'auto', database, undefined);
         } catch (err) {
-          opsError = message(err);
+          opsError = err instanceof ToolError ? err.message : ctx.errorText(err);
         }
         const ops = (read?.ops ?? []).filter((op) => names.has(op.ns));
         const { advice, tooRecent } = analyze(collections, ops);
@@ -630,25 +647,25 @@ export function performanceTools(ctx: ToolContext): McpTool[] {
       run: async (args) => {
         const { info, database, collection, coll } = await target(args);
         const db = (await client(info)).db(database);
-        const [meta] = await db.listCollections({ name: collection }, { nameOnly: false }).toArray();
+        const [meta] = await db.listCollections({ name: collection }, { nameOnly: false, maxTimeMS: MAX_TIME_MS }).toArray();
         const options = ((meta as Document | undefined)?.options ?? {}) as Document;
         if (meta?.type === 'view') {
-          return `${database}.${collection} is a view on ${String(options.viewOn)} with the pipeline ${shell(options.pipeline ?? [])}: it stores no documents and has no indexes of its own; use collection_stats on ${String(options.viewOn)}.`;
+          return `${database}.${collection} is a view on ${String(options.viewOn)} with the pipeline ${ctx.definition(options.pipeline ?? [])}: it stores no documents and has no indexes of its own; use collection_stats on ${String(options.viewOn)}.`;
         }
         let storage: Document[];
         try {
           storage = await storageStats(db, collection);
         } catch (err) {
-          throw refused(err, `read the statistics of ${database}.${collection} ($collStats)`, 'read (collStats action) or clusterMonitor');
+          throw refused(err, `read the statistics of ${database}.${collection} ($collStats)`, 'read (collStats action) or clusterMonitor', ctx.errorText);
         }
         const notes: string[] = [];
         const [indexes, stats] = await Promise.all([
-          coll.listIndexes().toArray(),
+          coll.listIndexes({ maxTimeMS: MAX_TIME_MS }).toArray(),
           coll
             .aggregate<Document>([{ $indexStats: {} }], { maxTimeMS: MAX_TIME_MS })
             .toArray()
             .catch((err) => {
-              notes.push(isUnauthorized(err) ? 'Index uses were not read: $indexStats needs the clusterMonitor role.' : `Index uses were not read: ${message(err)}`);
+              notes.push(isUnauthorized(err) ? 'Index uses were not read: $indexStats needs the clusterMonitor role.' : `Index uses were not read: ${ctx.errorText(err)}`);
               return [] as Document[];
             }),
         ]);
@@ -683,7 +700,7 @@ export function performanceTools(ctx: ToolContext): McpTool[] {
             ix.unique && 'unique',
             ix.sparse && 'sparse',
             ix.expireAfterSeconds !== undefined && `TTL ${ix.expireAfterSeconds}s`,
-            ix.partialFilterExpression && `partial ${shell(ix.partialFilterExpression)}`,
+            ix.partialFilterExpression && `partial ${ctx.definition(ix.partialFilterExpression)}`,
             ix.hidden && 'hidden',
             (builds.has(name) || u?.building) && 'BUILDING',
           ].filter(Boolean);

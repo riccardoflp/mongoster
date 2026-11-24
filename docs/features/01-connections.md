@@ -645,7 +645,7 @@ the clipboard.
 - **Kind**: Operation
 - **Function**: `src/connectionsTransfer.ts › importConnections`
 - **Implemented in**: `src/connectionsTransfer.ts` (`readSource`, `parse`, `askFolder`, `summary`);
-  `src/shared/connectionsFile.ts` (`isEncrypted`, `parseConnections`, `hostOf`, `uniqueName`);
+  `src/shared/connectionsFile.ts` (`isEncrypted`, `parseConnections`, `hostOf`, `uniqueName`, `securityNotes`);
   `src/connections.ts › ConnectionManager.add`, `update`, `setOptions`, `setRedisOplog`; `src/extension.ts ›
   updateConnection`
 - **Entry points**: `mongoster.importConnections` (**Import Connections…**): the connections view's `…` menu, a
@@ -681,15 +681,21 @@ the clipboard.
   connections: <reason>**, with the reasons of `connection.read-file`.
 - **Uses**: `connection.read-file`, `connection.read-list`, `connection.read-compass`, `connection.encryption`,
   `connection.secrets`, `connection.read-only`.
-- **Tested by**: *none* for the questions and the saving; the parsing in `connection.read-file`,
+- **Tested by**: *none* for the questions and the saving; `test/unit/connectionsFile.test.ts` (`securityNotes`) for
+  what the detail says about TLS, proxy, SSH, redis-oplog and the undo history; the parsing in `connection.read-file`,
   `connection.read-list`, `connection.read-compass`.
 
 Acceptance:
 
 - [ ] Each item shows the name, the host and, for a name already used, **✓ already exists**, or **✓ already exists
       (same connection string)** when the saved connection string is the same; the detail lists the folder, the
-      color, **<n> collection color(s)**, **read-only**, **TLS**, **SSH <user>@<host>**, **redis-oplog** and the notes (**no password**, **no SSH
+      color, **<n> collection color(s)**, **read-only**, **TLS**, **SSH <user>@<host>[:<port>]**, **redis-oplog → <host>** and the notes (**no password**, **no SSH
       password**, **passwords not imported (encrypted)**, **In-Use Encryption settings not imported**…).
+- [ ] The detail also says what the connection turns off or where else it connects, since the file may come from
+      someone else: **invalid certificates allowed** and **invalid host names allowed** (from the TLS settings, or
+      `tlsInsecure` / `tlsAllowInvalidCertificates` / `tlsAllowInvalidHostnames` in the connection string), **proxy
+      <host>[:<port>]** (`proxyHost`), **no undo history**. No password is ever part of it: a Redis URL whose host
+      cannot be read shows as **redis-oplog → a host that could not be read**.
 - [ ] Connections already there with the same name and the same connection string start unchecked; all others start
       checked.
 - [ ] **Skip** leaves out the chosen connections whose name is taken; **Keep Both** adds them as `name (2)`,

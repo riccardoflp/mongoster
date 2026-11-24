@@ -13,6 +13,8 @@ import { bucketNames } from './shared/gridfs';
 import { leaveOutExcluded } from './shared/exclusions';
 import { formatFilter, relaxEjson, toShell } from './shared/query';
 import { errorMessage } from './tree';
+import { newNonce } from './nonce';
+import { noLinks } from './shared/plainText';
 
 const { EJSON } = BSON;
 
@@ -467,14 +469,17 @@ export class SearchPanel {
       explain: false,
     });
     if (this.matches[index] > ids.length) {
-      void vscode.window.showInformationMessage(`${c.collection}: the filter has the first ${ids.length.toLocaleString('en-US')} of ${this.matches[index].toLocaleString('en-US')} matching documents.`);
+      // The collection's name is the database's text: in a notification its links are broken.
+      void vscode.window.showInformationMessage(
+        noLinks(`${c.collection}: the filter has the first ${ids.length.toLocaleString('en-US')} of ${this.matches[index].toLocaleString('en-US')} matching documents.`),
+      );
     }
   }
 
   private html(): string {
     const webview = this.panel.webview;
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...p));
-    const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+    const nonce = newNonce();
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>

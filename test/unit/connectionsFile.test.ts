@@ -14,6 +14,7 @@ import {
   lacksPassword,
   parseConnections,
   parseList,
+  securityNotes,
   serializeConnections,
   setUriParams,
   tlsFromUri,
@@ -458,5 +459,73 @@ describe('uniqueName', () => {
     expect(uniqueName('a', new Set())).toBe('a');
     expect(uniqueName('a', new Set(['a']))).toBe('a (2)');
     expect(uniqueName('a', new Set(['a', 'a (2)']))).toBe('a (3)');
+  });
+});
+
+describe('securityNotes', () => {
+  const notes = (c: Partial<PortableConnection>) => securityNotes({ name: 'x', uri: 'mongodb://db.example.com', notes: [], ...c });
+
+  it('says nothing about a plain connection', () => {
+    expect(notes({})).toEqual([]);
+    expect(notes({ readOnly: true, folder: 'Team' })).toEqual([]);
+  });
+
+  it('says the certificate checks the TLS settings turn off', () => {
+    expect(notes({ tls: { caFile: '/ca.pem' } })).toEqual(['TLS']);
+    expect(notes({ tls: { allowInvalidCertificates: true } })).toEqual(['TLS', 'invalid certificates allowed']);
+    expect(notes({ tls: { allowInvalidHostnames: true } })).toEqual(['TLS', 'invalid host names allowed']);
+  });
+
+  it('says the certificate checks the connection string turns off', () => {
+    expect(notes({ uri: 'mongodb://h/?tls=true&tlsInsecure=true' })).toEqual(['invalid certificates allowed', 'invalid host names allowed']);
+    expect(notes({ uri: 'mongodb://h/?TLSAllowInvalidCertificates=TRUE' })).toEqual(['invalid certificates allowed']);
+    expect(notes({ uri: 'mongodb://h/?tlsAllowInvalidHostnames=true' })).toEqual(['invalid host names allowed']);
+    expect(notes({ uri: 'mongodb://h/?tlsAllowInvalidCertificates=false&tlsInsecure=false' })).toEqual([]);
+  });
+
+  it('says the proxy, without its credentials', () => {
+    expect(notes({ uri: 'mongodb://h/?proxyHost=evil.example.net&proxyPort=1080&proxyUsername=u&proxyPassword=s3cret' })).toEqual(['proxy evil.example.net:1080']);
+    expect(notes({ uri: 'mongodb://h/?proxyHost=evil.example.net' })).toEqual(['proxy evil.example.net']);
+  });
+
+  it('says the SSH tunnel and the host redis-oplog publishes to, without passwords', () => {
+    const all = notes({
+      ssh: { host: 'bastion.example.net', port: 2222, username: 'ops', auth: 'password', password: 'sshSecret' },
+      redis: { url: 'redis://user:redisSecret@redis.example.net:6380/2', settings: {} },
+    });
+    expect(all).toEqual(['SSH ops@bastion.example.net:2222', 'redis-oplog → redis.example.net:6380']);
+    expect(all.join(' ')).not.toMatch(/Secret/);
+    expect(notes({ ssh: { host: 'b', username: 'u', auth: 'agent' } })).toEqual(['SSH u@b']);
+  });
+
+  it('never shows a part of a Redis password, however the URL is written', () => {
+    expect(notes({ redis: { url: 'redis://:p@ss@redis.example.net', settings: {} } })).toEqual(['redis-oplog → redis.example.net']);
+    for (const url of ['redis://:pa/ss@redis.example.net', 'not a url', 'redis.example.net:6379']) {
+      const [note] = notes({ redis: { url, settings: {} } });
+      expect(note).toMatch(/^redis-oplog → /);
+      expect(note).not.toMatch(/pa|ss@/);
+    }
+  });
+
+  it('says that the undo history is off', () => {
+    expect(notes({ noHistory: true })).toEqual(['no undo history']);
+  });
+
+  it('reads them from an imported file', async () => {
+    const file = JSON.stringify({
+      type: 'Mongoster Connections',
+      version: 1,
+      connections: [
+        {
+          name: 'Shared',
+          uri: 'mongodb://db.example.com/?proxyHost=p.example.net',
+          noHistory: true,
+          tls: { allowInvalidCertificates: true },
+          redisOplog: { url: 'redis://r.example.net' },
+        },
+      ],
+    });
+    const { connections } = await parseConnections(file);
+    expect(securityNotes(connections[0])).toEqual(['TLS', 'invalid certificates allowed', 'proxy p.example.net', 'redis-oplog → r.example.net', 'no undo history']);
   });
 });

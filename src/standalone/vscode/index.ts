@@ -3,6 +3,7 @@
 import * as path from 'path';
 import { clipboard, shell } from 'electron';
 import type { SettingField } from '../protocol';
+import { opensAsData } from '../../shared/openable';
 import { activeColorTheme, onDidChangeActiveColorTheme, themeExtension } from './appearance';
 import { Disposable, Event, EventEmitter, Uri } from './base';
 import { onShell, post } from './bridge';
@@ -253,10 +254,17 @@ export function registerBuiltinCommands(): Disposable {
     registerCommand('revealFileInOS', (target?: Uri) => {
       if (target?.scheme === 'file') shell.showItemInFolder(target.fsPath);
     }),
-    // A file is opened with the program the operating system has for it.
+    // A file is opened with the program the operating system has for it, which for many types means running
+    // it. VS Code opens an editor instead, so callers pass files whose names they don't control (a GridFS
+    // file's): only the types that programs read as data are opened, the others are shown in their folder.
     registerCommand('vscode.open', async (target?: Uri) => {
       if (!target) return;
       if (target.scheme === 'file') {
+        if (!opensAsData(target.fsPath)) {
+          shell.showItemInFolder(target.fsPath);
+          void showInformationMessage(`${path.basename(target.fsPath)} was not opened, because a file of its type can run code: it is shown in its folder.`);
+          return;
+        }
         const failure = await shell.openPath(target.fsPath);
         if (failure) void showErrorMessage(`Could not open ${target.fsPath}: ${failure}`);
       } else if (/^https?$/.test(target.scheme)) await shell.openExternal(target.toString());

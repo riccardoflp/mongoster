@@ -106,13 +106,22 @@ export async function handleMessage(
         return ok(toolResult(text));
       } catch (err) {
         const text = err instanceof Error ? err.message : String(err);
-        log?.(tool.name, args, `error: ${text}`);
+        log?.(tool.name, args, `error: ${logText(text)}`);
         return ok(toolResult(text, true));
       }
     }
     default:
       return error(m.id, METHOD_NOT_FOUND, `Method not found: ${m.method}`);
   }
+}
+
+/** Characters of the arguments or of an error written to the log. */
+export const LOG_MAX = 300;
+
+/** Text for one line of the log: line breaks become spaces, so it can't pass for other lines, and it is cut at LOG_MAX characters. */
+export function logText(text: string, max = LOG_MAX): string {
+  const line = text.replace(/\s+/g, ' ');
+  return line.length > max ? `${line.slice(0, max)}…` : line;
 }
 
 const toolResult = (text: string, isError = false): ToolResult => ({ content: [{ type: 'text', text }], ...(isError && { isError: true }) });

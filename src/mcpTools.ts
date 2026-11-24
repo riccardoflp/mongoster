@@ -11,6 +11,7 @@ import {
   COUNT_CAP,
   MAX_OUTPUT,
   MAX_TIME_MS,
+  SKIP_MAX,
   ToolConnections,
   collectionProp,
   connectionProp,
@@ -20,6 +21,7 @@ import {
   pipelineProp,
   plural,
   projectionProp,
+  refuseSystemCollection,
   shell,
   sortProp,
   toolContext,
@@ -47,7 +49,7 @@ const { EJSON } = BSON;
 export const SEARCH_LIMITS = [0, 1000, 10_000, 100_000];
 
 export function mcpTools(host: ToolHost): McpTool[] {
-  const ctx = toolContext(host.connections);
+  const ctx = toolContext(host.connections, () => host.readDocuments());
   const { connections, connection, client, required, target, query, pipeline } = ctx;
 
   const base: McpTool[] = [
@@ -79,7 +81,7 @@ export function mcpTools(host: ToolHost): McpTool[] {
       readOnly: true,
       run: async (args) => {
         const info = connection(args);
-        const { databases } = await (await client(info)).db('admin').admin().listDatabases({ nameOnly: false });
+        const { databases } = await (await client(info)).db('admin').admin().listDatabases({ nameOnly: false, maxTimeMS: MAX_TIME_MS });
         return JSON.stringify(databases.filter((d) => !ownExclusion(info, d.name)).map((d) => ({ name: d.name, sizeOnDisk: d.sizeOnDisk, empty: d.empty })), null, 2);
       },
     },
@@ -92,7 +94,7 @@ export function mcpTools(host: ToolHost): McpTool[] {
       run: async (args) => {
         const info = connection(args);
         const database = required(args, 'database');
-        const listed = await (await client(info)).db(database).listCollections({}, { nameOnly: false }).toArray();
+        const listed = await (await client(info)).db(database).listCollections({}, { nameOnly: false, maxTimeMS: MAX_TIME_MS }).toArray();
         if (!listed.length) return `${database} has no collections.`;
         const list = listed.filter((c) => !ownExclusion(info, database, c.name));
         if (!list.length) return `The user excluded every collection of ${database} from searches.`;
@@ -127,16 +129,16 @@ export function mcpTools(host: ToolHost): McpTool[] {
         const [count, docs, indexes, searchIndexes] = await Promise.all([
           coll.estimatedDocumentCount({ maxTimeMS: MAX_TIME_MS }).catch(() => undefined),
           coll.aggregate([{ $sample: { size: sample } }], { maxTimeMS: MAX_TIME_MS }).toArray(),
-          coll.indexes().catch(() => [] as Document[]),
+          coll.indexes({ maxTimeMS: MAX_TIME_MS }).catch(() => [] as Document[]),
           // Only on servers with search (Atlas, mongot): elsewhere the section is left out.
-          coll.listSearchIndexes().toArray().then((list) => list as Document[], () => [] as Document[]),
+          coll.listSearchIndexes({ maxTimeMS: MAX_TIME_MS }).toArray().then((list) => list as Document[], () => [] as Document[]),
         ]);
         const schema = analyzeSchema(docs.map((d) => EJSON.serialize(d, { relaxed: false })));
         const lines = [
           `${database}.${collection}: ${count === undefined ? 'unknown number of' : `about ${plural(count, 'document')},`} ${plural(schema.sampled, 'document')} sampled.`,
           '',
           'Indexes:',
-          ...(indexes.length ? indexes.map((ix) => `- ${ix.name}: ${shell(ix.key)}${ix.unique ? ' unique' : ''}${ix.sparse ? ' sparse' : ''}${ix.expireAfterSeconds !== undefined ? ` TTL ${ix.expireAfterSeconds}s` : ''}${ix.partialFilterExpression ? ` partial ${shell(ix.partialFilterExpression)}` : ''}${ix.hidden ? ' hidden' : ''}`) : ['- none (a view)']),
+          ...(indexes.length ? indexes.map((ix) => `- ${ix.name}: ${shell(ix.key)}${ix.unique ? ' unique' : ''}${ix.sparse ? ' sparse' : ''}${ix.expireAfterSeconds !== undefined ? ` TTL ${ix.expireAfterSeconds}s` : ''}${ix.partialFilterExpression ? ` partial ${ctx.definition(ix.partialFilterExpression)}` : ''}${ix.hidden ? ' hidden' : ''}`) : ['- none (a view)']),
           ...(searchIndexes.length
             ? ['', 'Search indexes (the `index` of $search / $vectorSearch, which must be the first stage):', ...searchIndexes.map((ix) => `- ${ix.name}: ${searchIndexType(ix)}${ix.status ? ` ${ix.status}` : ''} ${shell(ix.latestDefinition ?? {})}`)]
             : []),
@@ -162,7 +164,7 @@ export function mcpTools(host: ToolHost): McpTool[] {
           filter: filterProp,
           sort: sortProp,
           projection: projectionProp,
-          skip: { type: 'integer', minimum: 0, default: 0 },
+          skip: { type: 'integer', minimum: 0, maximum: SKIP_MAX, default: 0 },
           limit: { type: 'integer', minimum: 1, maximum: 100, default: 20, description: 'Documents returned.' },
         },
         required: ['connection', 'database', 'collection'],
@@ -172,7 +174,7 @@ export function mcpTools(host: ToolHost): McpTool[] {
       documents: true,
       run: async (args) => {
         const q = query(args);
-        const skip = intArg(args, 'skip', 0, 0, Number.MAX_SAFE_INTEGER);
+        const skip = intArg(args, 'skip', 0, 0, SKIP_MAX);
         const limit = intArg(args, 'limit', 20, 1, 100);
         const { database, collection, coll } = await target(args);
         const [docs, total] = await Promise.all([
@@ -187,7 +189,8 @@ export function mcpTools(host: ToolHost): McpTool[] {
     {
       name: 'aggregate',
       title: 'Run an aggregation',
-      description: 'Runs an aggregation pipeline and returns its first results in mongosh syntax. Pipelines with $out or $merge are refused. Read only.',
+      description:
+        'Runs an aggregation pipeline and returns its first results in mongosh syntax. Pipelines with $out, $merge, $changeStream, $currentOp, $listSessions, $queryStats, $listSampledQueries or $planCacheStats, or that read a system.* collection, are refused. Read only.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -307,7 +310,8 @@ export function mcpTools(host: ToolHost): McpTool[] {
         if (database) {
           const db = (await client(info)).db(database);
           if (collection) {
-            const [found] = await db.listCollections({ name: collection }, { nameOnly: true }).toArray();
+            refuseSystemCollection(database, collection);
+            const [found] = await db.listCollections({ name: collection }, { nameOnly: true, maxTimeMS: MAX_TIME_MS }).toArray();
             if (!found) throw new ToolError(`${database}.${collection} doesn't exist on ${info.name}.`);
           }
         }
@@ -324,7 +328,20 @@ export function mcpTools(host: ToolHost): McpTool[] {
     },
   ];
   const tools = [...base, ...changesTools(ctx), ...dataTools(ctx), ...performanceTools(ctx), ...topologyTools(ctx), ...workspaceTools(ctx, host.workspace)];
-  return host.readDocuments() ? tools : tools.filter((t) => !t.documents);
+  const offered = host.readDocuments() ? tools : tools.filter((t) => !t.documents);
+  // An error no tool caught is the server's or the driver's: it goes to the model as ctx.errorText gives it,
+  // so that with readDocuments off no tool can leak a value through the text of a server error.
+  return offered.map((t) => ({
+    ...t,
+    run: async (args) => {
+      try {
+        return await t.run(args);
+      } catch (err) {
+        if (err instanceof ToolError) throw err;
+        throw new ToolError(ctx.errorText(err));
+      }
+    },
+  }));
 }
 
 /** Fields as lines: `- address.city: string 98%, null 2% (present in 100%)`. */

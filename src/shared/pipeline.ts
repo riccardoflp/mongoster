@@ -42,6 +42,75 @@ export function isWriteStage(stage: PipelineStage): boolean {
   return stage.enabled && WRITE_STAGES.has(stage.op.trim());
 }
 
+/**
+ * Stages that are not a plain read of the collection the pipeline runs on: they write, stay open
+ * waiting for changes, list what the server and its other sessions are doing, or give the queries
+ * other clients ran, with their values.
+ */
+export const NOT_PLAIN_READ_STAGES = new Set([
+  '$out',
+  '$merge',
+  '$changeStream',
+  '$changeStreamSplitLargeEvent',
+  '$currentOp',
+  '$listSessions',
+  '$listLocalSessions',
+  '$queryStats',
+  '$listSampledQueries',
+  '$planCacheStats',
+]);
+
+/** The pipelines nested in a stage: the facets of $facet, the pipeline of $lookup and $unionWith. */
+function nestedPipelines(op: string, body: unknown): unknown[][] {
+  if (!isPlainObject(body)) return [];
+  if (op === '$facet') return Object.values(body).filter(Array.isArray);
+  if (op === '$lookup' || op === '$unionWith') return Array.isArray(body.pipeline) ? [body.pipeline] : [];
+  return [];
+}
+
+/** Calls `visit` with every stage of a parsed pipeline (plain values), the nested pipelines' too. */
+function walkStages(pipeline: unknown[], visit: (op: string, body: unknown) => void, depth = 0): void {
+  // Deeper than any real pipeline: a pipeline built to nest without end is cut off here.
+  if (depth > 20) throw new Error('The pipeline is nested too deeply');
+  for (const stage of pipeline) {
+    if (!isPlainObject(stage)) continue;
+    for (const [op, body] of Object.entries(stage)) {
+      visit(op, body);
+      for (const nested of nestedPipelines(op, body)) walkStages(nested, visit, depth + 1);
+    }
+  }
+}
+
+/**
+ * The first stage of a parsed pipeline (plain values, as parseQuery gives them) that is not a plain
+ * read, looked for in $facet, $lookup.pipeline and $unionWith.pipeline too; undefined when there is none.
+ */
+export function notPlainReadStage(pipeline: unknown[]): string | undefined {
+  let found: string | undefined;
+  walkStages(pipeline, (op) => {
+    if (found === undefined && NOT_PLAIN_READ_STAGES.has(op)) found = op;
+  });
+  return found;
+}
+
+/**
+ * The collections a parsed pipeline reads besides its own: the `from` of $lookup and $graphLookup and
+ * the collection of $unionWith, of the nested pipelines too.
+ */
+export function joinedCollections(pipeline: unknown[]): string[] {
+  const names: string[] = [];
+  const add = (v: unknown) => {
+    if (typeof v === 'string') names.push(v);
+    // The form { db, coll } that reads a collection of another database.
+    else if (isPlainObject(v) && typeof v.coll === 'string') names.push(v.coll);
+  };
+  walkStages(pipeline, (op, body) => {
+    if (op === '$unionWith') add(isPlainObject(body) ? body.coll : body);
+    else if ((op === '$lookup' || op === '$graphLookup') && isPlainObject(body)) add(body.from);
+  });
+  return names;
+}
+
 /** Atlas Search stages: the server only takes them as the first stage of a pipeline. */
 export const FIRST_STAGES = new Set(['$search', '$searchMeta', '$vectorSearch']);
 

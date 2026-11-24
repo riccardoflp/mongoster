@@ -130,7 +130,7 @@ function render(): void {
     const wrap = document.createElement('div');
     wrap.className = 'row-actions';
     wrap.append(
-      button('Open', 'secondary small', () => post({ type: 'open', key: f.key }), 'Open the file in VS Code (a temporary copy)'),
+      button('Open', 'secondary small', () => post({ type: 'open', key: f.key }), 'Open a temporary copy of the file'),
       button('Download…', 'secondary small', () => post({ type: 'download', key: f.key }), 'Save the file to disk'),
     );
     if (!readOnly) {

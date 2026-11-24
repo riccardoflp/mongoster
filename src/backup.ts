@@ -3,6 +3,8 @@
 // indexes; a view has only this), gzipped as .bson.gz / .metadata.json.gz when compressed. Backups
 // restore with `mongorestore [--gzip] --dir <folder>`, and folders written by mongodump restore here.
 // Backups can also be a single archive file, as `mongodump --archive --gzip` writes it (.agz, see archive.ts).
+// The names of the folders and files are the databases' and collections' percent-encoded (backupNames.ts);
+// an archive holds the names inside it and writes no path from them.
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -10,6 +12,7 @@ import * as path from 'path';
 import * as zlib from 'zlib';
 import { pipeline } from 'stream/promises';
 import { BSON, Collection, Db, Document, MongoBulkWriteError, MongoClient } from 'mongodb';
+import { backupCollectionName, backupDatabaseName, backupFileName } from './backupNames';
 import { archivePrelude, bsonFrames, Crc64, namespaceHeader, readArchive, readArchiveCollections, TERMINATOR } from './archive';
 import type { ConnectionInfo, ConnectionManager } from './connections';
 import { COPIED_OPTIONS } from './copy';
@@ -39,6 +42,7 @@ export type BackupPlan = { database: string; collections: CollectionInfo[] }[];
 
 /** The files of one collection in a backup folder, or a collection of an archive (its metadata only). */
 export interface BackupFiles {
+  /** The collection's name: in a folder backup, decoded from the names of its files. */
   name: string;
   bson?: string;
   metadata?: string;
@@ -73,6 +77,7 @@ interface RestoreResult {
   failed: number;
   firstError?: string;
   indexes: number;
+  /** The indexes that weren't created, each with its reason: the server's error, or a TTL index kept off existing documents. */
   indexErrors: string[];
   /** Why the collection wasn't restored. */
   notRestored?: string;
@@ -160,9 +165,11 @@ async function* rawDocuments(db: Db, name: string, stats: DumpStats, hooks: Dump
 
 /** Writes the metadata and documents of a collection (a view: its metadata only) into `dir`. */
 async function dumpCollection(db: Db, info: CollectionInfo, dir: string, gzip: boolean, stats: DumpStats, hooks: DumpHooks): Promise<void> {
-  await writeText(path.join(dir, `${info.name}.metadata.json`), EJSON.stringify(await collectionMetadata(db, info), { relaxed: false }), gzip);
+  // The collection's name is the server's, not a file name: encoded, it can't leave `dir`.
+  const name = backupFileName(info.name);
+  await writeText(path.join(dir, `${name}.metadata.json`), EJSON.stringify(await collectionMetadata(db, info), { relaxed: false }), gzip);
   if (info.type === 'view') return;
-  const file = path.join(dir, `${info.name}.bson${gzip ? '.gz' : ''}`);
+  const file = path.join(dir, `${name}.bson${gzip ? '.gz' : ''}`);
   const source = rawDocuments(db, info.name, stats, hooks);
   if (gzip) await pipeline(source, zlib.createGzip(), fs.createWriteStream(file));
   else await pipeline(source, fs.createWriteStream(file));
@@ -266,7 +273,7 @@ export async function writeBackup(
     if (format === 'archive') await pipeline(archiveOf(client, plan, stats, hooks), zlib.createGzip(), fs.createWriteStream(root));
     else {
       done: for (const p of plan) {
-        const dir = path.join(root, p.database);
+        const dir = path.join(root, backupFileName(p.database));
         await fs.promises.mkdir(dir, { recursive: true });
         for (const c of p.collections) {
           const h = hooks(p.database, c);
@@ -304,7 +311,22 @@ export async function* readBson(file: string, onBytes: (n: number) => void = () 
   }
 }
 
-/** The collections of a mongodump database folder (its <name>.bson and <name>.metadata.json files). */
+/** The `collectionName` of a metadata file, when it can be read and has one. */
+function metadataName(file: string | undefined): string | undefined {
+  if (!file) return undefined;
+  try {
+    const name = readMetadata(file).collectionName as unknown;
+    return typeof name === 'string' && name ? name : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The collections of a mongodump database folder (its <name>.bson and <name>.metadata.json files). Their
+ * names are decoded from the files' (see backupNames.ts); the files of a backup written before the names
+ * were encoded are read as they are.
+ */
 export function scanDatabase(dir: string): BackupFiles[] {
   const found = new Map<string, BackupFiles>();
   let entries: fs.Dirent[];
@@ -315,7 +337,7 @@ export function scanDatabase(dir: string): BackupFiles[] {
   }
   for (const entry of entries) {
     const m = /^(.+)\.(bson|metadata\.json)(\.gz)?$/.exec(entry.name);
-    if (!entry.isFile() || !m || m[1].startsWith('system.')) continue;
+    if (!entry.isFile() || !m) continue;
     const files = found.get(m[1]) ?? { name: m[1], size: 0 };
     const file = path.join(dir, entry.name);
     if (m[2] === 'bson') {
@@ -324,13 +346,15 @@ export function scanDatabase(dir: string): BackupFiles[] {
     } else files.metadata = file;
     found.set(m[1], files);
   }
-  return [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
+  // The metadata is opened only for the names it has to tell apart: those with a `%`.
+  for (const files of found.values()) files.name = backupCollectionName(files.name, files.name.includes('%') ? metadataName(files.metadata) : undefined);
+  return [...found.values()].filter((f) => !f.name.startsWith('system.')).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** The databases of a backup: the folder itself when it's a database folder, otherwise its sub-folders. */
 export function scanBackup(folder: string): BackupDatabase[] {
   const own = scanDatabase(folder);
-  if (own.length) return [{ name: path.basename(folder), dir: folder, collections: own }];
+  if (own.length) return [{ name: backupDatabaseName(path.basename(folder)), dir: folder, collections: own }];
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(folder, { withFileTypes: true });
@@ -339,7 +363,7 @@ export function scanBackup(folder: string): BackupDatabase[] {
   }
   return entries
     .filter((e) => e.isDirectory())
-    .map((e) => ({ name: e.name, dir: path.join(folder, e.name), collections: scanDatabase(path.join(folder, e.name)) }))
+    .map((e) => ({ name: backupDatabaseName(e.name), dir: path.join(folder, e.name), collections: scanDatabase(path.join(folder, e.name)) }))
     .filter((d) => d.collections.length)
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -361,6 +385,36 @@ export async function scanArchive(file: string): Promise<BackupDatabase[]> {
 
 const typeOf = (files: BackupFiles) => (files.meta?.type as string | undefined) ?? 'collection';
 
+/** The type the restore reads for a collection of a backup, from its metadata in the archive or in its file. */
+function restoredType(files: BackupFiles): string {
+  try {
+    const meta = files.meta ?? (files.metadata ? readMetadata(files.metadata) : {});
+    return (meta.type as string | undefined) ?? 'collection';
+  } catch {
+    return 'collection';
+  }
+}
+
+/**
+ * Why a database of a backup isn't restored under the name the backup gives it, if it isn't. The name is
+ * the backup's word, not the user's: it never chooses a system database (the users and roles, the sharding
+ * metadata, the oplog) as the target, nor a name MongoDB refuses.
+ */
+export function refusedDatabase(name: string): string | undefined {
+  if (SYSTEM_DATABASES.includes(name.toLowerCase())) return 'a system database';
+  return databaseNameError(name) ? 'not a valid database name' : undefined;
+}
+
+/** Of the views a `Drop and restore` is about to create, those whose name is now a collection's: its documents go with it. */
+export async function collectionsReplacedByViews(client: MongoClient, views: { database: string; name: string }[]): Promise<string[]> {
+  const replaced: string[] = [];
+  for (const v of views) {
+    const [found] = (await client.db(v.database).listCollections({ name: v.name }, { nameOnly: true }).toArray()) as CollectionInfo[];
+    if (found && found.type !== 'view') replaced.push(`${v.database}.${v.name}`);
+  }
+  return replaced;
+}
+
 /** Restores one collection: creates it (with its options) if needed, inserts the documents it's given, then creates the indexes. */
 export class CollectionRestore {
   readonly result: RestoreResult = { inserted: 0, skipped: 0, failed: 0, indexes: 0, indexErrors: [], cancelled: false };
@@ -372,6 +426,8 @@ export class CollectionRestore {
     /** Undefined when no documents go into it: a view, or a collection that isn't restored. */
     private readonly coll?: Collection,
     private readonly recorder?: Recorder,
+    /** Whether the collection was there before the restore and keeps its documents. */
+    private readonly existing = false,
   ) {}
 
   static async open(db: Db, name: string, meta: Document, drop: boolean, recorder?: Recorder): Promise<CollectionRestore> {
@@ -392,7 +448,7 @@ export class CollectionRestore {
       return none();
     }
     if (created) await db.createCollection(name, Object.fromEntries(Object.entries(options).filter(([k]) => COPIED_OPTIONS.includes(k))));
-    return new CollectionRestore(meta, db.collection(name), recorder);
+    return new CollectionRestore(meta, db.collection(name), recorder, !created);
   }
 
   /** Whether it takes documents. */
@@ -443,7 +499,21 @@ export class CollectionRestore {
     if (cancelled) return result;
 
     const specs = ((this.meta.indexes ?? []) as Document[]).filter((i) => i.name !== '_id_' && !i.clustered).map(({ v: _v, ns: _ns, ...spec }) => spec);
+    // A TTL index makes the server delete documents. On a collection that was already there it would delete
+    // documents the restore didn't bring, which nobody confirmed and the undo history doesn't hold: the
+    // backup's TTL indexes are created only on the collections the restore created, or when the collection
+    // already has the same one.
+    const ttl = (spec: Document) => spec.expireAfterSeconds !== undefined && spec.expireAfterSeconds !== null;
+    const own = this.existing && specs.some(ttl) ? await coll.listIndexes().toArray() : [];
+    const same = (spec: Document) =>
+      own.some((i) => Number(i.expireAfterSeconds) === Number(spec.expireAfterSeconds) && EJSON.stringify(i.key) === EJSON.stringify(spec.key));
     for (const spec of specs) {
+      if (this.existing && ttl(spec) && !same(spec)) {
+        result.indexErrors.push(
+          `${coll.collectionName}.${spec.name}: a TTL index (expireAfterSeconds) would make the server delete documents that were already in the collection; create it from the Indexes tab if it's wanted`,
+        );
+        continue;
+      }
       try {
         await coll.createIndexes([spec as never]);
         result.indexes++;
@@ -637,6 +707,8 @@ export class Backups {
     const plan: { database: string; source: string; collections: { name: string; files: BackupFiles }[] }[] = [];
     let from: string;
     let archive = false;
+    /** The databases of the backup left out because of their names, each with the reason. */
+    let leftOut: string[] = [];
     if (database && collection) {
       const [file] =
         (await vscode.window.showOpenDialog({
@@ -710,14 +782,29 @@ export class Backups {
         return;
       }
       let sources = found;
-      if (found.length > 1) {
-        const items = found.map((d) => ({ label: d.name, description: plural(d.collections.length, 'collection'), picked: true, value: d }));
-        if (database) {
-          const pick = await vscode.window.showQuickPick<Pick<BackupDatabase>>(items, { title: title('database of the backup'), ignoreFocusOut: true });
+      const item = (d: BackupDatabase) => ({ label: d.name, description: plural(d.collections.length, 'collection'), picked: true, value: d });
+      if (database) {
+        if (found.length > 1) {
+          const pick = await vscode.window.showQuickPick<Pick<BackupDatabase>>(found.map(item), { title: title('database of the backup'), ignoreFocusOut: true });
           if (!pick) return;
           sources = [pick.value];
-        } else {
-          const pick = await vscode.window.showQuickPick<Pick<BackupDatabase>>(items, { title: title('databases'), canPickMany: true, ignoreFocusOut: true });
+        }
+      } else if (found.length > 1) {
+        // Several databases are restored under the names the backup gives them: not those it has no say on.
+        sources = found.filter((d) => !refusedDatabase(d.name));
+        leftOut = found.filter((d) => refusedDatabase(d.name)).map((d) => `${d.name} (${refusedDatabase(d.name)})`);
+        const how = 'To restore one of them, use Restore from Backup… on the database to restore it into.';
+        if (!sources.length) {
+          void vscode.window.showErrorMessage(`Nothing of ${path.basename(from)} is restored under the names it gives: ${leftOut.join(', ')}. ${how}`);
+          return;
+        }
+        if (sources.length > 1) {
+          const pick = await vscode.window.showQuickPick<Pick<BackupDatabase>>(sources.map(item), {
+            title: title('databases'),
+            placeHolder: leftOut.length ? `Not offered: ${leftOut.join(', ')}` : undefined,
+            canPickMany: true,
+            ignoreFocusOut: true,
+          });
           if (!pick?.length) return;
           sources = pick.map((p) => p.value);
         }
@@ -725,11 +812,13 @@ export class Backups {
       for (const source of sources) {
         let target = database ?? source.name;
         if (!database && sources.length === 1) {
+          // The backup's name is only proposed when it can be the target: Enter alone never restores into `admin`.
+          const refused = refusedDatabase(source.name);
           const name = (
             await vscode.window.showInputBox({
               title: title('database'),
-              prompt: `Database on ${info.name} to restore ${source.name} into`,
-              value: source.name,
+              prompt: `Database on ${info.name} to restore ${source.name} into${refused ? ` (its own name isn't proposed: ${refused})` : ''}`,
+              value: refused ? '' : source.name,
               ignoreFocusOut: true,
               validateInput: (v) => databaseNameError(v.trim()),
             })
@@ -768,6 +857,21 @@ export class Backups {
     const count = plan.reduce((n, p) => n + p.collections.length, 0);
     const targets = [...new Set(plan.map((p) => p.database))].join(', ');
     const maxUndo = UndoHistory.maxDocuments(info.id);
+    // A view of the backup takes the place of what has its name, like everything else in this mode. When
+    // that is a collection, its documents are lost for a view: the confirmation names it.
+    const views = drop ? plan.flatMap((p) => p.collections.filter((c) => restoredType(c.files) === 'view').map((c) => ({ database: p.database, name: c.name }))) : [];
+    let replaced: string[] = [];
+    let connected: MongoClient | undefined;
+    if (views.length) {
+      connected = await this.client(info);
+      if (!connected) return;
+      try {
+        replaced = await collectionsReplacedByViews(connected, views);
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Restore into ${where} failed: ${errorMessage(err)}`);
+        return;
+      }
+    }
     const answer = await vscode.window.showWarningMessage(
       `Restore ${plural(count, 'collection')} into ${info.name} › ${targets}?`,
       {
@@ -777,6 +881,8 @@ export class Backups {
           drop
             ? "Existing collections with the same names are dropped first, with their documents and indexes: this can't be undone."
             : 'Documents are added; those whose _id already exists are skipped.',
+          replaced.length ? `The backup has a view in place of ${replaced.length === 1 ? 'this collection, which is dropped with its' : 'these collections, which are dropped with their'} documents: ${replaced.join(', ')}.` : '',
+          leftOut.length ? `Not restored: ${leftOut.join(', ')}.` : '',
           !drop && maxUndo !== undefined ? `It can be undone from the Undo History, for collections of up to ${plural(maxUndo, 'document')}.` : '',
         ]
           .filter(Boolean)
@@ -785,7 +891,7 @@ export class Backups {
       'Restore',
     );
     if (answer !== 'Restore') return;
-    const client = await this.client(info);
+    const client = connected ?? (await this.client(info));
     if (!client) return;
 
     // Restore
@@ -880,7 +986,7 @@ export class Backups {
       sum('skipped') ? `${sum('skipped').toLocaleString('en-US')} skipped (their _id already existed)` : '',
       sum('failed') ? `${sum('failed').toLocaleString('en-US')} failed: ${firstError}` : '',
       ...results.flatMap((r) => r.indexErrors).map((e) => `Index not created — ${e}`),
-      notRestored.length ? `Not restored: ${notRestored.join(', ')}` : '',
+      [...notRestored, ...leftOut].length ? `Not restored: ${[...notRestored, ...leftOut].join(', ')}` : '',
       entries.length > 1 ? `Undo from the Undo History, one operation per collection` : '',
     ].filter(Boolean);
     const restored = results.length - notRestored.length;

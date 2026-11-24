@@ -20,8 +20,10 @@ assistant can call its tools. With several VS Code windows, the window in use ha
 
 - **Kind**: Operation
 - **Function**: `src/mcpServer.ts › McpServer.restart`, which starts or stops the server to match the settings, with
-  `McpServer.start` (taking the port) and `McpServer.handle` (each HTTP request).
-- **Implemented in**: `src/extension.ts` (creates the `McpServer` with its `ToolHost` and calls `restart()` at
+  `McpServer.start` (taking the port) and `McpServer.handle` (each HTTP request, passed to `handleRequest`).
+- **Implemented in**: `src/mcp/http.ts` (`handleRequest`: the checks of each request, the body and the batches;
+  `releaseProof`, `ProofChecker`, `probe` and `requestRelease`: the port between windows), `src/extension.ts` (creates
+  the `McpServer` with its `ToolHost` and calls `restart()` at
   activation), `src/shared/mcp.ts › handleMessage` (`mcp.protocol`), `src/mcpTools.ts › mcpTools` (the tools),
   `package.json` (`mongoster.mcp.*`, `contributes.mcpServerDefinitionProviders`), `src/standalone/main.ts` (the
   desktop app's `Tools` menu).
@@ -39,11 +41,24 @@ assistant can call its tools. With several VS Code windows, the window in use ha
   that the server changed (`mcp.setup`).
 - **Refuses**: HTTP requests that are not a tool call from a local client with the token, by status (below).
 - **Settings**: `mongoster.mcp.enabled` (default off), `mongoster.mcp.port` (default 37017, 1024 to 65535). Changing
-  either starts or stops the server again in every window.
+  either starts or stops the server again in every window. They are application settings (`"scope": "application"`),
+  like `mongoster.mcp.readDocuments`: a workspace's `.vscode/settings.json` cannot set them.
 - **Uses**: `mcp.access-token`, `mcp.protocol`, `mcp.read-documents`, `mcp.log`, `mcp.change-port`,
   `connection.secrets`.
-- **Tested by**: *none*. The HTTP server, the port and the windows have no test; the tool tests call `handleMessage`
-  directly.
+- **Tested by**: `test/unit/mcpHttp.test.ts › 'handleRequest' › 'answers a message that carries the token, with the mark and no kept-alive connection'`,
+  `› 'refuses another Host and the Origin of a web page'`,
+  `› 'refuses another path, a missing or wrong token and another method'`,
+  `› 'does not release the port for the token alone, a replayed proof or a GET'`,
+  `› 'answers 413 to a body over the limit, and the client receives it'`,
+  `› 'answers a parse error to what is not JSON'`,
+  `› 'answers a batch up to the limit and refuses a longer one without running any of it'`;
+  `test/unit/mcpHttp.test.ts › 'releaseProof' › 'is accepted once by a window with the same token, for the same port'`,
+  `› 'is refused when it is old, from the future, altered or not a proof'`,
+  `› 'accepts two different proofs made at the same time'`;
+  `test/unit/mcpHttp.test.ts › 'requestRelease' › 'never sends the access token to whoever listens on the port'`,
+  `› 'moves the port when the other window has the same token, and is refused with another one'`,
+  `› 'says a free port is free and a port without the mark is another program'`. Starting, stopping and the windows'
+  focus in `McpServer` have no test.
 
 Acceptance:
 
@@ -52,15 +67,25 @@ Acceptance:
 - [ ] Only `POST /mcp` carrying `Authorization: Bearer <token>` reaches the tools. The answers are plain JSON (the
   Streamable HTTP transport without server-sent events or sessions), each with `Connection: close` and the header
   `x-mongoster-mcp: <version>`, by which another window recognizes Mongoster on the port without sending a token.
+  `POST /mcp/release` takes a proof of having the token in the header `x-mongoster-release`, and not the token.
 - [ ] The checks, in this order: a `Host` other than `127.0.0.1:<port>` or `localhost:<port>` gets 403
   `{ "error": "Forbidden host" }`; an `Origin` other than `http://` or `https://` `127.0.0.1` or `localhost` (any port)
   gets 403 `Forbidden origin`; a path other than `/mcp` and `/mcp/release` gets 404 `Not found`; a missing or wrong
-  token gets 401 (`mcp.access-token`); a method other than POST gets 405 with `Allow: POST`; a body over 1 MB gets 413
-  `Request too large`; a body that is not JSON gets 400 with the JSON-RPC error -32700 `Parse error`.
-- [ ] A JSON array of messages is answered with the array of their answers; a request with only notifications gets 202
-  with no body.
+  token gets 401 (`mcp.access-token`), and on `/mcp/release` a missing, wrong, old or already used proof gets 401; a
+  method other than POST gets 405 with `Allow: POST`; a body over 1 MB gets 413
+  `Request too large`; a body that is not JSON gets 400 with the JSON-RPC error -32700 `Parse error`; an array of more
+  than 20 messages gets 400 with the JSON-RPC error -32600 `Too many requests in one batch: at most 20`, and none of
+  them runs.
+- [ ] A body over 1 MB is read to its end and thrown away before the 413 is written, so that the client receives the
+  answer; past 32 MB the connection is cut without an answer.
+- [ ] A JSON array of at most 20 messages is answered with the array of their answers; a request with only
+  notifications gets 202 with no body.
 - [ ] Several VS Code windows of one installation share the token. The window that gets the focus asks the one with
-  the port to release it (`POST /mcp/release` with the token); that window stops listening, lets the calls in progress
+  the port to release it: `POST /mcp/release` with the header `x-mongoster-release: v1.<nonce>.<time>.<mac>`, where the
+  mac is an HMAC-SHA256, keyed with the token, of the word `release`, the port, a random nonce and the time in
+  milliseconds. The token itself is never sent, so a program that took the port and answers with the mark learns
+  nothing it can use. The window with the port compares the mac in constant time, refuses a time more than 30 seconds
+  away and a nonce it has already accepted, then stops listening, lets the calls in progress
   finish and logs `Port 37017 moved to the VS Code window in use: it comes back when this window is used.` The tabs the
   AI opens then appear in the window in use.
 - [ ] A window started while another window has the port logs
@@ -71,9 +96,10 @@ Acceptance:
   `Not started: Port 37017 is used by another program.`, and the focused window shows, once per port, the warning
   **Mongoster's MCP server is not running. Port 37017 is used by another program.** with the button **Change Port**,
   which runs `mcp.change-port` with a free port suggested.
-- [ ] A port held by Mongoster with another token (the desktop app and VS Code, or two installations of VS Code): the
-  first one started keeps it, and the other says
-  **Mongoster's MCP server is not running. Port 37017 is used by Mongoster in another VS Code installation, which has a different access token.**
+- [ ] A port held by Mongoster with another token (the desktop app and VS Code, or two installations of VS Code), or by
+  a Mongoster older than the proof in a window not reloaded since the update (it answers 401 to a request without the
+  token): the first one started keeps it, and the other says
+  **Mongoster's MCP server is not running. Port 37017 is used by Mongoster in another VS Code installation, which has a different access token, or by an older version of Mongoster in a window not reloaded since the update.**
   A port still taken after 20 attempts: **Mongoster's MCP server is not running. Port 37017 is taken and was not
   released.** Any other error of `listen` is said with its own message.
 - [ ] The desktop app runs the same server, with its own token in its own secret storage and the same default port.
@@ -87,7 +113,8 @@ replaces it when the old one may have leaked.
 
 - **Kind**: Operation
 - **Function**: `src/mcpServer.ts › McpServer.newToken`; `McpServer.ensureToken` creates the first one.
-- **Implemented in**: `src/mcpServer.ts › McpServer.authorized` (the check of each request), `McpServer.readToken` (a
+- **Implemented in**: `src/mcp/http.ts › bearerMatches` (the check of each request) and `ProofChecker` (the proof of
+  having the token, for the release of the port), `src/mcpServer.ts › McpServer.readToken` (a
   token generated in another window).
 - **Entry points**: **Generate a new access token** in the quick pick of `mcp.setup`; there is no command of its own.
 - **Writes**: a token of 32 random bytes, in base64url, to the secret storage under the key `mongoster.mcp.token`.
@@ -100,12 +127,16 @@ replaces it when the old one may have leaked.
   line `New access token: the old one no longer works`; GitHub Copilot is given the new token; the other windows of
   the installation read it through the secret storage's change event.
 - **Uses**: `mcp.setup`, `connection.secrets`.
-- **Tested by**: *none*.
+- **Tested by**: `test/unit/mcpHttp.test.ts › 'bearerMatches' › 'takes only the exact token'`,
+  `test/unit/mcpHttp.test.ts › 'requestRelease' › 'never sends the access token to whoever listens on the port'`.
+  Generating and storing the token have no test.
 
 Acceptance:
 
 - [ ] The first start of the server stores a token when there is none. The token never goes to the settings, a file or
   the log; it leaves the secret storage only through the copies of `mcp.setup` and Copilot's server definition.
+- [ ] Mongoster itself never sends the token over HTTP: a window that asks another one for the port sends a proof made
+  with it (`mcp.server`).
 - [ ] A request without `Authorization`, with something other than `Bearer <token>`, or with another token (compared
   in constant time) gets 401 `{ "error": "Unauthorized" }` with `WWW-Authenticate: Bearer`, before any tool runs;
   nothing is logged for it.
@@ -195,54 +226,88 @@ Acceptance:
 ### `mcp.read-documents` — The tools offered without reading documents
 
 `mongoster.mcp.readDocuments` decides whether the AI may read documents and field values. Turned off, the tools that
-return them are not offered: the AI sees the structure, the statistics and the query shapes, and opens tabs where the
-user sees the documents.
+return them are not offered, and the tools that stay give no value by another way: the AI sees the structure, the
+statistics and the query shapes, and opens tabs where the user sees the documents.
 
 - **Kind**: Derivation
-- **Function**: `src/mcpTools.ts › mcpTools`: its last line leaves out the tools marked `documents: true` when
-  `ToolHost.readDocuments()` is false.
+- **Function**: `src/mcpTools.ts › mcpTools`: it leaves out the tools marked `documents: true` when
+  `ToolHost.readDocuments()` is false, and passes the setting to the tools that stay through
+  `src/mcp/context.ts › toolContext` (`readDocuments`, `errorText`, `definition`).
 - **Implemented in**: `src/shared/mcp.ts` (`McpTool.documents`), `src/extension.ts` (`readDocuments` reads the
   setting, default true), the tools that set `documents: true` in `src/mcpTools.ts`, `src/mcp/changes.ts`,
-  `src/mcp/data.ts` and `src/mcp/workspace.ts`.
-- **Settings**: `mongoster.mcp.readDocuments` (default on).
+  `src/mcp/data.ts`, `src/mcp/performance.ts` (`explain_query`) and `src/mcp/workspace.ts`;
+  `src/mcp/context.ts` (`safeErrorText`, `errorCode`, `shape`, `validatorShape`, `schemaShape`),
+  `src/shared/profile.ts › shapeOf`, `src/mcp/data.ts › optionsText`, `src/mcp/performance.ts › commandLine`,
+  `src/mcp/topology.ts › formatShardingStatus`, `src/mcp/workspace.ts` (`entryLine`, `queryLines`).
+- **Settings**: `mongoster.mcp.readDocuments` (default on), an application setting: a workspace's
+  `.vscode/settings.json` cannot turn it on.
 - **Uses**: `mcp.protocol`.
 - **Tested by**: `test/unit/mcpTools.test.ts › 'mcpTools' › 'leaves out the tools that return documents when readDocuments is off'`,
   `test/unit/mcpWorkspace.test.ts › 'workspace tools' › 'are all read-only, and only the write details return documents'`,
-  `test/integration/mcpData.test.ts › 'distinct_values' › 'returns document values, so it is flagged'`.
-- **Differs**: three tools offered with the setting off return values from documents or queries:
-  `current_operations` gives the command of each running operation, up to 300 characters, with its literal values (an
-  insert's documents, an update's new values) (`src/mcp/performance.ts:204`, `commandLine`); `list_saved_queries`
-  gives the user's saved and recent queries with the values typed in them (`src/mcp/workspace.ts:119`, `queryLines`);
-  `mongoster_writes` gives the labels of the undo history, which carry `_id` values and filters such as
-  `Delete document ObjectId("…")` or `Delete many { status: "old" }` (`src/mcp/workspace.ts:104`, `entryLine`). The
-  README and the setting's description promise only structure, statistics and query shapes.
+  `test/integration/mcpData.test.ts › 'distinct_values' › 'returns document values, so it is flagged'`;
+  `test/unit/mcpGate.test.ts › 'readDocuments off' › 'does not offer explain_query nor the tools that return documents'`,
+  `› 'makes count_documents give the total only and refuse a filter without running it'`,
+  `› 'keeps count_documents with a filter as it was when readDocuments is on'`,
+  `› "gives a server error's code in place of its text, which can quote values"`,
+  `› "keeps the text of the errors that are not the server's"`,
+  `› 'gives the saved and recent queries as shapes'`,
+  `› "leaves what each write did out of Mongoster's writes"`,
+  `› 'reduces the command of a running operation to its shape'`,
+  `› 'gives a validator as field names and types, a view pipeline as its shape'`,
+  `› 'leaves the shard key values out of the sharding status'`;
+  `test/integration/mcpGate.test.ts › 'readDocuments off' › 'gives no value through a count or the error of a count'`,
+  `› 'does not run explain_query'`, `› 'gives the definitions without their values'`,
+  `› 'gives the running operations without the values of their commands'`.
 
 Rules:
 
 - Input: the 32 tools of the six groups, and the setting, read again at every request: no restart is needed.
-- On (the default): all 32 tools are listed and can be called.
-- Off: these six are neither listed by `tools/list` nor callable: `find_documents`, `aggregate`, `distinct_values`,
-  `watch_changes`, `write_history`, `mongoster_write_details`. The other 26 stay.
+- On (the default): all 32 tools are listed and can be called, and return what their cards say.
+- Off: these seven are neither listed by `tools/list` nor callable: `find_documents`, `aggregate`, `distinct_values`,
+  `explain_query`, `watch_changes`, `write_history`, `mongoster_write_details`. The other 25 stay.
+- Off, `count_documents` gives only a collection's total: a filter that is not empty is refused before anything is
+  sent, because a count per filter tells the values one question at a time (`{ email: /^a/ }`).
+- Off, what could quote a value is given as its shape, the values replaced by `?` and the field names and operators
+  kept: the command of each operation of `current_operations` (the name of its collection and the numbers of its sort
+  and projection stay), a view's pipeline (`collection_options`, `collection_stats`), the partial filter expression
+  of an index (`describe_collection`, `collection_stats`), and the filters, sorts, projections and stages of
+  `list_saved_queries`.
+- Off, a validator is given as field names and types: of a `$jsonSchema` the `properties`, `bsonType`, `type`,
+  `required` and the sizes (`minItems`, `maxLength` and the like) stay; `enum`, `pattern`, bounds and descriptions
+  become `?`; a query validator is given as its shape.
+- Off, `mongoster_writes` leaves out what each write did (the label of the undo history), and `sharding_status` the
+  bounds of the zones, the details of the events (chunk ranges) and the text of what could not be read.
+- Off, the text of a server's error is replaced by its code and code name, in every tool, because the server quotes
+  the values it failed on: `server error 241 (ConversionFailure); its text is left out because
+  mongoster.mcp.readDocuments is off`. Errors that are not the server's (the network, a filter that cannot be parsed)
+  keep their text.
 - `tools/list` declares `listChanged: false`: a client that listed the tools before the setting changed keeps its list
   until it lists them again, and a call to a tool left out gets the JSON-RPC error -32602 `Unknown tool: <name>`.
 
 Examples:
 
-- Off, `tools/call` of `find_documents` → error -32602 `Unknown tool: find_documents`.
-- Off, `count_documents` with `{ status: "active" }` → `shop.orders: 2 documents match { status: "active" }.` (a
-  number, not a value).
+- Off, `tools/call` of `find_documents` or `explain_query` → error -32602 `Unknown tool: find_documents`.
+- Off, `count_documents` with `{ status: "active" }` → `A filter is refused because mongoster.mcp.readDocuments is
+  off: …`; with no filter → `shop.orders has 2 documents.`
 - Off, `slow_queries` → shapes such as `find shop.orders: { a: ?, s: ? } · sort { b: 1 }`, never the values of the
   queries.
+- Off, the command `{ find: "users", filter: { email: "a@b.c" }, sort: { createdAt: -1 } }` in `current_operations` →
+  `{ find: "users", filter: { email: ? }, sort: { createdAt: -1 } }`.
+- Off, the validator `{ $jsonSchema: { required: ["plan"], properties: { plan: { enum: ["free", "pro"] } } } }` →
+  `{ $jsonSchema: { required: ["plan"], properties: { plan: { enum: ? } } } }`.
 
 Acceptance:
 
-- [ ] With the setting off, the six tools above are missing from `tools/list` and a call to any of them is refused as
-  an unknown tool.
+- [ ] With the setting off, the seven tools above are missing from `tools/list` and a call to any of them is refused
+  as an unknown tool.
 - [ ] Tools offered with the setting off: `describe_collection` (types and how often fields are present, index
-  definitions), `count_documents`, `explain_query` (numbers and the plan of a query the AI wrote), `slow_queries` and
+  definitions), `count_documents` (the total only), `slow_queries` and
   `index_advice` (query shapes, values as `?`), the deployment tools, and the tools that open tabs (the AI gets a
   sentence, the user the documents).
-- [ ] (differs) With the setting off, no tool returns a field value of a document or of a query the AI did not write.
+- [ ] With the setting off, no tool returns a field value of a document or of a query the AI did not write: not in a
+  result, not in a count, and not in the text of an error.
+- [ ] With the setting on, every tool returns what it returned before the setting was looked at by the tools that
+  stay: full commands, validators, pipelines, queries, labels and error texts.
 
 ### `mcp.protocol` — Answer a message of the Model Context Protocol
 
@@ -250,11 +315,12 @@ The JSON-RPC 2.0 messages the server understands, and how a tool's success or fa
 
 - **Kind**: Derivation
 - **Function**: `src/shared/mcp.ts › handleMessage`
-- **Implemented in**: `src/mcpServer.ts › McpServer.handle` (HTTP, batches, the log callback), `INSTRUCTIONS` and
+- **Implemented in**: `src/mcp/http.ts › handleRequest` (HTTP, batches of at most 20 messages),
+  `src/mcpServer.ts › McpServer.handle` (its caller, with the log callback), `INSTRUCTIONS` and
   `ServerInfo` in `src/mcpServer.ts`.
 - **Uses**: `mcp.read-documents`, `mcp.log`.
 - **Tested by**: *none* of its own. Every integration test of the tools goes through it with
-  `test/integration/mcpHelpers.ts › callTool`.
+  `test/integration/mcpHelpers.ts › callTool`, and `test/unit/mcpHttp.test.ts` covers the HTTP side (`mcp.server`).
 
 Rules:
 
@@ -271,7 +337,8 @@ Rules:
 - `tools/call`: an unknown name gets -32602 `Unknown tool: <name>`; arguments that are not an object get -32602
   `The arguments must be an object`; a required argument absent, null or `""` gives the result
   `Missing argument: connection.` (`Missing arguments: database, collection.` for several) with `isError: true`; a
-  tool that throws gives its message as the result with `isError: true`; otherwise the result is
+  tool that throws gives its message as the result with `isError: true` (a server's error as `mcp.read-documents`
+  says); otherwise the result is
   `{ content: [{ type: "text", text }] }`.
 - Any other method gets -32601 `Method not found: <method>`.
 - Each `tools/call` that reaches a known tool is passed to the log with its outcome: `ok`, `error: <message>` or
@@ -315,6 +382,9 @@ Rules:
 - A tool on a connection that is not connected connects it, as opening it in the tree would.
 - `database` and `collection` must exist: `<database>.<collection> doesn't exist on <connection>: use list_collections.`
   `collection` without `database` gives `collection needs database.`
+- A `collection` whose name starts with `system.` is refused in every database, by every tool that takes a
+  collection: `<database>.<collection> is a system collection: Mongoster's MCP server doesn't read the system.*
+  collections (users, profiler, views…).` The tools that need one read it by themselves (`slow_queries` the profiler).
 - Strings are trimmed and an empty one counts as absent; anything else gives `<key> must be a string.`
 - Whole numbers may come as numbers or digit strings: `<key> must be a whole number.`, and outside the range
   `<key> must be between <min> and <max>.`
@@ -347,25 +417,28 @@ Acceptance:
 A result must not flood the model's context, and a query must not run for long on the user's server.
 
 - **Kind**: Derivation
-- **Function**: `src/shared/mcp.ts › truncate`, with the constants `MAX_OUTPUT`, `MAX_TIME_MS` and `COUNT_CAP` of
-  `src/mcp/context.ts`.
+- **Function**: `src/shared/mcp.ts › truncate`, with the constants `MAX_OUTPUT`, `MAX_TIME_MS`, `COUNT_CAP` and
+  `SKIP_MAX` of `src/mcp/context.ts`, and `MAX_BATCH` of `src/mcp/http.ts`.
 - **Implemented in**: every tool of `src/mcpTools.ts` and `src/mcp/*.ts`; `src/mcp/changes.ts › clipped`.
 - **Uses**: `mcp.debugging-tools`.
 - **Tested by**: `test/unit/mcpChanges.test.ts › 'clipped' › 'cuts long values saying how much is left out'`,
-  `test/integration/mcpChanges.test.ts › 'watch_changes' › 'stops at maxEvents and gives the rest on the next call'`.
+  `test/integration/mcpChanges.test.ts › 'watch_changes' › 'stops at maxEvents and gives the rest on the next call'`,
+  `test/unit/mcpGate.test.ts › 'pipelines' › 'bounds the skip of find_documents'`,
+  `test/unit/mcpHttp.test.ts › 'handleRequest' › 'answers a batch up to the limit and refuses a longer one without running any of it'`.
   `truncate` has no test of its own.
 - **Differs**: `list_connections`, `list_databases` and `list_collections` return their JSON without `truncate`
-  (`src/mcpTools.ts:62`, `:78`, `:92`), so a deployment with thousands of databases or collections returns all of
-  them; and `listDatabases`, `listCollections`, `currentOp` (`src/mcp/performance.ts:509`) and `getLog`
-  (`src/mcp/performance.ts:156`) run without `maxTimeMS`. AGENTS.md asks every tool's output to be bounded by
-  `MAX_OUTPUT` and `MAX_TIME_MS`.
+  (`src/mcpTools.ts`, their `run`), so a deployment with thousands of databases or collections returns all of
+  them. AGENTS.md asks every tool's output to be bounded by `MAX_OUTPUT` and `MAX_TIME_MS`.
 
 Rules:
 
 - `MAX_OUTPUT` is 60,000 characters. A longer text is cut at the last line break before 60,000 when that is past
   30,000, otherwise at 60,000, and ends with `… (output truncated at 60,000 characters)` on a line of its own.
 - `MAX_TIME_MS` is 30,000: the `maxTimeMS` of the finds, counts, aggregations, explains and statistics commands the
-  tools run.
+  tools run, and of `listDatabases`, `listCollections`, `listIndexes`, `listSearchIndexes`, `hello`, `buildInfo`,
+  `profile: -1`, `getLog`, `currentOp` and the reads of the oplog's first and last entries.
+- `SKIP_MAX` is 1,000,000: the largest `skip` of `find_documents`; past it, `skip must be between 0 and 1000000.`
+- `MAX_BATCH` is 20: the messages of one JSON-RPC batch (`mcp.server`).
 - `COUNT_CAP` is 100,000: counts stop there unless `exact` is asked (`count_documents`), and the text says
   `at least 100,000 documents`.
 - The tools' own bounds: documents and results 1 to 100 (default 20); distinct values 1 to 500 (default 50), each cut
@@ -384,27 +457,46 @@ Examples:
 
 Acceptance:
 
-- [ ] (differs) No tool returns more than 60,000 characters, and every query or command a tool sends carries
-  `maxTimeMS: 30000`.
+- [ ] (differs) No tool returns more than 60,000 characters.
+- [ ] Every query or command a tool sends carries `maxTimeMS: 30000`.
 
-### `mcp.refuse-write-stages` — Refuse pipelines with $out or $merge
+### `mcp.refuse-write-stages` — Refuse pipelines that write, are not a plain read, or read a system collection
 
-Pipelines are the one way a read could write: a pipeline with `$out` or `$merge` is refused before anything is sent.
+Pipelines are the one way a read could write, stay open, or reach what the collection does not hold: a pipeline with
+`$out` or `$merge`, with a stage that is not a plain read of the collection, or that joins a `system.*` collection is
+refused before anything is sent.
 
 - **Kind**: Derivation
-- **Function**: `src/mcp/context.ts › toolContext` (its `pipeline`), with `src/shared/pipeline.ts › isWriteStage`.
-- **Implemented in**: `src/shared/pipeline.ts › textToPipeline`, `src/queries.ts › buildPipeline`; used by
+- **Function**: `src/mcp/context.ts › toolContext` (its `pipeline`), with `src/shared/pipeline.ts › isWriteStage`,
+  `notPlainReadStage` and `joinedCollections`.
+- **Implemented in**: `src/shared/pipeline.ts › textToPipeline` and `NOT_PLAIN_READ_STAGES`,
+  `src/queries.ts › buildPipeline`, `src/mcp/context.ts › isSystemCollection`; used by
   `aggregate`, `explain_query`, `open_aggregation` and `open_explain`.
 - **Uses**: `mcp.arguments`.
 - **Tested by**: `test/unit/pipeline.test.ts › 'isWriteStage' › 'is true for enabled $out and $merge stages'`,
   `test/integration/mcpPerformance.test.ts › 'explain_query' › 'refuses $out, and a pipeline together with a filter'`,
-  `test/unit/mcpWorkspace.test.ts › 'open tools' › 'open_explain opens a find query or a pipeline with explain'`.
+  `test/unit/mcpWorkspace.test.ts › 'open tools' › 'open_explain opens a find query or a pipeline with explain'`,
+  `test/unit/mcpGate.test.ts › 'pipelines' › 'finds the stages that are not a plain read, in the nested pipelines too'`,
+  `› 'lists the collections a pipeline joins'`,
+  `› 'are refused by the tools when they are not a plain read or read a system collection'`;
+  `test/unit/mcpGate.test.ts › 'system collections' › 'are refused to the tools that take a collection, whatever readDocuments is'`;
+  `test/integration/mcpGate.test.ts › 'what is refused whatever the setting' › 'the system collections'`,
+  `› 'the stages that are not a plain read of the collection'`.
 
 Rules:
 
 - The `pipeline` argument is mongosh text, read into stages as the pipeline editor reads it.
 - No stage: `The pipeline is empty.`
 - A stage named `$out` or `$merge` (spaces around the name ignored): `<stage> writes to the database: Mongoster's MCP server only reads.`
+- The stages are looked for in the nested pipelines too: the facets of `$facet`, the `pipeline` of `$lookup` and of
+  `$unionWith`, to any depth up to 20.
+- A stage that is not a plain read of the collection, `$changeStream`, `$changeStreamSplitLargeEvent`, `$currentOp`,
+  `$listSessions`, `$listLocalSessions`, `$queryStats`, `$listSampledQueries` or `$planCacheStats`:
+  `<stage> is refused: Mongoster's MCP server runs only pipelines that read the collection (watch_changes follows the
+  changes, current_operations lists the operations, slow_queries gives the query shapes).`
+- A `$lookup` or `$graphLookup` whose `from`, or a `$unionWith` whose collection, starts with `system.`:
+  `The pipeline reads <collection>: Mongoster's MCP server doesn't read the system.* collections (users, profiler,
+  views…).`
 - Text that cannot be read: `Pipeline: <the parser's message>`.
 - Otherwise the stages are built into the pipeline sent to MongoDB, or put in the collection tab.
 - `watch_changes`' `filter` is only ever a `$match` of the change stream, so it cannot add a stage.
@@ -414,10 +506,19 @@ Examples:
 - `[ { $match: {} }, { $out: "copy" } ]` → `$out writes to the database: Mongoster's MCP server only reads.`
 - `[ { $merge: { into: "x" } } ]` given to `open_aggregation` → the same refusal for `$merge`; no tab opens.
 - `[]` → `The pipeline is empty.`
+- `[ { $facet: { a: [ { $out: "copy" } ] } } ]` → the refusal for `$out`.
+- `[ { $currentOp: { allUsers: true } } ]` → `$currentOp is refused: …`
+- `[ { $lookup: { from: "system.users", localField: "a", foreignField: "user", as: "u" } } ]` on the `admin` database →
+  `The pipeline reads system.users: …`
 
 Acceptance:
 
-- [ ] No tool sends, explains or opens in a tab a pipeline that contains `$out` or `$merge`.
+- [ ] No tool sends, explains or opens in a tab a pipeline that contains `$out` or `$merge`, at any depth.
+- [ ] No tool sends, explains or opens in a tab a pipeline with `$changeStream`, `$changeStreamSplitLargeEvent`,
+  `$currentOp`, `$listSessions`, `$listLocalSessions`, `$queryStats`, `$listSampledQueries` or `$planCacheStats`, at
+  any depth.
+- [ ] No tool reads a `system.*` collection the caller named, as its collection or as the source of a `$lookup`,
+  `$graphLookup` or `$unionWith`; `write_history` leaves out the writes to the `system.*` collections.
 
 ### `mcp.log` — The Mongoster MCP output channel
 
@@ -426,10 +527,11 @@ What the server did and which tools the AI called, for the user to check.
 - **Kind**: View
 - **Function**: `src/mcpServer.ts › McpServer.log`, with `McpServer.logOnce` for the server's state.
 - **Implemented in**: `src/mcpServer.ts › summary` (the arguments on one line), `src/shared/mcp.ts › handleMessage`
-  (the outcome of each call).
+  (the outcome of each call) and `logText` (one line, cut at 300 characters).
 - **Entry points**: the output channel **Mongoster MCP**; **Show the log** in `mcp.setup`.
 - **Uses**: `mcp.server`, `mcp.protocol`.
-- **Tested by**: *none*.
+- **Tested by**: `test/unit/mcpHttp.test.ts › 'logText' › 'keeps a line of the log on one line and short'`. The
+  channel itself has no test.
 
 Acceptance:
 
@@ -437,6 +539,8 @@ Acceptance:
 - [ ] Each call of a known tool is one line: its name, its arguments as JSON (cut at 300 characters with `…`) and the
   outcome: `find_documents {"connection":"Local","database":"shop","collection":"orders"} → ok`, `→ error: <message>`
   or `→ missing connection`.
+- [ ] The message of an error is cut at 300 characters with `…` and its line breaks become spaces, so that a long or
+  many-line error of the server neither floods the log nor passes for other lines.
 - [ ] The server's state is logged when it changes, not again by the periodic check: `Listening on <url>`, `Stopped`,
   `Not started: <why>`, the port moved to or held by another window, `New access token: the old one no longer works`,
   and `VS Code's MCP support is not available: <why>`.
@@ -473,15 +577,16 @@ The tools:
 | `list_connections` | none | JSON: `name`, `id`, `folder` when set, `readOnly: true` on a read-only connection, `connected`, of the connections not excluded from searches; `No connections are saved in Mongoster.`, or `The user excluded every connection saved in Mongoster from searches.` | offered |
 | `list_databases` | `connection` | JSON: `name`, `sizeOnDisk`, `empty` of each database not excluded from searches | offered |
 | `list_collections` | `connection`, `database` | JSON sorted by name: `name`, `type`, `viewOn` for a view, of the collections without an exclusion of their own; `<database> has no collections.`, or `The user excluded every collection of <database> from searches.` | offered |
-| `describe_collection` | `connection`, `database`, `collection`, `sample` (1 to 1000, default 200) | the estimated count, the indexes with their options, the search indexes when the server has them, and each field of a random sample with its types and how often it is present | offered |
-| `find_documents` | `connection`, `database`, `collection`, `filter`, `sort`, `projection`, `skip` (default 0), `limit` (1 to 100, default 20) | how many match and the documents in mongosh syntax | hidden |
+| `describe_collection` | `connection`, `database`, `collection`, `sample` (1 to 1000, default 200) | the estimated count, the indexes with their options, the search indexes when the server has them, and each field of a random sample with its types and how often it is present | offered; a partial filter expression as its shape |
+| `find_documents` | `connection`, `database`, `collection`, `filter`, `sort`, `projection`, `skip` (0 to 1,000,000, default 0), `limit` (1 to 100, default 20) | how many match and the documents in mongosh syntax | hidden |
 | `aggregate` | `connection`, `database`, `collection`, `pipeline`, `limit` (1 to 100, default 20) | the first results in mongosh syntax | hidden |
 
 Acceptance:
 
 - [ ] The promise: `list_connections` never returns a connection string, a password or a Redis URL, and none of these
   tools writes: they send only `listDatabases`, `listCollections`, `$sample`, `listIndexes`, `$listSearchIndexes`,
-  `find`, `count`, and `aggregate` without `$out` or `$merge`.
+  `find`, `count`, and `aggregate` without `$out`, `$merge` or the other stages of `mcp.refuse-write-stages`, and
+  never on a `system.*` collection.
 - [ ] `describe_collection` starts with `shop.orders: about 1,234 documents, 200 documents sampled.` (`unknown number
   of` when the estimate fails), lists `Indexes:` as `- name: { key } unique sparse TTL 3600s partial { … } hidden`
   (`- none (a view)` for a view), adds the search indexes (the `index` of `$search` and `$vectorSearch`) only where
@@ -566,8 +671,12 @@ Acceptance:
   or a connection's writes are not recorded (`Writes aren't recorded for: Prod (read-only).`).
 - [ ] `mongoster_write_details` refuses an unknown id (`No write <id> in the undo history: use mongoster_writes …`)
   and an undone write (`The write u was undone on 2026-01-01T00:00:00Z: its documents are no longer kept.`).
-- [ ] `mongoster_writes` stays offered with `mongoster.mcp.readDocuments` off and returns the labels of the undo
-  history, which can carry `_id` values and filters (`mcp.read-documents`).
+- [ ] `mongoster_writes` stays offered with `mongoster.mcp.readDocuments` off and then leaves out the labels of the
+  undo history, which can carry `_id` values and filters, saying
+  `What each write did is left out (it names documents and quotes filters) because mongoster.mcp.readDocuments is off: open_history shows it to the user.`
+  (`mcp.read-documents`).
+- [ ] `write_history` never shows a write to a `system.*` collection, and `watch_changes` and `write_history` refuse
+  one as their `collection` (`mcp.refuse-write-stages`).
 
 ### `mcp.performance-tools` — Find what makes a database slow
 
@@ -584,7 +693,8 @@ size of a collection and of its indexes.
 - **Reads**: `explain("executionStats")`, `profile: -1` (the level, without changing it), `system.profile`,
   `getLog: "global"`, `currentOp`, `listIndexes`, `$indexStats`, `$collStats`, `estimatedDocumentCount`.
 - **Refuses**: missing roles, saying which (`Not authorized to <action>: the user needs the <role> role (…)`).
-- **Settings**: none: `mongoster.mcp.readDocuments` hides none of them.
+- **Settings**: `mongoster.mcp.readDocuments` hides `explain_query`, and turned off makes `current_operations` give
+  each command as its shape and `collection_stats` a view's pipeline and the partial filter expressions as shapes.
 - **Uses**: `mcp.arguments`, `mcp.output-limits`, `mcp.refuse-write-stages`, `mcp.read-documents`.
 - **Tested by**:
   `test/integration/mcpPerformance.test.ts › 'explain_query' › 'shows a collection scan and suggests an index, then uses the index once it exists'`,
@@ -601,9 +711,10 @@ size of a collection and of its indexes.
   `test/unit/mcpPerformance.test.ts › 'explainText' › 'gives the verdict, the numbers, the suggested index and the plan'`;
   `test/unit/mcpPerformance.test.ts › 'operationText' › 'writes the command without session noise, the client, locks and the transaction'`,
   `› "says when an operation is the server's own, and cuts long commands"`;
-  `test/unit/mcpPerformance.test.ts › 'adviceText' › 'lists unused and hidden indexes, and those too recent to tell'`.
+  `test/unit/mcpPerformance.test.ts › 'adviceText' › 'lists unused and hidden indexes, and those too recent to tell'`;
+  `test/unit/mcpGate.test.ts › 'readDocuments off' › 'reduces the command of a running operation to its shape'`.
 
-The tools (all offered with `mongoster.mcp.readDocuments` off):
+The tools (all but `explain_query` offered with `mongoster.mcp.readDocuments` off):
 
 | Tool | Arguments | Returns |
 | --- | --- | --- |
@@ -634,8 +745,11 @@ Acceptance:
 - [ ] `index_advice` on a view answers that a view has no indexes of its own; with no advice it says
   `No advice: no missing, redundant, unused or hidden index found.`; indexes whose statistics started less than 24 hours
   ago are counted apart, not called unused.
-- [ ] `current_operations` is offered with `mongoster.mcp.readDocuments` off and returns each operation's command with
-  its literal values (`mcp.read-documents`).
+- [ ] `current_operations` is offered with `mongoster.mcp.readDocuments` off and then returns each operation's command
+  as its shape, the literal values replaced by `?` (`mcp.read-documents`).
+- [ ] `explain_query` is not offered with `mongoster.mcp.readDocuments` off: its plan quotes the bounds of the query,
+  a failed explain the values it failed on, and documents examined against returned is a count per filter
+  (`mcp.read-documents`).
 
 ### `mcp.deployment-tools` — Read the state of the deployment
 
@@ -653,8 +767,9 @@ problem is the deployment rather than the data.
   `replSetGetConfig`, the first and last entries of `local.oplog.rs`, and on a mongos `listShards`, `balancerStatus`,
   `balancerCollectionStatus`, `getShardMap` and the `config` database.
 - **Refuses**: a database that does not exist (`The database <name> doesn't exist on <connection>: use list_databases.`).
-- **Settings**: none: `mongoster.mcp.readDocuments` hides none of them.
-- **Uses**: `mcp.arguments`, `mcp.output-limits`.
+- **Settings**: `mongoster.mcp.readDocuments` hides none of them; turned off, `sharding_status` leaves out what quotes
+  shard key values.
+- **Uses**: `mcp.arguments`, `mcp.output-limits`, `mcp.read-documents`.
 - **Tested by**: `test/integration/mcpTopology.test.ts › 'server_status' › 'describes a standalone server'`,
   `› 'describes a replica set member and its state'`,
   `› 'names the connections when the one given does not exist'`;
@@ -693,6 +808,10 @@ Acceptance:
   and on a mongos points to `sharding_status`.
 - [ ] `sharding_status` on a server that is not a mongos says what it is (`… is a standalone server: it is not a sharded cluster.`,
   `… is a replica set member, not a mongos: it is not a sharded cluster (use replica_set_status).`).
+- [ ] With `mongoster.mcp.readDocuments` off, `sharding_status` gives the zones of a collection by name without their
+  bounds, the recent events without their details, adding
+  `(the events' details are left out: they quote shard key values and mongoster.mcp.readDocuments is off)`, and of what
+  could not be read only what it was, without the server's text (`mcp.read-documents`).
 
 ### `mcp.data-model-tools` — Answer quick questions about the data model
 
@@ -710,7 +829,9 @@ saved, and whether a connection publishes to redis-oplog.
 - **Reads**: `countDocuments`, `estimatedDocumentCount`, an aggregation for the distinct values, samples of every
   collection of a database, `listCollections`, `config.collections`; the user's saved and recent queries and the
   project's query files; whether the connection's Redis URL is stored, and with `check` a `PING` to Redis.
-- **Settings**: `mongoster.mcp.readDocuments` hides `distinct_values`.
+- **Settings**: `mongoster.mcp.readDocuments` hides `distinct_values`, and turned off makes `count_documents` refuse a
+  filter, `collection_options` give the validator and a view's pipeline without their values, and
+  `list_saved_queries` give the queries as shapes.
 - **Uses**: `mcp.arguments`, `mcp.output-limits`, `mcp.read-documents`, `oplog.publish`.
 - **Tested by**: `test/integration/mcpData.test.ts › 'count_documents' › 'counts all the documents, with the estimate'`,
   `› 'counts the documents that match a filter, without the estimate'`, `› 'counts a view'`,
@@ -735,11 +856,11 @@ The tools:
 
 | Tool | Arguments | Returns | Without `readDocuments` |
 | --- | --- | --- | --- |
-| `count_documents` | `connection`, `database`, `collection`, `filter`, `exact` (default false) | the count, stopping at 100,000 unless `exact`; with no filter also the estimate from the metadata | offered |
+| `count_documents` | `connection`, `database`, `collection`, `filter`, `exact` (default false) | the count, stopping at 100,000 unless `exact`; with no filter also the estimate from the metadata | the total only: a filter is refused |
 | `distinct_values` | `connection`, `database`, `collection`, `field` (a path), `filter`, `limit` (1 to 500, default 50) | the values most frequent first with how many documents have each, their types when mixed, the number of distinct values, and the documents with null and without the field | hidden |
 | `describe_relations` | `connection`, `database`, `collection`, `sample` (1 to 2000, default 100) | the fields that reference other collections (`orders.customerId → customers._id (one per document; 20 of 20 sampled values found, 100%)`), DBRefs and views; with `collection`, only those from and to it | offered |
-| `collection_options` | `connection`, `database`, `collection` | the kind (collection, capped, clustered, view, time series), validator with its level and action, a view's source and pipeline, capped size, time series options, clustered index, `expireAfterSeconds`, collation, pre- and post-images, shard key | offered |
-| `list_saved_queries` | `connection`, `database`, `collection` | the saved queries, the project's first with their file, then the user's, and the recent ones, newest first, as written | offered |
+| `collection_options` | `connection`, `database`, `collection` | the kind (collection, capped, clustered, view, time series), validator with its level and action, a view's source and pipeline, capped size, time series options, clustered index, `expireAfterSeconds`, collation, pre- and post-images, shard key | offered; the validator as field names and types, a view's pipeline as its shape |
+| `list_saved_queries` | `connection`, `database`, `collection` | the saved queries, the project's first with their file, then the user's, and the recent ones, newest first, as written | offered; the queries as shapes, the values replaced by `?` |
 | `redis_oplog_status` | `connection`, `database`, `collection`, `check` (default false) | whether the connection publishes, whether its Redis URL is set, the channel prefix, namespaces and patterns published, the channels of a collection, the last publishing error, and with `check` whether Redis answers | offered |
 
 Acceptance:
@@ -763,8 +884,15 @@ Acceptance:
 - [ ] `redis_oplog_status` on a connection that does not publish says
   `<connection> doesn't publish Mongoster's writes to Redis for redis-oplog (it can be turned on in the connection's options).`;
   on a read-only connection it adds that nothing is published.
-- [ ] `list_saved_queries` is offered with `mongoster.mcp.readDocuments` off and returns the values typed in the
-  queries (`mcp.read-documents`).
+- [ ] `list_saved_queries` is offered with `mongoster.mcp.readDocuments` off and then returns the queries as shapes,
+  without the values typed in them: `filter: { email: ?, age: { $gt: ? } }`, `sort: { createdAt: -1 }`; the head says
+  `(their values are replaced by ? because mongoster.mcp.readDocuments is off)` (`mcp.read-documents`).
+- [ ] With `mongoster.mcp.readDocuments` off, `count_documents` with a filter that is not empty is refused before
+  anything is sent, with `A filter is refused because mongoster.mcp.readDocuments is off: …`; with no filter, or `{}`,
+  it gives the total and the estimate (`mcp.read-documents`).
+- [ ] With `mongoster.mcp.readDocuments` off, `collection_options` gives
+  `Validator ($jsonSchema; field names and types only, mongoster.mcp.readDocuments is off): …` and
+  `Pipeline (values replaced by ?, mongoster.mcp.readDocuments is off): …` (`mcp.read-documents`).
 
 ### `mcp.tab-tools` — Open Mongoster's tabs for the user
 

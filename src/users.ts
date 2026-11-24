@@ -9,6 +9,7 @@ import type { Privilege, RoleEntry, RoleRef, UserEntry, UsersHostMessage, UsersV
 import { isPlainObject, parseQuery, relaxEjson } from './shared/query';
 import { toBson } from './queries';
 import { errorMessage } from './tree';
+import { newNonce } from './nonce';
 
 const { EJSON } = BSON;
 const relaxed = (v: unknown) => relaxEjson(EJSON.serialize(v, { relaxed: false }));
@@ -290,7 +291,7 @@ export class UsersPanel {
   private html(): string {
     const webview = this.panel.webview;
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...p));
-    const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+    const nonce = newNonce();
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>

@@ -60,7 +60,7 @@ Mongoster keeps for itself ([11-data.md](11-data.md)), so each starts with a pro
 
 The rows of [13-risks.md](13-risks.md) whose *What we do* says M3, each in its own commit with a test that failed
 before, in this order: the ones that lose data or write where they must not (RS3, RS8, RS1, RS2, RS9, RS10, RS11,
-RS13), then secrets and privacy (RS5, RS6, RS7, RS14), then what the user sees wrong (RS12). Q10 and Q11 are answered
+RS13), then secrets and privacy (RS5, RS6, RS7), then what the user sees wrong (RS12). Q10 and Q11 are answered
 first, because they decide what some of those cards should say.
 
 **Exit**: those cards and rows no longer say *Differs* or *open*; `npm test` and `npm run test:integration` pass.

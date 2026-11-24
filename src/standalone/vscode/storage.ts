@@ -7,7 +7,14 @@ import { ConfigurationTarget, Event, EventEmitter } from './base';
 import { ConfigurationProperty, runtime } from './runtime';
 import { THEMES } from '../themes';
 
-/** A JSON object in a file: read once, written a moment after each change. */
+const PRIVATE_FILE = 0o600;
+const PRIVATE_FOLDER = 0o700;
+
+/**
+ * A JSON object in a file: read once, written a moment after each change. The files hold the secrets and
+ * what the user did (connections, recent queries), so only the user may read them: the mode has no effect
+ * on Windows, where the profile folder's permissions already say so.
+ */
 class JsonFile {
   private data: Record<string, unknown> = {};
   private timer: NodeJS.Timeout | undefined;
@@ -18,6 +25,12 @@ class JsonFile {
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) this.data = parsed as Record<string, unknown>;
     } catch {
       // Missing or unreadable: starts empty.
+    }
+    try {
+      // A file written by a version that left the mode to the umask is closed without waiting for the next change.
+      fs.chmodSync(file, PRIVATE_FILE);
+    } catch {
+      // Missing: it gets the mode when it is written.
     }
   }
 
@@ -41,9 +54,15 @@ class JsonFile {
     clearTimeout(this.timer);
     this.timer = undefined;
     try {
-      fs.mkdirSync(path.dirname(this.file), { recursive: true });
+      fs.mkdirSync(path.dirname(this.file), { recursive: true, mode: PRIVATE_FOLDER });
       const tmp = `${this.file}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));
+      fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2), { mode: PRIVATE_FILE });
+      try {
+        // The mode above is only for a new file: a temporary one left by a crash keeps the one it had.
+        fs.chmodSync(tmp, PRIVATE_FILE);
+      } catch {
+        // A file system without modes refuses: the file is written all the same.
+      }
       fs.renameSync(tmp, this.file);
     } catch (err) {
       console.error(`Could not write ${this.file}:`, err);
@@ -129,10 +148,20 @@ export interface ConfigurationChangeEvent {
   affectsConfiguration(section: string): boolean;
 }
 
+/** Where a setting's value comes from. The app has no workspace: its settings are all the user's. */
+export interface ConfigurationInspection<T> {
+  key: string;
+  defaultValue?: T;
+  globalValue?: T;
+  workspaceValue?: T;
+  workspaceFolderValue?: T;
+}
+
 export interface WorkspaceConfiguration {
   get<T>(key: string): T | undefined;
   get<T>(key: string, defaultValue: T): T;
   has(key: string): boolean;
+  inspect<T>(key: string): ConfigurationInspection<T> | undefined;
   update(key: string, value: unknown, target?: ConfigurationTarget | boolean): Promise<void>;
 }
 
@@ -185,6 +214,15 @@ export class Settings {
     return property?.default;
   }
 
+  /** The declared default and the user's value, when valid: what `value` chooses between. */
+  inspect<T>(key: string): ConfigurationInspection<T> | undefined {
+    const property = this.properties()[key];
+    const stored = this.store().get(key);
+    const globalValue = stored !== undefined && (!property || valid(stored, property)) ? (stored as T) : undefined;
+    if (!property && globalValue === undefined) return undefined;
+    return { key, defaultValue: property?.default as T | undefined, ...(globalValue !== undefined && { globalValue }) };
+  }
+
   set(key: string, value: unknown): void {
     const property = this.properties()[key];
     // The default isn't stored, so a later change of the default reaches who never chose a value.
@@ -206,6 +244,7 @@ export class Settings {
         return (value === undefined ? defaultValue : value) as T;
       },
       has: (key) => this.value(full(key)) !== undefined,
+      inspect: <T>(key: string) => this.inspect<T>(full(key)),
       update: (key, value) => {
         this.set(full(key), value);
         return Promise.resolve();

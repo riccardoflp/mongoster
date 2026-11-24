@@ -1083,6 +1083,7 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "Run the MCP server that lets AI assistants (GitHub Copilot, Claude Code, Cursor…) list the connections, read the structure and the documents of the collections, follow the writes (change streams, oplog), look at slow queries, indexes and the server's state, and open queries, aggregations and searches in Mongoster. It listens on `127.0.0.1` only, needs an access token and never writes to a database. Run **Mongoster: Set Up MCP Server for AI Assistants…** to configure a client.",
+          "scope": "application",
           "order": 6
         },
         "mongoster.mcp.port": {
@@ -1091,18 +1092,20 @@
           "minimum": 1024,
           "maximum": 65535,
           "markdownDescription": "Port of the MCP server on `127.0.0.1`. AI clients other than GitHub Copilot have it in their configuration: after changing it, copy the configuration again with **Mongoster: Set Up MCP Server for AI Assistants…**. With several VS Code windows open, the port goes to the window you used last, and the tabs the AI opens appear there.",
+          "scope": "application",
           "order": 7
         },
         "mongoster.mcp.readDocuments": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Let the AI read documents and field values (the `find_documents`, `aggregate`, `distinct_values`, `watch_changes`, `write_history` and `mongoster_write_details` tools). Turned off, it only sees connections, databases, collections, their structure and statistics, and opens tabs for you to look at the documents.",
+          "markdownDescription": "Let the AI read documents and field values. Turned off, the tools that return them aren't offered (`find_documents`, `aggregate`, `distinct_values`, `explain_query`, `watch_changes`, `write_history`, `mongoster_write_details`), `count_documents` gives only a collection's total and refuses a filter, and what could quote a value is reduced to its shape, the values replaced by `?`: the commands of `current_operations`, validators (field names and types stay), view pipelines, partial index filters, the saved and recent queries; the server's error texts are replaced by their code. The AI still sees connections, databases, collections, field names and types, indexes and statistics, and opens tabs for you to look at the documents.",
+          "scope": "application",
           "order": 8
         },
         "mongoster.savedQueries.folder": {
           "type": "string",
           "default": ".mongoster/queries",
-          "markdownDescription": "Folder of the queries saved **In the project**, one JSON file per query, to share them with the team and version them with git. A relative path is inside each workspace folder (in the desktop app, inside the project folder chosen with **Mongoster: Choose the Project Folder for Saved Queries…**); an absolute path is used as it is.",
+          "markdownDescription": "Folder of the queries saved **In the project**, one JSON file per query, to share them with the team and version them with git. A relative path is inside each workspace folder (in the desktop app, inside the project folder chosen with **Mongoster: Choose the Project Folder for Saved Queries…**); an absolute path is used as it is when set in the user settings. A value set by a workspace must stay inside the workspace, or it is ignored with a warning.",
           "order": 9
         },
         "mongoster.references.detect": {
@@ -1166,7 +1169,7 @@
     "@types/vscode": "^1.90.0",
     "@vscode/codicons": "^0.0.46-24",
     "@vscode/vsce": "^4.1.1",
-    "electron": "^44.7.0",
+    "electron": "^44.11.5",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.24.0",
     "monaco-editor": "^0.57.0",

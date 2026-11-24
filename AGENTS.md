@@ -42,7 +42,7 @@ Before calling a change done: `npm run typecheck`, `npm test`, and `npm run test
 - The desktop app picks it up from `package.json` by itself; add it to the `Tools` menu in `src/standalone/main.ts` only if it belongs there.
 
 **A new tab** (copy `src/docHistory.ts` + `src/webview/docHistory.ts` + `media/docHistory.css`)
-- Host class with `static show`, a `panels` map, `paintTab`, CSP with nonce, `media/controls.css` loaded last.
+- Host class with `static show`, a `panels` map, `paintTab`, CSP with a nonce from `newNonce()` (`src/nonce.ts`), `media/controls.css` loaded last.
 - `XHostMessage` / `XViewMessage` in `src/shared/messages.ts`; the webview starts with `ready`, the host answers with `init`.
 - `static connectionChanged` and `static close`, called from `src/extension.ts` with the other tabs.
 - A bundle entry in `esbuild.mjs` **and** a `!dist/<name>.js` line in `.vscodeignore` (otherwise the tab is blank in the installed `.vsix`).

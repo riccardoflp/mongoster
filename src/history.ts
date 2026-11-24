@@ -15,6 +15,8 @@ import { RedisOplog } from './redisOplog';
 import { fieldDiff, FieldDiff } from './shared/compare';
 import { relaxEjson, toShell } from './shared/query';
 import type { HistoryDocument, HistoryEntry, HistoryHostMessage, HistoryUsage, HistoryViewMessage } from './shared/messages';
+import { newNonce } from './nonce';
+import { noLinks } from './shared/plainText';
 
 const { EJSON } = BSON;
 const gzipAsync = promisify(gzip);
@@ -22,6 +24,9 @@ const gunzipAsync = promisify(gunzip);
 const MB = 1024 * 1024;
 const DAY = 86_400_000;
 const INDEX = 'index.json';
+// The files hold documents as they were: only the user reads them (the modes have no effect on Windows).
+const PRIVATE_FILE = 0o600;
+const PRIVATE_FOLDER = 0o700;
 const BATCH = 1000;
 /** Documents shown in the details of an operation. */
 const DETAILS = 100;
@@ -64,7 +69,8 @@ const keyOf = (id: unknown) => JSON.stringify(canonical(id));
 /** Fingerprint of a document as stored (read with READ); null when it doesn't exist. */
 const fingerprint = (doc: Document | undefined | null) => (doc ? createHash('sha1').update(BSON.serialize(doc)).digest('base64') : null);
 const count = (n: number, what: string) => `${n.toLocaleString('en-US')} ${what}${n === 1 ? '' : 's'}`;
-const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+// Shown in notifications too: a server's error can quote the database's text, whose links are broken.
+const errorText = (err: unknown) => noLinks(err instanceof Error ? err.message : String(err));
 
 /** A document touched by a write: as it was before (null: the write inserted it) and its fingerprint after. */
 interface Recorded {
@@ -290,13 +296,15 @@ export class UndoHistory implements vscode.Disposable {
     } catch {
       this.entries = [];
     }
+    // A folder made by a version that left the mode to the umask is closed too, and with it the files it has.
+    await fs.chmod(this.dir, PRIVATE_FOLDER).catch(() => undefined);
     await this.prune(true).catch(() => undefined);
   }
 
   private async writeIndex(): Promise<void> {
-    await fs.mkdir(this.dir, { recursive: true });
+    await fs.mkdir(this.dir, { recursive: true, mode: PRIVATE_FOLDER });
     const tmp = path.join(this.dir, `${INDEX}.tmp`);
-    await fs.writeFile(tmp, JSON.stringify(this.entries));
+    await fs.writeFile(tmp, JSON.stringify(this.entries), { mode: PRIVATE_FILE });
     await fs.rename(tmp, path.join(this.dir, INDEX));
   }
 
@@ -352,8 +360,8 @@ export class UndoHistory implements vscode.Disposable {
     const data = await gzipAsync(Buffer.from(text, 'utf8'));
     entry.size = data.length;
     await this.exclusive(async () => {
-      await fs.mkdir(this.dir, { recursive: true });
-      await fs.writeFile(this.file(entry.id), data);
+      await fs.mkdir(this.dir, { recursive: true, mode: PRIVATE_FOLDER });
+      await fs.writeFile(this.file(entry.id), data, { mode: PRIVATE_FILE });
       this.entries.unshift(entry);
       await this.prune();
       await this.writeIndex();
@@ -635,7 +643,7 @@ export class HistoryPanel {
   private html(): string {
     const webview = this.panel.webview;
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...p));
-    const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+    const nonce = newNonce();
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>

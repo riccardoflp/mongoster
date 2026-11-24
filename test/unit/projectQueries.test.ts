@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fake = vi.hoisted(() => ({
   folders: [] as { uri: { scheme: string; fsPath: string }; name: string }[],
-  setting: '.mongoster/queries',
+  /** The user's value of the setting, and the workspace's. */
+  setting: '.mongoster/queries' as string | undefined,
+  workspaceSetting: undefined as string | undefined,
   warnings: [] as string[],
   quickPick: undefined as unknown,
 }));
@@ -27,7 +29,9 @@ vi.mock('vscode', async () => {
       get workspaceFolders() {
         return fake.folders;
       },
-      getConfiguration: () => ({ get: () => fake.setting }),
+      getConfiguration: () => ({
+        inspect: () => ({ key: 'mongoster.savedQueries.folder', defaultValue: '.mongoster/queries', globalValue: fake.setting, workspaceValue: fake.workspaceSetting }),
+      }),
       onDidChangeConfiguration: () => disposable,
       onDidChangeWorkspaceFolders: () => disposable,
       createFileSystemWatcher: () => ({ ...disposable, onDidCreate: () => disposable, onDidChange: () => disposable, onDidDelete: () => disposable }),
@@ -42,7 +46,7 @@ vi.mock('vscode', async () => {
   };
 });
 
-const { ProjectQueries } = await import('../../src/projectQueries');
+const { ProjectQueries, staysInWorkspace } = await import('../../src/projectQueries');
 
 let dir: string;
 const context = () => ({ globalState: { get: () => undefined, update: () => Promise.resolve() } }) as never;
@@ -53,6 +57,7 @@ beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mongoster-queries-'));
   fake.folders = [{ uri: { scheme: 'file', fsPath: dir }, name: 'repo' }];
   fake.setting = '.mongoster/queries';
+  fake.workspaceSetting = undefined;
   fake.warnings = [];
   fake.quickPick = undefined;
 });
@@ -119,5 +124,35 @@ describe('ProjectQueries', () => {
     } finally {
       fs.rmSync(other, { recursive: true, force: true });
     }
+  });
+
+  it('takes the folder set by the workspace only inside the workspace', async () => {
+    const store = ProjectQueries.init(context());
+    fake.workspaceSetting = 'db/queries';
+    expect(store.folders()).toEqual([{ folder: path.join(dir, 'db', 'queries'), root: dir, label: 'repo' }]);
+    expect(fake.warnings).toEqual([]);
+
+    // Outside: the user's own value stays, with one warning for each refused value.
+    fake.setting = 'mine';
+    for (const outside of [path.join(os.tmpdir(), 'elsewhere'), '~/.ssh', '~', '../../etc', 'a/../../b', 'C:\\Users\\x', '\\\\server\\share']) {
+      fake.warnings = [];
+      fake.workspaceSetting = outside;
+      expect(store.folders(), outside).toEqual([{ folder: path.join(dir, 'mine'), root: dir, label: 'repo' }]);
+      store.folders();
+      expect(fake.warnings, outside).toHaveLength(1);
+      expect(fake.warnings[0]).toContain('set by this workspace');
+    }
+
+    // Without a value of the user, the default.
+    fake.setting = undefined;
+    expect(store.folders()).toEqual([{ folder: path.join(dir, '.mongoster', 'queries'), root: dir, label: 'repo' }]);
+    fake.workspaceSetting = '../outside';
+    expect(await store.save(scope, 'Q', find('{}'))).toBe('.mongoster/queries/shop/orders/q.json');
+    expect(fs.existsSync(path.join(dir, '..', 'outside'))).toBe(false);
+  });
+
+  it('knows which folders stay in the workspace', () => {
+    for (const inside of ['.mongoster/queries', 'queries', './a/b', 'a/../b', '.', '~queries']) expect(staysInWorkspace(inside), inside).toBe(true);
+    for (const outside of ['..', '../x', 'a/../..', '/etc', '~', '~/x', '~\\x', 'C:\\x', 'C:/x', '\\\\server\\share\\x']) expect(staysInWorkspace(outside), outside).toBe(false);
   });
 });

@@ -8,6 +8,7 @@ import type { RedisOplogSettings } from './shared/oplog';
 import { parseRedisUrl, testRedis } from './redisOplog';
 import { ConnectionOptions, tunnelTarget } from './transport';
 import { errorMessage } from './tree';
+import { newNonce } from './nonce';
 
 /** The redis-oplog section of the form: the Redis URL (secret) and the settings; undefined when off. */
 export type RedisOplogForm = { url: string; settings: RedisOplogSettings } | undefined;
@@ -247,7 +248,7 @@ export class ConnectionEditor {
   private html(): string {
     const webview = this.panel.webview;
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...p));
-    const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+    const nonce = newNonce();
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>

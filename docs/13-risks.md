@@ -29,8 +29,7 @@ file, a race).
 | RS5 | risk | The desktop app without a keychain stores secrets in `secrets.json` as `plain:<value>`, without telling the user (T2, `connection.secrets`). | Connection strings with passwords in clear text in the user's profile. | sometimes (Linux without a keyring) | M3: warn, and ask before storing in clear text |
 | RS6 | risk | `Without passwords` and the passphrase leave `proxyPassword`, `AWS_SESSION_TOKEN` and, in two formats, `tlsCertificateKeyFilePassword` in clear text in exported files (T1, `connection.export`). | A credential leaks through a file the user believed safe to share. | sometimes | M3 |
 | RS7 | risk | The connection form receives the connection string and the Redis URL with their passwords (T3, `connection.form`). | A secret is in a webview's memory; the README says it never is. | often | M3: send them without the password, keep the saved one when the field is left empty |
-| RS14 | risk | With `mongoster.mcp.readDocuments` off, `current_operations`, `list_saved_queries` and `mongoster_writes` still return values (`mcp.read-documents`). | Values reach the AI when the user turned that off. | often | M3 |
-| RS15 | risk | `list_connections`, `list_databases`, `list_collections` are not bounded by `MAX_OUTPUT`, and some commands run without `maxTimeMS` (`mcp.output-limits`). | A slow or huge answer to the AI. | rarely | M4 |
+| RS15 | risk | `list_connections`, `list_databases`, `list_collections` are not bounded by `MAX_OUTPUT` (`mcp.output-limits`). | A slow or huge answer to the AI. | rarely | M4 |
 | RS16 | risk | Files read from outside (imports, connection files, backups) are read whole, without a size limit (T5). | A huge or crafted file makes Mongoster run out of memory. | rarely | M5 |
 | RS17 | risk | Playgrounds run in any workspace, trusted or not (T6, Q8). | Code from someone else's repository runs with the user's connections when the user runs it. | rarely | M5, after Q8 |
 
@@ -46,7 +45,7 @@ file, a race).
 
 | | Kind | What | If it bites | How likely | What we do |
 | --- | --- | --- | --- | --- | --- |
-| RS20 | debt | No tests for `src/history.ts`, `src/manage.ts`, `src/definitionFs.ts`, the MCP server's HTTP handling, and the host classes in general; many cards say **Tested by**: *none*. | RS1 to RS13 went unnoticed; a change to the undo history is unchecked. | — | M3: a test with each fix; then by area in M5 |
+| RS20 | debt | No tests for `src/history.ts`, `src/manage.ts`, `src/definitionFs.ts` and the host classes in general; many cards say **Tested by**: *none*. | RS1 to RS13 went unnoticed; a change to the undo history is unchecked. | — | M3: a test with each fix; then by area in M5 |
 | RS21 | debt | Mongoster's own file formats have no version field (Q3, R15.1). | The first change of format cannot tell old files from damaged ones (see RS1, RS2). | — | M3, with RS1 and RS2 |
 | RS22 | debt | No linter: the import rules of R1.2 and R1.3 for modules no webview imports, and the size limits of R6.4, are checked by review only (Q4). | Layers leak; files keep growing. | — | M4 |
 | RS23 | debt | `catalog.py` is not in the CI (Q6). | Cards drift from the code without anyone noticing. | — | M4 |

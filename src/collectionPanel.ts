@@ -33,8 +33,10 @@ import { RelationsCache } from './relationsAnalysis';
 import type { RelGraph } from './shared/relations';
 import { collectionReferences } from './shared/references';
 import { readFormatRules } from './shared/formatting';
+import { noLinks } from './shared/plainText';
 import { queryBarHtml } from './queryBarHtml';
 import { POSITION_SETTING, QueryPane, queryPaneSave, readQueryPane } from './shared/queryPane';
+import { newNonce } from './nonce';
 
 const { EJSON } = BSON;
 /** Documents sampled for the autocompletion of field names and values. */
@@ -608,7 +610,7 @@ export class CollectionPanel {
       return;
     }
     void vscode.commands.executeCommand('mongoster.refresh');
-    const open = await vscode.window.showInformationMessage(`Created view ${this.target.database}.${name}.`, 'Open View');
+    const open = await vscode.window.showInformationMessage(noLinks(`Created view ${this.target.database}.${name}.`), 'Open View');
     if (open === 'Open View') {
       CollectionPanel.show(this.context, this.connections, this.documents, { ...this.target, collection: name, view: true, readOnly: true });
     }
@@ -769,7 +771,8 @@ export class CollectionPanel {
     const shown = m.array ? `${m.array}[].${field.slice(m.array.length + 1)}` : field;
     const invalid = fieldPathError(field);
     if (invalid) {
-      void vscode.window.showErrorMessage(`${field}: ${invalid}.`);
+      // Field names come from the documents: in a notification their links are broken.
+      void vscode.window.showErrorMessage(noLinks(`${field}: ${invalid}.`));
       return;
     }
     if (m.array && m.action !== 'remove') {
@@ -812,7 +815,7 @@ export class CollectionPanel {
         const [n, reached, overwrites] = await Promise.all([count(op.filter), count(op.reached), count(op.overwrites)]);
         const skipped = reached > n ? `${docs(reached - n)} with ${field} or ${to} inside an array ${reached - n === 1 ? 'is' : 'are'} left out: $rename can't go through arrays.` : '';
         if (!n) {
-          void vscode.window.showInformationMessage(`No document ${scope} has ${field}.${skipped ? ` ${skipped}` : ''}`);
+          void vscode.window.showInformationMessage(noLinks(`No document ${scope} has ${field}.${skipped ? ` ${skipped}` : ''}`));
           return;
         }
         const replaced = overwrites ? `${docs(overwrites)} already ${overwrites === 1 ? 'has' : 'have'} ${to}: its value is replaced by that of ${field}.` : '';
@@ -831,7 +834,7 @@ export class CollectionPanel {
               ? `${docs(reached - n)} where ${m.array} isn't an array ${reached - n === 1 ? 'is' : 'are'} left out.`
               : `${docs(reached - n)} where ${field} is inside an array ${reached - n === 1 ? 'is' : 'are'} left out: remove it from the elements with Update many and $[].`;
         if (!n) {
-          void vscode.window.showInformationMessage(`No document ${scope} has ${shown}.${skipped ? ` ${skipped}` : ''}`);
+          void vscode.window.showInformationMessage(noLinks(`No document ${scope} has ${shown}.${skipped ? ` ${skipped}` : ''}`));
           return;
         }
         const what = m.array ? `${shown} from the elements of ${m.array} in` : `${field} from`;
@@ -858,7 +861,7 @@ export class CollectionPanel {
         const [n, reached] = await Promise.all([count(op.filter), count(op.reached)]);
         const skipped = reached > n ? `${docs(reached - n)} where ${field} is inside an array ${reached - n === 1 ? 'is' : 'are'} left out.` : '';
         if (!n) {
-          void vscode.window.showInformationMessage(`No value of ${field} ${scope} needs converting to ${type}: null, missing values and arrays are left as they are.`);
+          void vscode.window.showInformationMessage(noLinks(`No value of ${field} ${scope} needs converting to ${type}: null, missing values and arrays are left as they are.`));
           return;
         }
         const keep = "Values that can't be converted keep their value and type; null and arrays are left as they are.";
@@ -1130,7 +1133,7 @@ export class CollectionPanel {
   private html(): string {
     const webview = this.panel.webview;
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...p));
-    const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+    const nonce = newNonce();
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>

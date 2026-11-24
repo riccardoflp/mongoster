@@ -168,7 +168,9 @@ Each rule answers a threat of [10-security.md](10-security.md).
 - **R14.4** A webview shows values from the database as text (`textContent`), never as HTML. *Answers T7.* *Followed:
   the only `innerHTML` with text escapes it first (`markdown` in `src/standalone/shell/dom.ts`).*
 - **R14.5** The MCP server listens only on `127.0.0.1` and refuses a request without the access token, from another
-  host or from another origin. *Answers T8.* *Followed (`mcp.server`).*
+  host or from another origin, and a JSON-RPC batch of more than 20 messages. Mongoster never sends the access token
+  over HTTP: a window asks another one for the port with a proof of having it (an HMAC of a nonce, the time and the
+  port). *Answers T8.* *Followed (`mcp.server`); checked by `test/unit/mcpHttp.test.ts`.*
 - **R14.6** An SSH server's key is confirmed by the user the first time and checked every time after. *Answers T4.*
   *Followed.*
 

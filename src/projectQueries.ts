@@ -19,6 +19,7 @@ import {
   queryFilePath,
   serializeProjectQuery,
 } from './shared/savedQueries';
+import { noLinks } from './shared/plainText';
 
 /** The project folder chosen when there are no workspace folders (the desktop app). */
 const PROJECT_FOLDER_KEY = 'mongoster.savedQueries.projectFolder';
@@ -57,6 +58,21 @@ function inside(folder: string, file: string): boolean {
   return !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
+const isHome = (setting: string) => /^~([/\\]|$)/.test(setting);
+
+/**
+ * Whether a folder set by the workspace stays inside it: a relative path that doesn't climb out. The
+ * settings of a workspace come with the repository, so with them its author would choose where on the
+ * disk Mongoster reads, writes and deletes query files.
+ */
+export function staysInWorkspace(setting: string): boolean {
+  if (path.isAbsolute(setting) || path.win32.isAbsolute(setting) || isHome(setting)) return false;
+  const root = path.resolve('workspace');
+  return inside(root, path.resolve(root, setting));
+}
+
+const nonEmpty = (value: unknown) => (typeof value === 'string' && value.trim()) || undefined;
+
 const exists = (p: string) => fs.promises.stat(p).then(
   () => true,
   () => false,
@@ -85,6 +101,8 @@ export class ProjectQueries implements vscode.Disposable {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private loading: Promise<void> | undefined;
   private again = false;
+  /** The workspace's value of the setting that was refused: the warning is shown once for each. */
+  private refused: string | undefined;
 
   private constructor(private readonly context: vscode.ExtensionContext) {
     this.subscriptions = [
@@ -98,8 +116,8 @@ export class ProjectQueries implements vscode.Disposable {
 
   /** The folders of the project's queries: from the setting, in each workspace folder (or the chosen project folder) when it is relative. */
   folders(): QueriesFolder[] {
-    let setting = vscode.workspace.getConfiguration('mongoster.savedQueries').get<string>('folder', DEFAULT_QUERIES_FOLDER)?.trim() || DEFAULT_QUERIES_FOLDER;
-    if (setting === '~' || setting.startsWith('~/') || setting.startsWith('~\\')) setting = path.join(os.homedir(), setting.slice(1));
+    let setting = this.setting();
+    if (isHome(setting)) setting = path.join(os.homedir(), setting.slice(1));
     if (path.isAbsolute(setting)) return [{ folder: path.normalize(setting), label: path.basename(setting) }];
     const workspace = (vscode.workspace.workspaceFolders ?? []).filter((f) => f.uri.scheme === 'file');
     const roots = workspace.length
@@ -110,8 +128,8 @@ export class ProjectQueries implements vscode.Disposable {
 
   /** Whether the project folder comes from the workspace or the setting (rather than being chosen in Mongoster). */
   private get folderFromWorkspace(): boolean {
-    const setting = vscode.workspace.getConfiguration('mongoster.savedQueries').get<string>('folder', DEFAULT_QUERIES_FOLDER)?.trim() || DEFAULT_QUERIES_FOLDER;
-    return path.isAbsolute(setting) || /^~([/\\]|$)/.test(setting) || !!vscode.workspace.workspaceFolders?.some((f) => f.uri.scheme === 'file');
+    const setting = this.setting();
+    return path.isAbsolute(setting) || isHome(setting) || !!vscode.workspace.workspaceFolders?.some((f) => f.uri.scheme === 'file');
   }
 
   /** The project's saved queries of a collection. */
@@ -228,7 +246,27 @@ export class ProjectQueries implements vscode.Disposable {
   }
 
   private relativeSetting(): string {
-    return vscode.workspace.getConfiguration('mongoster.savedQueries').get<string>('folder', DEFAULT_QUERIES_FOLDER)?.trim() || DEFAULT_QUERIES_FOLDER;
+    return this.setting();
+  }
+
+  /**
+   * The setting mongoster.savedQueries.folder. The user's own value may be any folder; the value of the
+   * workspace or of one of its folders is taken only when it stays inside the workspace folder, and is
+   * otherwise ignored with a warning, as if it weren't set.
+   */
+  private setting(): string {
+    const found = vscode.workspace.getConfiguration('mongoster.savedQueries').inspect<string>('folder');
+    const own = nonEmpty(found?.globalValue) ?? nonEmpty(found?.defaultValue) ?? DEFAULT_QUERIES_FOLDER;
+    const workspace = nonEmpty(found?.workspaceFolderValue) ?? nonEmpty(found?.workspaceValue);
+    if (workspace === undefined) return own;
+    if (staysInWorkspace(workspace)) return workspace;
+    if (this.refused !== workspace) {
+      this.refused = workspace;
+      void vscode.window.showWarningMessage(
+        `Mongoster ignored the folder of the project's saved queries set by this workspace (${noLinks(workspace)}): a workspace can only set a folder inside itself. To use that folder, set mongoster.savedQueries.folder in your user settings.`,
+      );
+    }
+    return own;
   }
 
   /** Asks for the project folder (the repository) and remembers it; false when cancelled. */
@@ -238,7 +276,7 @@ export class ProjectQueries implements vscode.Disposable {
       const open = 'Open Setting';
       const answer = await vscode.window.showInformationMessage(
         `The project's saved queries are in ${folders.map((f) => f.folder).join(', ')}.`,
-        { detail: 'They follow the workspace folders and the setting mongoster.savedQueries.folder: set it to an absolute path to use another folder.' },
+        { detail: 'They follow the workspace folders and the setting mongoster.savedQueries.folder: set it to an absolute path in your user settings to use another folder.' },
         open,
       );
       if (answer === open) await vscode.commands.executeCommand('workbench.action.openSettings', 'mongoster.savedQueries.folder');

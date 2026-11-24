@@ -11,7 +11,7 @@ const host = (readDocuments: boolean): ToolHost => ({
   workspace: {} as WorkspaceHost,
 });
 
-const DOCUMENT_TOOLS = ['aggregate', 'distinct_values', 'find_documents', 'mongoster_write_details', 'watch_changes', 'write_history'];
+const DOCUMENT_TOOLS = ['aggregate', 'distinct_values', 'explain_query', 'find_documents', 'mongoster_write_details', 'watch_changes', 'write_history'];
 
 describe('mcpTools', () => {
   const all = mcpTools(host(true));

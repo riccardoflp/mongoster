@@ -1,7 +1,7 @@
 // GridFS buckets: one tab per bucket listing its files, to upload, download, open, preview, rename and
 // delete them, and to edit their metadata. Files are streamed in both directions.
 import * as vscode from 'vscode';
-import { createReadStream, createWriteStream, promises as fsp } from 'fs';
+import { createReadStream, createWriteStream, promises as fsp, rmSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { pipeline } from 'stream/promises';
@@ -16,6 +16,7 @@ import { bucketCollection, colorOf } from './shared/collectionColors';
 import { relaxEjson, toShell } from './shared/query';
 import { toBson } from './queries';
 import { errorMessage } from './tree';
+import { newNonce } from './nonce';
 
 const { EJSON } = BSON;
 const canonical = (v: unknown) => EJSON.serialize(v, { relaxed: false }) as unknown;
@@ -96,6 +97,45 @@ export function filesFilter(search: string): Document {
   if (!text) return {};
   if (text.startsWith('{')) return toBson(text, 'Filter') ?? {};
   return { filename: { $regex: text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } };
+}
+
+// The copies that `Open` makes. They hold data of the database, so they go in a folder that only the user
+// can read and whose name nobody can know in advance: a fixed name under the shared temporary folder could
+// be read by the other users of the machine, or prepared by one of them as a link to somewhere else.
+let openFolder: Promise<string> | undefined;
+
+/** The folder of the files opened from GridFS: made once per run, deleted when Mongoster is deactivated or its process ends. */
+function folderForOpening(context: vscode.ExtensionContext): Promise<string> {
+  openFolder ??= (async () => {
+    // mkdtemp gives the folder a random name and the mode 0700.
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'mongoster-gridfs-'));
+    const remove = () => {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // A file still open in another program (on Windows) stays: the system's cleanup of the temporary folder takes it.
+      }
+    };
+    process.once('exit', remove);
+    context.subscriptions.push({
+      dispose: () => {
+        openFolder = undefined;
+        process.off('exit', remove);
+        remove();
+      },
+    });
+    return dir;
+  })().catch((err: unknown) => {
+    openFolder = undefined;
+    throw err;
+  });
+  return openFolder;
+}
+
+/** The name of the copy of a file: the last part of its name in the bucket, without what a path gives a meaning to. */
+export function openedFileName(filename: string): string {
+  const name = path.basename(filename.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_'));
+  return !name || name === '.' || name === '..' ? 'file' : name;
 }
 
 /** Byte counter for the progress notifications. */
@@ -397,13 +437,14 @@ export class GridFSPanel {
     this.post({ type: 'action', ok: true, message: `Downloaded ${file.filename} (${size(file.length)}) to ${to.fsPath}.` });
   }
 
-  private async save(file: GridFile, to: string, title: string): Promise<void> {
+  /** Writes the file to `to`; `mode` is given for a copy that only the user may read. */
+  private async save(file: GridFile, to: string, title: string, mode?: number): Promise<void> {
     const bucket = await this.bucket();
     await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title, cancellable: true }, async (progress, token) => {
       const stream = bucket.openDownloadStream(idOf(file.key));
       const abort = token.onCancellationRequested(() => void stream.abort().catch(() => undefined));
       try {
-        await pipeline(stream, counter(file.length, (done) => progress.report({ message: `${size(done)} of ${size(file.length)}` })), createWriteStream(to));
+        await pipeline(stream, counter(file.length, (done) => progress.report({ message: `${size(done)} of ${size(file.length)}` })), createWriteStream(to, { mode }));
       } catch (err) {
         await fsp.rm(to, { force: true });
         throw token.isCancellationRequested ? new Error('Download cancelled.') : err;
@@ -413,13 +454,24 @@ export class GridFSPanel {
     });
   }
 
-  /** Downloads to a temporary folder and opens it in VS Code (text, images, PDFs… as VS Code shows them). */
+  /**
+   * Downloads a copy to a private temporary folder and opens it: in VS Code in an editor (text, images… as
+   * VS Code shows them), in the desktop app with the program of the operating system, when the file's type
+   * is one that programs only read (the app's `vscode.open` decides; otherwise it shows the copy in its folder).
+   */
   private async open(key: string): Promise<void> {
     const file = await this.file(key);
-    const dir = path.join(os.tmpdir(), 'mongoster-gridfs', Buffer.from(`${targetKey(this.target)}\u0000${key}`).toString('base64url').slice(0, 48));
-    await fsp.mkdir(dir, { recursive: true });
-    const to = path.join(dir, path.basename(file.filename.replace(/[\\/:*?"<>|]/g, '_')) || 'file');
-    await this.save(file, to, `Opening ${file.filename}`);
+    let root = await folderForOpening(this.context);
+    // A cleanup of the temporary folder may have taken it during a long run: a new one, never the old name again.
+    if (!(await fsp.lstat(root).then((s) => s.isDirectory(), () => false))) {
+      openFolder = undefined;
+      root = await folderForOpening(this.context);
+    }
+    // A folder per file, so that the copy keeps the file's name.
+    const dir = path.join(root, Buffer.from(`${targetKey(this.target)}\u0000${key}`).toString('base64url').slice(0, 48));
+    await fsp.mkdir(dir, { recursive: true, mode: 0o700 });
+    const to = path.join(dir, openedFileName(file.filename));
+    await this.save(file, to, `Opening ${file.filename}`, 0o600);
     await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(to), { preview: true });
   }
 
@@ -428,7 +480,7 @@ export class GridFSPanel {
     const type = file.contentType ?? contentTypeOf(file.filename);
     const image = !!type && IMAGE_TYPES.has(type);
     if (image && file.length > PREVIEW_IMAGE_MAX) {
-      this.post({ type: 'preview', key, kind: 'binary', error: `The image is larger than ${size(PREVIEW_IMAGE_MAX)}: Open shows it in VS Code.` });
+      this.post({ type: 'preview', key, kind: 'binary', error: `The image is larger than ${size(PREVIEW_IMAGE_MAX)}: use Open to see it.` });
       return;
     }
     const end = image ? file.length : Math.min(file.length, PREVIEW_TEXT_MAX);
@@ -455,7 +507,7 @@ export class GridFSPanel {
   private html(): string {
     const webview = this.panel.webview;
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...p));
-    const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+    const nonce = newNonce();
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>

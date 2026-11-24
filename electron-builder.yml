@@ -21,6 +21,18 @@ extraMetadata:
   main: dist/app/main.js
 npmRebuild: false
 
+# Switches of the packaged Electron, set in its binary: the installed app can't be started as a plain Node.js
+# (ELECTRON_RUN_AS_NODE), be given options or a debugger from outside (NODE_OPTIONS, --inspect), or load its
+# code from an "app" folder put beside app.asar. `npm run app` runs the Electron of npm, which they don't touch.
+# The validation of app.asar's content (enableEmbeddedAsarIntegrityValidation) is left off until the app is
+# signed with a certificate: without one, whoever can change app.asar can change the binary's fuses as well.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableCookieEncryption: true
+  onlyLoadAppFromAsar: true
+
 win:
   target: nsis
 nsis:

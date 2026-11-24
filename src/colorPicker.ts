@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { paintTab } from './connectionColors';
 import { type Color, readColor } from './shared/colors';
 import type { ColorPickerHostMessage, ColorPickerViewMessage } from './shared/messages';
+import { newNonce } from './nonce';
 
 /** The tab open now: opening another one closes it, as a second quick pick closes the first. */
 let open: vscode.WebviewPanel | undefined;
@@ -39,7 +40,7 @@ export function pickCustomColor(context: vscode.ExtensionContext, title: string,
 
 function html(webview: vscode.Webview, extensionUri: vscode.Uri, title: string): string {
   const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, ...p));
-  const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+  const nonce = newNonce();
   const text = title.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
   return /* html */ `<!DOCTYPE html>
 <html lang="en">

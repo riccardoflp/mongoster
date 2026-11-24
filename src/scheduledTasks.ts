@@ -7,6 +7,7 @@ import type { Scheduler } from './scheduler';
 import { errorMessage } from './tree';
 import { DEFAULT_PATTERN, describeSchedule, taskErrors, type ScheduledTask } from './shared/schedule';
 import type { ScheduleHostMessage, ScheduleViewMessage, ScheduledTaskView } from './shared/messages';
+import { newNonce } from './nonce';
 
 /** Where the Back Up command saved last: the default folder of a new task. */
 const BACKUP_FOLDER_KEY = 'mongoster.backupFolder';
@@ -214,7 +215,7 @@ export class ScheduledTasksPanel {
   private html(): string {
     const webview = this.panel.webview;
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...p));
-    const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+    const nonce = newNonce();
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>

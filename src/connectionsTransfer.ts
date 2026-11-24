@@ -14,6 +14,7 @@ import {
   PassphraseError,
   PortableConnection,
   SecretsMode,
+  securityNotes,
   serializeConnections,
   uniqueName,
 } from './shared/connectionsFile';
@@ -34,9 +35,7 @@ function summary(c: PortableConnection): string {
     c.excluded && 'excluded from searches',
     c.exclusions && `${plural(c.exclusions.length, 'database or collection', 'databases or collections')} excluded from searches`,
     c.readOnly && 'read-only',
-    c.tls && 'TLS',
-    c.ssh && `SSH ${c.ssh.username}@${c.ssh.host}`,
-    c.redis && 'redis-oplog',
+    ...securityNotes(c),
     ...c.notes,
   ]
     .filter(Boolean)

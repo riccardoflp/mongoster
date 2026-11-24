@@ -79,6 +79,8 @@ Install a `.vsix` with `code --install-extension mongoster-<version>.vsix`.
 
 `.vscodeignore` is an allowlist: only the files it names go in the `.vsix` (the bundles in `dist/`, `media/`, `package.json`, `README.md`, `LICENSE`, `CHANGELOG.md`). A new webview bundle must be added there. The desktop app takes everything in `dist/` and `media/` (`electron-builder.yml`); nothing from `node_modules` is shipped, esbuild bundles it all.
 
+The packaged app has Electron fuses set (`electronFuses` in `electron-builder.yml`): `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` and `--inspect` do nothing on it, and it loads its code only from `app.asar`. Debug with `npm run app`, which runs the Electron of npm. The validation of `app.asar`'s content is off until the app is signed with a certificate.
+
 An installer is built on the system it is for (a macOS disk image can only be made on macOS). The macOS and Windows builds are not signed with a certificate yet.
 
 ## CI
@@ -92,7 +94,7 @@ An installer is built on the system it is for (a macOS disk image can only be ma
 
 - **The tag and the version**: the tag is `v` + the version of `package.json`, `CHANGELOG.md` has its `## <version>` section, and the tagged commit is on `main`; otherwise nothing else runs.
 - **Build**: the whole of `build.yml` on that commit.
-- **Publish on the Marketplace**: waits for the maintainer's approval in the GitHub environment `marketplace`, then publishes the `.vsix` that Build made with `vsce publish --oidc` (trusted publishing, no token stored). A version already on the Marketplace is skipped.
+- **Publish on the Marketplace**: waits for the maintainer's approval in the GitHub environment `marketplace`, then publishes the `.vsix` that Build made with `vsce publish --oidc` (trusted publishing, no token stored). This job installs with `npm ci --ignore-scripts`: no install script of the development tree runs where the Marketplace's token can be asked for. A version already on the Marketplace is skipped.
 - **The draft release on GitHub**: a draft release on the tag with the `.vsix`, the installers and the version's section of `CHANGELOG.md` as notes, for the maintainer to read and publish. A run again on the same tag replaces the files and keeps the notes.
 
 It can be run again by hand from the Actions tab, with the tag chosen in `Use workflow from`.

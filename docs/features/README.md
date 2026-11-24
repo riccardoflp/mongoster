@@ -211,11 +211,11 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | [`mcp.access-token`](12-mcp.md#mcpaccess-token--generate-a-new-access-token) | Generate a new access token | Operation | Documented |
 | [`mcp.setup`](12-mcp.md#mcpsetup--set-up-mcp-server-for-ai-assistants) | Set Up MCP Server for AI Assistants… | Operation | Documented |
 | [`mcp.change-port`](12-mcp.md#mcpchange-port--change-mcp-server-port) | Change MCP Server Port… | Operation | Documented |
-| [`mcp.read-documents`](12-mcp.md#mcpread-documents--the-tools-offered-without-reading-documents) | The tools offered without reading documents | Derivation | Differs |
+| [`mcp.read-documents`](12-mcp.md#mcpread-documents--the-tools-offered-without-reading-documents) | The tools offered without reading documents | Derivation | Documented |
 | [`mcp.protocol`](12-mcp.md#mcpprotocol--answer-a-message-of-the-model-context-protocol) | Answer a message of the Model Context Protocol | Derivation | Documented |
 | [`mcp.arguments`](12-mcp.md#mcparguments--read-the-arguments-of-a-tool) | Read the arguments of a tool | Derivation | Documented |
 | [`mcp.output-limits`](12-mcp.md#mcpoutput-limits--bound-what-a-tool-returns-and-how-long-it-runs) | Bound what a tool returns and how long it runs | Derivation | Differs |
-| [`mcp.refuse-write-stages`](12-mcp.md#mcprefuse-write-stages--refuse-pipelines-with-out-or-merge) | Refuse pipelines with $out or $merge | Derivation | Documented |
+| [`mcp.refuse-write-stages`](12-mcp.md#mcprefuse-write-stages--refuse-pipelines-that-write-are-not-a-plain-read-or-read-a-system-collection) | Refuse pipelines that write, are not a plain read, or read a system collection | Derivation | Documented |
 | [`mcp.log`](12-mcp.md#mcplog--the-mongoster-mcp-output-channel) | The Mongoster MCP output channel | View | Documented |
 | [`mcp.data-tools`](12-mcp.md#mcpdata-tools--explore-the-connections-and-read-documents) | Explore the connections and read documents | Read | Documented |
 | [`mcp.debugging-tools`](12-mcp.md#mcpdebugging-tools--follow-what-an-application-writes) | Follow what an application writes | Read | Documented |

@@ -15,10 +15,14 @@ The values of the `mongoster.*` settings as the user set them, or their defaults
   `src/scheduledTasks.ts`, `src/collectionPanel.ts`, `src/extension.ts`; in the desktop app
   `src/standalone/vscode/storage.ts` and `src/standalone/shell/settings.ts`.
 - **Entry points**: VS Code's Settings; in the desktop app the Settings tab (`Ctrl+,`).
-- **Tested by**: none.
+- **Tested by**: `test/unit/projectQueries.test.ts` ("takes the folder set by the workspace only inside the workspace", "knows which folders stay in the workspace") for `mongoster.savedQueries.folder`; none for the others.
 
 Acceptance:
 
+- [ ] `mongoster.savedQueries.folder` set by the workspace or one of its folders is taken only when it stays inside
+  the workspace folder (`staysInWorkspace` in `src/projectQueries.ts`); otherwise one warning per refused value
+  (**Mongoster ignored the folder of the project's saved queries set by this workspace (<value>)…**) and the user's
+  value, or the default, applies. The user's own value may be any folder.
 - [ ] A change to `mongoster.history.*`, `mongoster.mcp.*`, `mongoster.savedQueries.folder` or
   `mongoster.scheduledTasks.*` takes effect without a reload: those modules listen to `onDidChangeConfiguration`.
 - [ ] `mongoster.references.detect` and `mongoster.mcp.readDocuments` are read each time they are needed.
@@ -94,7 +98,7 @@ Acceptance:
 | `mongoster.mcp.enabled` | `false` | Runs the MCP server. | `mcp.server` |
 | `mongoster.mcp.port` | `37017` | The MCP server's port on `127.0.0.1`. | `mcp.server`, `mcp.change-port` |
 | `mongoster.mcp.readDocuments` | `true` | Offers the tools that return documents and values. | `mcp.read-documents` |
-| `mongoster.savedQueries.folder` | `.mongoster/queries` | Where saved queries of the project are, relative to each workspace folder or absolute. | the saved queries area (no cards yet) |
+| `mongoster.savedQueries.folder` | `.mongoster/queries` | Where saved queries of the project are, relative to each workspace folder or absolute. A workspace's own value must stay inside the workspace (no absolute path, `~` or `..` that climbs out): otherwise it is ignored with a warning and the user's value or the default applies. | the saved queries area (no cards yet) |
 | `mongoster.references.detect` | `true` | Finds references in the background when a collection of a database is first opened. | the relations area (no cards yet) |
 | `app.theme` | `system` | Desktop app only: the color theme, or `system` to follow the operating system. | `settings.appearance` |
 | `app.layout` | `islands` | Desktop app only: `islands` or `compact`. | `settings.appearance` |

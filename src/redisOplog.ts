@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { BSON, ClientSession, Collection, Document } from 'mongodb';
 import type { ConnectionManager } from './connections';
 import { documentFields, inScope, OplogEvent, oplogMessage, RedisOplogSettings, updatedFields } from './shared/oplog';
+import { noLinks } from './shared/plainText';
 
 const TIMEOUT = 5_000;
 const BATCH = 1000;
@@ -19,7 +20,8 @@ export interface OplogTarget {
   collection: string;
 }
 
-const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+// Shown in notifications too: a server's error can quote the database's text, whose links are broken.
+const errorText = (err: unknown) => noLinks(err instanceof Error ? err.message : String(err));
 const canonical = (v: unknown) => BSON.EJSON.stringify({ v }, { relaxed: false });
 
 class RedisError extends Error {}

@@ -7,7 +7,22 @@ import { McpTool, ToolError, boolArg, intArg, stringArg, truncate } from '../sha
 import { analyzeRelations } from '../relationsAnalysis';
 import type { Relation } from '../shared/relations';
 import { formatShardKey } from '../sharding';
-import { COUNT_CAP, MAX_OUTPUT, MAX_TIME_MS, ToolContext, collectionProp, connectionProp, databaseProp, filterProp, message, plural, shell } from './context';
+import {
+  COUNT_CAP,
+  MAX_OUTPUT,
+  MAX_TIME_MS,
+  READ_DOCUMENTS,
+  ToolContext,
+  collectionProp,
+  connectionProp,
+  databaseProp,
+  filterProp,
+  plural,
+  refuseSystemCollection,
+  shape,
+  shell,
+  validatorShape,
+} from './context';
 
 /** Documents sampled per collection by describe_relations: the diagram's default. */
 export const RELATIONS_SAMPLE = 100;
@@ -26,7 +41,7 @@ export function dataTools(ctx: ToolContext): McpTool[] {
       name: 'count_documents',
       title: 'Count documents',
       description:
-        `The exact number of documents that match a filter (counting stops at ${COUNT_CAP.toLocaleString('en-US')} unless exact is true); with no filter, also the fast estimate from the collection's metadata. Use it instead of find_documents when only the number matters.`,
+        `The exact number of documents that match a filter (counting stops at ${COUNT_CAP.toLocaleString('en-US')} unless exact is true); with no filter, also the fast estimate from the collection's metadata. Use it instead of find_documents when only the number matters. With ${READ_DOCUMENTS} off only the total is given: a filter is refused.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -45,9 +60,14 @@ export function dataTools(ctx: ToolContext): McpTool[] {
         const exact = boolArg(args, 'exact', false);
         const { database, collection, coll } = await target(args);
         const empty = !Object.keys(q.filter).length;
+        // A count per filter tells the values one question at a time ({ email: /^a/ }), and a filter that
+        // fails on purpose gets them quoted in the server's error: without readDocuments, only the total.
+        if (!empty && !ctx.readDocuments()) {
+          throw new ToolError(`A filter is refused because ${READ_DOCUMENTS} is off: counting what matches a filter tells the values of the documents. Call it without a filter for the total, or use open_query to show the user the matching documents.`);
+        }
         const [count, estimated] = await Promise.all([
           coll.countDocuments(q.filter, { ...(!exact && { limit: COUNT_CAP }), maxTimeMS: MAX_TIME_MS }).catch((err) => {
-            throw new ToolError(`The count failed: ${message(err)}`);
+            throw new ToolError(`The count failed: ${ctx.errorText(err)}`);
           }),
           empty ? coll.estimatedDocumentCount({ maxTimeMS: MAX_TIME_MS }).catch(() => undefined) : undefined,
         ]);
@@ -91,7 +111,7 @@ export function dataTools(ctx: ToolContext): McpTool[] {
         try {
           [result] = await coll.aggregate(distinctPipeline(field, q.filter, limit), { maxTimeMS: MAX_TIME_MS, allowDiskUse: true, promoteLongs: false }).toArray();
         } catch (err) {
-          throw new ToolError(`The aggregation failed: ${message(err)}`);
+          throw new ToolError(`The aggregation failed: ${ctx.errorText(err)}`);
         }
         const values = (result?.values ?? []) as { _id: { v?: unknown }; n: unknown; types: string[] }[];
         const total = Number(result?.total?.[0]?.n ?? 0);
@@ -129,6 +149,7 @@ export function dataTools(ctx: ToolContext): McpTool[] {
         const info = connection(args);
         const database = required(args, 'database');
         const collection = stringArg(args, 'collection');
+        if (collection) refuseSystemCollection(database, collection);
         const sample = intArg(args, 'sample', RELATIONS_SAMPLE, 1, RELATIONS_SAMPLE_MAX);
         const db = (await client(info)).db(database);
         const graph = await analyzeRelations(db, sample);
@@ -165,7 +186,7 @@ export function dataTools(ctx: ToolContext): McpTool[] {
       run: async (args) => {
         const { info, database, collection } = await target(args);
         const c = await client(info);
-        const [entry] = (await c.db(database).listCollections({ name: collection }, { nameOnly: false }).toArray()) as Document[];
+        const [entry] = (await c.db(database).listCollections({ name: collection }, { nameOnly: false, maxTimeMS: MAX_TIME_MS }).toArray()) as Document[];
         if (!entry) throw new ToolError(`${database}.${collection} doesn't exist on ${info.name}: use list_collections.`);
         // Ignored where config.collections can't be read; on a server that isn't a mongos it is empty.
         const sharded = await c
@@ -173,7 +194,7 @@ export function dataTools(ctx: ToolContext): McpTool[] {
           .collection('collections')
           .findOne({ _id: `${database}.${collection}`, dropped: { $ne: true } } as Document, { maxTimeMS: MAX_TIME_MS })
           .catch(() => null);
-        return truncate(optionsText(`${database}.${collection}`, entry, sharded), MAX_OUTPUT);
+        return truncate(optionsText(`${database}.${collection}`, entry, sharded, ctx.readDocuments()), MAX_OUTPUT);
       },
     },
   ];
@@ -221,8 +242,12 @@ const ACTIONS: Record<string, string> = {
   errorAndLog: 'invalid writes are refused and logged',
 };
 
-/** collection_options' text, from a listCollections entry and the config.collections document when sharded. */
-export function optionsText(name: string, entry: Document, sharded: Document | null): string {
+/**
+ * collection_options' text, from a listCollections entry and the config.collections document when sharded.
+ * Without `values` (readDocuments off) the validator and the view's pipeline are given without their
+ * literal values: field names, types and operators only.
+ */
+export function optionsText(name: string, entry: Document, sharded: Document | null, values = true): string {
   const o: Document = { ...(entry.options ?? {}) };
   const take = (key: string) => {
     const v = o[key];
@@ -238,7 +263,7 @@ export function optionsText(name: string, entry: Document, sharded: Document | n
 
   const viewOn = take('viewOn');
   const pipeline = take('pipeline');
-  if (view) lines.push(`View on: ${String(viewOn)}`, `Pipeline: ${shell(pipeline ?? [], 2)}`);
+  if (view) lines.push(`View on: ${String(viewOn)}`, values ? `Pipeline: ${shell(pipeline ?? [], 2)}` : `Pipeline (values replaced by ?, ${READ_DOCUMENTS} is off): ${shape(pipeline ?? [])}`);
 
   const validator = take('validator') as Document | undefined;
   const level = take('validationLevel') as string | undefined;
@@ -250,7 +275,7 @@ export function optionsText(name: string, entry: Document, sharded: Document | n
     const act = action ?? 'error';
     lines.push(
       '',
-      `Validator (${what}): ${shell(validator, 2)}`,
+      values ? `Validator (${what}): ${shell(validator, 2)}` : `Validator (${what}; field names and types only, ${READ_DOCUMENTS} is off): ${validatorShape(validator)}`,
       `validationLevel: ${lvl}${level ? '' : ' (default)'}${LEVELS[lvl] ? `: ${LEVELS[lvl]}` : ''}.`,
       `validationAction: ${act}${action ? '' : ' (default)'}${ACTIONS[act] ? `: ${ACTIONS[act]}` : ''}.`,
     );

@@ -161,11 +161,12 @@ The MCP server never writes. The playground's writes are published to redis-oplo
 
 `src/mcpServer.ts` serves the Model Context Protocol on `127.0.0.1` (Streamable HTTP, plain JSON, bearer token in the secret storage) for AI assistants. `src/shared/mcp.ts` is the protocol and the `McpTool` type; `src/mcpTools.ts` has the basic tools and gathers the groups of `src/mcp/`:
 
-- `context.ts`: what the tools share (finding the connection, database and collection, parsing arguments, `MAX_OUTPUT`, `MAX_TIME_MS`).
+- `http.ts`: the HTTP side, without a `vscode` import and tested against a real socket: the checks of each request (`Host`, `Origin`, path, access token, method, body size, batch size) and the release of the port between windows, asked with a proof of having the token and never with the token.
+- `context.ts`: what the tools share (finding the connection, database and collection, refusing the `system.*` collections and the pipelines that are not a plain read, parsing arguments, `MAX_OUTPUT`, `MAX_TIME_MS`, and what `mongoster.mcp.readDocuments` off replaces: values by shapes, a server error's text by its code).
 - `data.ts`, `performance.ts`, `topology.ts`, `changes.ts`: read-only tools without a `vscode` import, tested against a real mongod.
 - `workspace.ts`: tools on Mongoster's own state and tabs, through the `WorkspaceHost` interface that `src/extension.ts` implements.
 
-Tools that return documents or field values are offered only with `mongoster.mcp.readDocuments` on. No tool writes, kills an operation or changes the profiler.
+Tools that return documents or field values are offered only with `mongoster.mcp.readDocuments` on, and with it off the tools that stay give no value either. No tool writes, kills an operation or changes the profiler.
 
 ## Code map
 
@@ -179,6 +180,8 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `src/manage.ts` – creating, renaming and dropping databases and collections
 - `src/documentFs.ts` – `mongoster://` file system to open, edit and save documents in editor tabs
 - `src/definitionFs.ts` – `mongoster-def://` file system for view definitions and validation rules
+- `src/nonce.ts` – `newNonce()`, the nonce of a tab's Content-Security-Policy, from the system's random generator (no `vscode`)
+- `src/shared/plainText.ts` – `noLinks`: text from a database, a server or a file with its Markdown links broken, for notifications
 
 ### Connections UI
 - `src/connectionEditor.ts`, `src/webview/connectionEditor.ts`, `media/connectionEditor.css` – connection form (TLS, SSH, redis-oplog, test)
@@ -207,6 +210,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `pipeline.ts` – aggregation stages, templates, text ⇄ stages
 - `columns.ts` – columns model (nested fields, arrays) and the user's layout, for the table and CSV
 - `csv.ts` – CSV writing and parsing
+- `openable.ts` – the file types the desktop app's `vscode.open` hands to the operating system (documents and media that programs open as data); the others are shown in their folder
 - `formats.ts` – documents as text to copy (mongosh, EJSON, JSON Lines, JSON, YAML, insert commands) and the insert dialog's text back to documents
 - `schema.ts` – schema analysis of a sample and generated `$jsonSchema`
 - `explain.ts` – explain summary (also per shard) and suggested index
@@ -246,6 +250,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `src/transfer.ts` – export (JSON, JSON Lines, CSV) and import
 - `src/copy.ts` – copying a collection to another database or connection
 - `src/backup.ts`, `src/archive.ts` – backup and restore in mongodump's formats (folders, gzip, `--archive` / `.agz`)
+- `src/backupNames.ts` – the names of a folder backup's files and folders: collection and database names percent-encoded as mongodump does, and read back (also the plain names of earlier backups); no `vscode`
 - `src/generate.ts` – the test documents dialog, target and batches
 - `src/redisOplog.ts` – the RESP client and the sink that publishes writes for redis-oplog
 
@@ -259,9 +264,11 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 
 ### MCP server
 - `src/mcpServer.ts`, `src/mcpTools.ts`, `src/mcp/*.ts`, `src/shared/mcp.ts` – see [MCP server](#mcp-server)
+- `src/mcp/http.ts` – the MCP server's HTTP checks and the release of the port between windows, no `vscode` import
 
 ### Desktop app (`src/standalone/`)
 - `main.ts` – entry point: window, menu bar, tray, `mongoster-app://` protocol
+- `appFiles.ts` – which file of the app a URL of that protocol may read: inside the shell's folder, or inside `dist/` and `media/` for the webviews (no `electron`)
 - `preload.ts`, `protocol.ts` – the messages between the main process and the window
 - `theme.ts` – the base dark and light colors, a theme's variables from its palette, the preset colors Mongoster contributes (`src/shared/colors.ts`), the color theme file the extension reads the syntax colors from
 - `themes.ts` – the seventeen themes as data: id, name, kind, palette or exact colors, syntax colors, the window's color in the islands layout

@@ -8,6 +8,7 @@ import { applyOp, readStructure } from './structure';
 import { StructureDiff, diffStructure, diffTitle, orderForScript, planSummary } from './shared/structure';
 import type { StructureHostMessage, StructureSide, StructureViewMessage } from './shared/messages';
 import { errorMessage } from './tree';
+import { newNonce } from './nonce';
 
 export interface StructureTarget {
   connectionId: string;
@@ -303,7 +304,7 @@ export class StructurePanel {
   private html(): string {
     const webview = this.panel.webview;
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...p));
-    const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+    const nonce = newNonce();
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>

@@ -8,7 +8,7 @@ import { toBson } from '../queries';
 import { oplogEntry } from '../replication';
 import { isPlainObject, relaxEjson } from '../shared/query';
 import { isTransactionEntry } from '../shared/docHistory';
-import { MAX_OUTPUT, MAX_TIME_MS, ToolContext, connectionProp, message, plural, shell } from './context';
+import { MAX_OUTPUT, MAX_TIME_MS, ToolContext, connectionProp, isSystemCollection, message, plural, refuseSystemCollection, shell } from './context';
 
 const { EJSON } = BSON;
 
@@ -107,6 +107,7 @@ function scopeArgs(args: Record<string, unknown>): { database?: string; collecti
   const database = stringArg(args, 'database');
   const collection = stringArg(args, 'collection');
   if (collection && !database) throw new ToolError('collection needs database.');
+  if (database && collection) refuseSystemCollection(database, collection);
   return { database, collection };
 }
 
@@ -139,7 +140,7 @@ export function eventText(change: Document): string {
 export function changesTools(ctx: ToolContext): McpTool[] {
   const { connection, client } = ctx;
 
-  const isMongos = async (c: MongoClient) => (await c.db('admin').command({ hello: 1 })).msg === 'isdbgrid';
+  const isMongos = async (c: MongoClient) => (await c.db('admin').command({ hello: 1, maxTimeMS: MAX_TIME_MS })).msg === 'isdbgrid';
 
   return [
     {
@@ -189,11 +190,11 @@ export function changesTools(ctx: ToolContext): McpTool[] {
         }
 
         const c = await client(info);
-        const version = Number.parseInt(String((await c.db('admin').command({ buildInfo: 1 })).version ?? ''), 10);
+        const version = Number.parseInt(String((await c.db('admin').command({ buildInfo: 1, maxTimeMS: MAX_TIME_MS })).version ?? ''), 10);
         let preImages: boolean | undefined;
         let missing = false;
         if (database && collection) {
-          const list = await c.db(database).listCollections({ name: collection }, { nameOnly: false }).toArray().catch(() => undefined);
+          const list = await c.db(database).listCollections({ name: collection }, { nameOnly: false, maxTimeMS: MAX_TIME_MS }).toArray().catch(() => undefined);
           if (list) {
             missing = !list.length;
             preImages = !!(list[0]?.options as Document | undefined)?.changeStreamPreAndPostImages?.enabled;
@@ -326,7 +327,7 @@ export function changesTools(ctx: ToolContext): McpTool[] {
         }
 
         const c = await client(info);
-        const hello = await c.db('admin').command({ hello: 1 });
+        const hello = await c.db('admin').command({ hello: 1, maxTimeMS: MAX_TIME_MS });
         if (hello.msg === 'isdbgrid') throw new ToolError(`${info.name} is a sharded cluster (mongos): the oplog is on each shard. Use a connection to a shard's replica set, or watch_changes.`);
         if (!hello.setName) throw new ToolError(`The oplog exists only on replica sets: ${info.name} is a standalone server. (A single-node replica set is enough, e.g. mongod --replSet rs0 and rs.initiate().)`);
 
@@ -349,6 +350,8 @@ export function changesTools(ctx: ToolContext): McpTool[] {
             if (database) return ns.startsWith(`${database}.`);
             return true;
           }
+          // The writes to the system.* collections (users with their credentials, views…) are never shown.
+          if (isSystemCollection(ns.slice(ns.indexOf('.') + 1))) return false;
           if (collection && ns !== `${database}.${collection}`) return false;
           if (database && !ns.startsWith(`${database}.`)) return false;
           if (idText1 !== undefined) {
@@ -399,8 +402,8 @@ export function changesTools(ctx: ToolContext): McpTool[] {
         let last: Document | undefined;
         try {
           [[first], [last]] = await Promise.all([
-            oplog.find({}, { sort: { $natural: 1 }, limit: 1, projection: { ts: 1, wall: 1 } }).toArray(),
-            oplog.find({}, { sort: { $natural: -1 }, limit: 1, projection: { ts: 1, wall: 1 } }).toArray(),
+            oplog.find({}, { sort: { $natural: 1 }, limit: 1, projection: { ts: 1, wall: 1 }, maxTimeMS: MAX_TIME_MS }).toArray(),
+            oplog.find({}, { sort: { $natural: -1 }, limit: 1, projection: { ts: 1, wall: 1 }, maxTimeMS: MAX_TIME_MS }).toArray(),
           ]);
         } catch (err) {
           if (notAuthorized(err)) throw oplogAuthError(info);

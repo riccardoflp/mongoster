@@ -21,6 +21,7 @@ import {
   refKey,
   rowLabel,
   rowY,
+  safeBoxes,
   sampleFields,
   shownFields,
   singular,
@@ -352,6 +353,30 @@ describe('toSvg and describe', () => {
     expect(svg).not.toContain('a<b>');
     expect(svg).toContain('1,234 docs');
     expect(svg).toContain('recent_orders (view)');
+  });
+
+  it('writes only numbers as coordinates, whatever the webview sends', () => {
+    const { boxes } = layout(graph, false);
+    const [first, second, ...others] = boxes;
+    const hostile = [
+      { ...first, x: '0" onload="alert(1)' },
+      { ...second, w: Number.NaN },
+      { ...others[0], h: Number.POSITIVE_INFINITY },
+      { name: 'not a collection', x: 0, y: 0, w: 10, h: 10 },
+      null,
+      'box',
+      ...others.slice(1),
+      // A second box of a collection that has one already.
+      ...others.slice(1).map((b) => ({ ...b, x: 5 })),
+    ] as unknown as typeof boxes;
+    const svg = toSvg(graph, hostile, false);
+    expect(svg).not.toContain('onload');
+    expect(svg).not.toMatch(/NaN|Infinity|undefined/);
+    expect(svg.match(/<g>/g) ?? []).toHaveLength(others.length - 1);
+    expect(safeBoxes(graph, hostile)).toEqual(others.slice(1));
+    expect(safeBoxes(graph, 'boxes')).toEqual([]);
+    expect(safeBoxes(graph, [{ ...first, x: 1e9 }, { ...second, w: -1 }])).toEqual([]);
+    expect(toSvg(graph, [], false)).toContain('<svg');
   });
 
   it('describes a relation', () => {

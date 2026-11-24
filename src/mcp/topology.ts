@@ -8,7 +8,7 @@ import { McpTool, ToolError, intArg, stringArg, truncate } from '../shared/mcp';
 import { relaxEjson, toShell } from '../shared/query';
 import { helloMembers, oplogEntry, replMembers } from '../replication';
 import { shardingEvents, shardingStatus } from '../sharding';
-import { MAX_OUTPUT, MAX_TIME_MS, ToolContext, connectionProp, message, plural } from './context';
+import { MAX_OUTPUT, MAX_TIME_MS, READ_DOCUMENTS, ToolContext, connectionProp, message, plural } from './context';
 
 const { EJSON } = BSON;
 /** Databases and collections whose statistics are read in parallel. */
@@ -21,8 +21,10 @@ const percent = (part: number, whole: number) => (whole > 0 ? `${((part / whole)
 
 /** Missing a privilege: the server says "not authorized" / "Unauthorized" (code 13). */
 const isDenied = (err: unknown) => (err as { code?: unknown })?.code === 13 || /not authorized|unauthorized|requires authentication/i.test(message(err));
+/** How a tool words an error (ctx.errorText): the server's text, or only its code when values must not be shown. */
+type Say = (err: unknown) => string;
 /** The error, with the role to ask for when it is a missing privilege. */
-const failure = (err: unknown, role: string) => `${message(err).replace(/ to execute command \{[\s\S]*$/, '')}${isDenied(err) ? ` (needs ${role})` : ''}`;
+const failure = (err: unknown, role: string, say: Say) => `${say(err).replace(/ to execute command \{[\s\S]*$/, '')}${isDenied(err) ? ` (needs ${role})` : ''}`;
 
 async function inBatches<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = [];
@@ -55,6 +57,7 @@ export function formatDuration(seconds: number | undefined): string {
 /** The tools of this group. */
 export function topologyTools(ctx: ToolContext): McpTool[] {
   const { connection, client } = ctx;
+  const say = ctx.errorText;
   const connectionOnly = { type: 'object' as const, properties: { connection: connectionProp }, required: ['connection'], additionalProperties: false };
 
   return [
@@ -68,16 +71,16 @@ export function topologyTools(ctx: ToolContext): McpTool[] {
       run: async (args) => {
         const info = connection(args);
         const admin = (await client(info)).db('admin');
-        const hello = await admin.command({ hello: 1 });
+        const hello = await admin.command({ hello: 1, maxTimeMS: MAX_TIME_MS });
         let s: Document | undefined;
         const notes: string[] = [];
         try {
           s = await admin.command({ serverStatus: 1, repl: 0, metrics: 0, locks: 0, maxTimeMS: MAX_TIME_MS });
         } catch (err) {
-          notes.push(`serverStatus could not be read: ${failure(err, 'the clusterMonitor role')}. Only what hello and buildInfo tell is shown.`);
+          notes.push(`serverStatus could not be read: ${failure(err, 'the clusterMonitor role', say)}. Only what hello and buildInfo tell is shown.`);
         }
         let version = s?.version as string | undefined;
-        if (!version) version = await admin.command({ buildInfo: 1 }).then((b) => b.version as string, () => undefined);
+        if (!version) version = await admin.command({ buildInfo: 1, maxTimeMS: MAX_TIME_MS }).then((b) => b.version as string, () => undefined);
 
         const mongos = hello.msg === 'isdbgrid' || s?.process === 'mongos';
         const host = (s?.host as string | undefined) ?? (hello.me as string | undefined) ?? info.name;
@@ -140,9 +143,9 @@ export function topologyTools(ctx: ToolContext): McpTool[] {
         const database = stringArg(args, 'database');
         const limit = intArg(args, 'limit', 50, 1, 1000);
         const mc = await client(info);
-        const names = (await mc.db('admin').admin().listDatabases({ nameOnly: true })).databases.map((d) => d.name);
+        const names = (await mc.db('admin').admin().listDatabases({ nameOnly: true, maxTimeMS: MAX_TIME_MS })).databases.map((d) => d.name);
         if (database && !names.includes(database)) throw new ToolError(`The database ${database} doesn't exist on ${info.name}: use list_databases.`);
-        const stats = await inBatches(database ? [database] : names, (name) => databaseStats(mc, name));
+        const stats = await inBatches(database ? [database] : names, (name) => databaseStats(mc, name, say));
         const onDisk = (d: DbStats) => (d.storageSize ?? 0) + (d.indexSize ?? 0);
         stats.sort((a, b) => onDisk(b) - onDisk(a));
         const lines = database
@@ -153,7 +156,7 @@ export function topologyTools(ctx: ToolContext): McpTool[] {
           const sum = (k: keyof DbStats) => stats.reduce((a, d) => a + (typeof d[k] === 'number' ? (d[k] as number) : 0), 0);
           lines.push(`Total: ${count(sum('objects'))} documents, data ${formatBytes(sum('dataSize'))}, storage ${formatBytes(sum('storageSize'))}, indexes ${formatBytes(sum('indexSize'))}.`);
         }
-        if (database) lines.push('', ...(await collectionLines(mc.db(database), limit)));
+        if (database) lines.push('', ...(await collectionLines(mc.db(database), limit, say)));
         return truncate(lines.join('\n'), MAX_OUTPUT);
       },
     },
@@ -168,7 +171,7 @@ export function topologyTools(ctx: ToolContext): McpTool[] {
         const info = connection(args);
         const mc = await client(info);
         const admin = mc.db('admin');
-        const hello = await admin.command({ hello: 1 });
+        const hello = await admin.command({ hello: 1, maxTimeMS: MAX_TIME_MS });
         const me = (hello.me as string | undefined) ?? info.name;
         if (hello.msg === 'isdbgrid') return `${info.name} is a mongos (a sharded cluster's router), not a replica set member: use sharding_status for the shards, or connect to a shard's replica set to see its members.`;
         if (!hello.setName) return `${me} is a standalone server, not a replica set member: there are no members, no replication and no oplog.`;
@@ -180,12 +183,12 @@ export function topologyTools(ctx: ToolContext): McpTool[] {
         let settings: Document = {};
         if (st.status === 'fulfilled') {
           const config = conf.status === 'fulfilled' ? (conf.value.config as Document) : undefined;
-          if (conf.status === 'rejected') notes.push(`replSetGetConfig: ${failure(conf.reason, 'the clusterMonitor role')}: priority, votes, hidden, delay and tags are missing.`);
+          if (conf.status === 'rejected') notes.push(`replSetGetConfig: ${failure(conf.reason, 'the clusterMonitor role', say)}: priority, votes, hidden, delay and tags are missing.`);
           members = replMembers(relaxed(st.value.members) as unknown[], (relaxed(config?.members ?? []) as unknown[]) ?? []);
           term = num(st.value.term);
           settings = { ...(config?.settings ?? {}), protocolVersion: config?.protocolVersion };
         } else {
-          notes.push(`replSetGetStatus: ${failure(st.reason, 'the clusterMonitor role')}. Members are from hello alone: only names and which one is the primary, without health, lag or heartbeats.`);
+          notes.push(`replSetGetStatus: ${failure(st.reason, 'the clusterMonitor role', say)}. Members are from hello alone: only names and which one is the primary, without health, lag or heartbeats.`);
           members = helloMembers(hello);
         }
 
@@ -203,7 +206,7 @@ export function topologyTools(ctx: ToolContext): McpTool[] {
           s.protocolVersion !== undefined ? `protocol version ${num(s.protocolVersion)}` : '',
         ].filter(Boolean);
         if (settingsText.length) lines.push(`Settings: ${settingsText.join(', ')}.`);
-        lines.push('', await oplogLine(mc));
+        lines.push('', await oplogLine(mc, say));
         return truncate([...lines, ...notes.map((n) => `Note: ${n}`)].join('\n'), MAX_OUTPUT);
       },
     },
@@ -230,10 +233,10 @@ export function topologyTools(ctx: ToolContext): McpTool[] {
           try {
             events = await shardingEvents(mc, 'all', '', limit);
           } catch (err) {
-            eventsError = failure(err, 'the clusterMonitor role (read on the config database)');
+            eventsError = failure(err, 'the clusterMonitor role (read on the config database)', say);
           }
         }
-        return truncate(formatShardingStatus(status, events, eventsError), MAX_OUTPUT);
+        return truncate(formatShardingStatus(status, events, eventsError, ctx.readDocuments()), MAX_OUTPUT);
       },
     },
   ];
@@ -262,7 +265,7 @@ interface DbStats {
   error?: string;
 }
 
-async function databaseStats(client: MongoClient, name: string): Promise<DbStats> {
+async function databaseStats(client: MongoClient, name: string, say: Say): Promise<DbStats> {
   try {
     const s = await client.db(name).command({ dbStats: 1, maxTimeMS: MAX_TIME_MS });
     return {
@@ -276,7 +279,7 @@ async function databaseStats(client: MongoClient, name: string): Promise<DbStats
       indexSize: num(s.indexSize),
     };
   } catch (err) {
-    return { name, error: failure(err, 'the dbStats privilege on the database, e.g. the dbAdmin or clusterMonitor role') };
+    return { name, error: failure(err, 'the dbStats privilege on the database, e.g. the dbAdmin or clusterMonitor role', say) };
   }
 }
 
@@ -286,8 +289,8 @@ const dbLine = (d: DbStats) =>
     : `- ${d.name}: ${plural(d.collections ?? 0, 'collection')}${d.views ? `, ${plural(d.views, 'view')}` : ''}, ${plural(d.objects ?? 0, 'document')}, data ${formatBytes(d.dataSize)}, storage ${formatBytes(d.storageSize)}, ${count(d.indexes ?? 0)} ${d.indexes === 1 ? 'index' : 'indexes'} ${formatBytes(d.indexSize)}`;
 
 /** The collections of a database with their sizes ($collStats), largest first, and its views. */
-async function collectionLines(db: Db, limit: number): Promise<string[]> {
-  const infos = (await db.listCollections({}, { nameOnly: false }).toArray()).filter((c) => !c.name.startsWith('system.'));
+async function collectionLines(db: Db, limit: number, say: Say): Promise<string[]> {
+  const infos = (await db.listCollections({}, { nameOnly: false, maxTimeMS: MAX_TIME_MS }).toArray()).filter((c) => !c.name.startsWith('system.'));
   const views = infos.filter((c) => c.type === 'view').map((c) => c.name).sort();
   const colls = infos.filter((c) => c.type !== 'view');
   const stats = await inBatches(colls, async (c) => {
@@ -299,7 +302,7 @@ async function collectionLines(db: Db, limit: number): Promise<string[]> {
       const st = (s?.storageStats ?? {}) as Document;
       return { name: c.name, count: num(st.count), size: num(st.size), storage: num(st.storageSize), indexes: num(st.nindexes), indexSize: num(st.totalIndexSize), capped: st.capped === true };
     } catch (err) {
-      return { name: c.name, error: failure(err, 'the collStats privilege, e.g. the dbAdmin or clusterMonitor role') };
+      return { name: c.name, error: failure(err, 'the collStats privilege, e.g. the dbAdmin or clusterMonitor role', say) };
     }
   });
   stats.sort((a, b) => ('size' in b ? (b.size ?? 0) : -1) - ('size' in a ? (a.size ?? 0) : -1) || a.name.localeCompare(b.name));
@@ -339,7 +342,7 @@ function memberLine(m: ReplMember): string {
 }
 
 /** The oplog window and size, or why it could not be read. */
-async function oplogLine(client: MongoClient): Promise<string> {
+async function oplogLine(client: MongoClient, say: Say): Promise<string> {
   try {
     const oplog = client.db('local').collection('oplog.rs');
     const [[stats], [first], [last]] = await Promise.all([
@@ -355,7 +358,7 @@ async function oplogLine(client: MongoClient): Promise<string> {
     const max = num(storage.maxSize);
     return `Oplog: first entry ${from.time}, last entry ${to.time}: a window of ${(seconds / 3600).toFixed(seconds < 36_000 ? 2 : 1)} hours (a member that falls further behind needs a full resync). ${formatBytes(size)} used${max ? ` of ${formatBytes(max)} configured (${percent(size ?? 0, max)})` : ''}, ${count(num(storage.count) ?? 0)} ${num(storage.count) === 1 ? 'entry' : 'entries'}.`;
   } catch (err) {
-    return `Oplog: could not be read: ${failure(err, 'read access to the local database')}.`;
+    return `Oplog: could not be read: ${failure(err, 'read access to the local database', say)}.`;
   }
 }
 
@@ -377,8 +380,12 @@ function balanceText(c: ShardedCollectionInfo, s: ShardingStatus): string {
   return total > 0 && max >= (1.5 * total) / shards.length && max - Math.min(...sizes) > threshold ? `UNEVEN (the largest shard holds ${percent(max, total)} of the data)` : '';
 }
 
-/** What shardingStatus (and the recent events) found, as text for the model. */
-export function formatShardingStatus(s: ShardingStatus, events?: ShardingEvent[], eventsError?: string): string {
+/**
+ * What shardingStatus (and the recent events) found, as text for the model. Without `values` (readDocuments
+ * off) what quotes shard key values is left out: the bounds of the zones, the events' details (chunk ranges)
+ * and the text of the server's errors.
+ */
+export function formatShardingStatus(s: ShardingStatus, events?: ShardingEvent[], eventsError?: string, values = true): string {
   const me = s.me ?? 'This server';
   if (s.kind !== 'mongos') {
     return s.kind === 'shardMember'
@@ -448,7 +455,7 @@ export function formatShardingStatus(s: ShardingStatus, events?: ShardingEvent[]
         c.jumbo ? `${count(c.jumbo)} JUMBO` : '',
         data ? `data ${data}` : '',
         balanceText(c, s),
-        c.zones.length ? `zones ${c.zones.map((z) => `${z.zone} [${z.min} → ${z.max})`).join(', ')}` : '',
+        c.zones.length ? `zones ${values ? c.zones.map((z) => `${z.zone} [${z.min} → ${z.max})`).join(', ') : [...new Set(c.zones.map((z) => z.zone))].join(', ')}` : '',
       ].filter(Boolean);
       lines.push(`- ${c.ns}: ${parts.join('; ')}`);
     }
@@ -461,9 +468,11 @@ export function formatShardingStatus(s: ShardingStatus, events?: ShardingEvent[]
     lines.push('', `Recent events (config.changelog and balancer rounds), failures first${failed ? ` (${failed} failed)` : ''}:`);
     if (eventsError) lines.push(`- could not be read: ${eventsError}`);
     else if (!sorted.length) lines.push('- none');
-    for (const e of sorted) lines.push(`- ${e.time} ${e.error ? 'FAILED ' : ''}${e.what}${e.ns ? ` ${e.ns}` : ''}${e.shard ? ` on ${e.shard}` : ''}${e.summary ? `: ${e.summary}` : ''}`);
+    for (const e of sorted) lines.push(`- ${e.time} ${e.error ? 'FAILED ' : ''}${e.what}${e.ns ? ` ${e.ns}` : ''}${e.shard ? ` on ${e.shard}` : ''}${values && e.summary ? `: ${e.summary}` : ''}`);
+    if (!values && sorted.some((e) => e.summary)) lines.push(`(the events' details are left out: they quote shard key values and ${READ_DOCUMENTS} is off)`);
   }
 
-  if (s.errors.length) lines.push('', 'Could not be read (missing roles, usually clusterMonitor):', ...s.errors.map((e) => `- ${e}`));
+  // Each entry is "what was being read: the server's error": without values only what was being read.
+  if (s.errors.length) lines.push('', 'Could not be read (missing roles, usually clusterMonitor):', ...s.errors.map((e) => `- ${values ? e : e.split(': ')[0]}`));
   return lines.join('\n');
 }

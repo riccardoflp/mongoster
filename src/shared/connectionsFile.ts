@@ -196,6 +196,37 @@ function missingSecrets(c: PortableConnection): string[] {
   ].filter((n): n is string => !!n);
 }
 
+/** The host (and port) a URL of any scheme connects to, without its credentials; undefined when it can't be read. */
+function urlHost(url: string): string | undefined {
+  try {
+    return new URL(url.trim()).host || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * What a connection read from a file does that its name and host don't say: where else it connects and which
+ * safeguards it turns off. The import shows these before anything is saved, since the file may come from
+ * someone else. No password is ever part of them.
+ */
+export function securityNotes(c: PortableConnection): string[] {
+  const get = (k: string) => uriParam(c.uri, k);
+  const insecure = isTrue(get('tlsInsecure'));
+  const proxy = get('proxyHost');
+  const proxyPort = get('proxyPort');
+  return [
+    c.tls && 'TLS',
+    (c.tls?.allowInvalidCertificates || insecure || isTrue(get('tlsAllowInvalidCertificates'))) && 'invalid certificates allowed',
+    (c.tls?.allowInvalidHostnames || insecure || isTrue(get('tlsAllowInvalidHostnames'))) && 'invalid host names allowed',
+    proxy && `proxy ${proxy}${proxyPort ? `:${proxyPort}` : ''}`,
+    c.ssh && `SSH ${c.ssh.username}@${c.ssh.host}${c.ssh.port && c.ssh.port !== 22 ? `:${c.ssh.port}` : ''}`,
+    // The Redis server receives the ids and the names of the changed fields of every write: its host is said.
+    c.redis && `redis-oplog → ${urlHost(c.redis.url) ?? 'a host that could not be read'}`,
+    c.noHistory && 'no undo history',
+  ].filter((n): n is string => !!n);
+}
+
 // ---- colors
 
 /** Compass's color codes (use-connection-color.ts): Green, Teal, Blue, Iris, Purple, Red, Pink, Orange, Yellow, Gray. */

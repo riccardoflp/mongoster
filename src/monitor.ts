@@ -22,6 +22,7 @@ import { OpQuery, SlowOp, SlowOpSource, fromLogLine, fromProfileDoc, isNoise, sp
 import { helloMembers, oplogEntry, oplogFilter, replMembers } from './replication';
 import { setBalancer, setCollectionBalancing, shardingEvents, shardingStatus } from './sharding';
 import { errorMessage } from './tree';
+import { newNonce } from './nonce';
 
 const { EJSON } = BSON;
 
@@ -562,7 +563,7 @@ export class MonitorPanel {
   private html(): string {
     const webview = this.panel.webview;
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...p));
-    const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+    const nonce = newNonce();
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>

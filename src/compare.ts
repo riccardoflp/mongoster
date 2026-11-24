@@ -14,6 +14,7 @@ import type { CompareEntry, CompareHostMessage, CompareSide, CompareViewMessage 
 import { relaxEjson, toShell } from './shared/query';
 import { errorMessage } from './tree';
 import { UndoHistory } from './history';
+import { newNonce } from './nonce';
 
 const { EJSON } = BSON;
 
@@ -439,7 +440,7 @@ export class ComparePanel {
   private html(): string {
     const webview = this.panel.webview;
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...p));
-    const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+    const nonce = newNonce();
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>

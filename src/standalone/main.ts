@@ -8,6 +8,7 @@ import packageJSON from '../../package.json';
 import { activate } from '../extension';
 import { Scheduler } from '../scheduler';
 import { TRAY_SETTING } from '../scheduledTasks';
+import { appFile } from './appFiles';
 import type { HostMessage, ShellMessage } from './protocol';
 import * as vscode from './vscode';
 import { THEMES, themePreview } from './theme';
@@ -59,13 +60,16 @@ const MIME: Record<string, string> = {
   '.map': 'application/json; charset=utf-8',
 };
 
-async function serveFile(root: string, relative: string): Promise<Response> {
-  const file = path.resolve(root, `.${path.posix.normalize(`/${relative}`)}`);
-  if (file !== root && !file.startsWith(root + path.sep)) return new Response('Forbidden', { status: 403 });
+/** The folders of the app the webviews read from: the extension's scripts and styles. */
+const RESOURCE_FOLDERS = ['dist', 'media'];
+
+async function serveFile(root: string, pathname: string, folders?: readonly string[]): Promise<Response> {
+  const found = appFile(root, pathname, folders);
+  if ('status' in found) return new Response(found.status === 400 ? 'Bad request' : 'Forbidden', { status: found.status });
   try {
-    const body = await fs.promises.readFile(file);
+    const body = await fs.promises.readFile(found.file);
     return new Response(new Uint8Array(body), {
-      headers: { 'Content-Type': MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream', 'Access-Control-Allow-Origin': '*' },
+      headers: { 'Content-Type': MIME[path.extname(found.file).toLowerCase()] ?? 'application/octet-stream', 'Access-Control-Allow-Origin': '*' },
     });
   } catch {
     return new Response('Not found', { status: 404 });
@@ -75,13 +79,9 @@ async function serveFile(root: string, relative: string): Promise<Response> {
 function handleProtocol(): void {
   protocol.handle(APP_PROTOCOL, async (request) => {
     const url = new URL(request.url);
-    const relative = decodeURIComponent(url.pathname);
-    if (url.host === 'shell') return serveFile(shellDir, relative);
-    if (isResourceHost(url.host)) {
-      // The webviews only get what the extension ships: its scripts and its styles.
-      if (!/^\/(dist|media)\//.test(path.posix.normalize(relative))) return new Response('Forbidden', { status: 403 });
-      return serveFile(appRoot, relative);
-    }
+    if (url.host === 'shell') return serveFile(shellDir, url.pathname);
+    // The webviews only get what the extension ships: its scripts and its styles.
+    if (isResourceHost(url.host)) return serveFile(appRoot, url.pathname, RESOURCE_FOLDERS);
     const panel = panelOfHost(url.host);
     const html = panel === undefined ? undefined : panelDocument(panel);
     if (html === undefined) return new Response('Not found', { status: 404 });

@@ -8,7 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import { BSON, Document, MongoClient } from 'mongodb';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 import { readArchive } from '../../src/archive';
-import { CollectionRestore, archiveOf, scanArchive } from '../../src/backup';
+import { CollectionRestore, archiveOf, backupCollections, collectionsReplacedByViews, readBson, scanArchive, scanBackup, writeBackup } from '../../src/backup';
 
 const { Long, Decimal128, Int32, Double, Binary, BSONRegExp, Timestamp, ObjectId, UUID, MinKey, MaxKey, Code } = BSON;
 const SOURCE = 'mongoster_backup';
@@ -140,5 +140,108 @@ describe('backup to an .agz archive and restore', () => {
     await restore.add(Buffer.from(BSON.serialize({ _id: 'new', v: 3 })));
     expect(await restore.finish(false)).toMatchObject({ inserted: 1, skipped: 1, failed: 0 });
     expect(await coll(TARGET, 'existing').findOne({ _id: 'only' })).toMatchObject({ v: 1 });
+  });
+});
+
+describe('backup to a folder and restore', () => {
+  // Names MongoDB accepts and a path gives a meaning to.
+  const NAMES = ['plain', 'a/b', 'a\\b', 'a:b', 'con', '%2e%2e', 'up/../../../escaped', 'with space', `long/${'é'.repeat(100)}`];
+  const DB = 'mongoster_backup_names';
+
+  afterAll(async () => {
+    await client?.db(DB).dropDatabase();
+    await client?.db(`${DB}_restored`).dropDatabase();
+  });
+
+  it('keeps every file inside the backup folder, whatever the collections are called, and restores them by name', async () => {
+    const src = client.db(DB);
+    await src.dropDatabase();
+    for (const [i, name] of NAMES.entries()) await src.collection<Document>(name).insertMany([{ _id: 1, name, i } as Document, { _id: 2, name } as Document]);
+    await src.collection('plain').createIndex({ name: 1 }, { name: 'by_name' });
+
+    const outer = path.join(dir, 'outer');
+    const root = path.join(outer, 'deep', 'deeper', 'root');
+    fs.mkdirSync(path.dirname(root), { recursive: true });
+    const hooks = () => ({ progress: () => undefined, cancelled: () => false });
+    for (const format of ['gzip', 'plain'] as const) {
+      fs.rmSync(root, { recursive: true, force: true });
+      const stats = await writeBackup(client, [{ database: DB, collections: await backupCollections(client, DB) }], format, root, hooks);
+      expect(stats).toMatchObject({ collections: NAMES.length, documents: NAMES.length * 2, cancelled: false });
+
+      // Nothing but the database's folder, with two files per collection directly in it.
+      const written = (fs.readdirSync(outer, { recursive: true }) as string[]).filter((f) => fs.statSync(path.join(outer, f)).isFile());
+      expect(written.length).toBe(NAMES.length * 2);
+      for (const f of written) expect(path.dirname(path.join(outer, f))).toBe(path.join(root, DB));
+
+      const scanned = scanBackup(root);
+      expect(scanned.map((d) => d.name)).toEqual([DB]);
+      expect(scanned[0].collections.map((c) => c.name).sort()).toEqual([...NAMES].sort());
+
+      const target = client.db(`${DB}_restored`);
+      await target.dropDatabase();
+      for (const files of scanned[0].collections) {
+        const meta = BSON.EJSON.parse((files.metadata!.endsWith('.gz') ? zlib.gunzipSync(fs.readFileSync(files.metadata!)) : fs.readFileSync(files.metadata!)).toString('utf8'), { relaxed: false }) as Document;
+        expect(meta.collectionName).toBe(files.name);
+        const restore = await CollectionRestore.open(target, files.name, meta, true);
+        for await (const data of readBson(files.bson!)) await restore.add(data);
+        expect(await restore.finish(false)).toMatchObject({ inserted: 2, failed: 0, indexErrors: [] });
+      }
+      for (const name of NAMES) {
+        const [before, after] = [await raw(DB, name), await raw(`${DB}_restored`, name)];
+        expect(after.length).toBe(2);
+        expect(after.every((d, i) => d.equals(before[i]))).toBe(true);
+      }
+      expect((await target.collection('plain').listIndexes().toArray()).map((i) => i.name)).toContain('by_name');
+    }
+  });
+});
+
+describe('restore of a backup that is not trusted', () => {
+  const ttl = { key: { at: 1 }, name: 'at_ttl', expireAfterSeconds: 1 };
+  const other = { key: { n: 1 }, name: 'n_1' };
+  const old = { _id: 'old', at: new Date('2000-01-01T00:00:00Z'), n: 1 };
+
+  it("doesn't create a TTL index of the backup on a collection that was already there", async () => {
+    await coll(TARGET, 'kept').drop().catch(() => undefined);
+    await coll(TARGET, 'kept').insertOne(old);
+    const restore = await CollectionRestore.open(client.db(TARGET), 'kept', { indexes: [{ v: 2, key: { _id: 1 }, name: '_id_' }, ttl, other] }, false);
+    await restore.add(Buffer.from(BSON.serialize({ _id: 'new', at: new Date(), n: 2 })));
+    const result = await restore.finish(false);
+    expect(result).toMatchObject({ inserted: 1, indexes: 1 });
+    expect(result.indexErrors).toHaveLength(1);
+    expect(result.indexErrors[0]).toMatch(/^kept\.at_ttl: a TTL index \(expireAfterSeconds\) would make the server delete documents that were already in the collection/);
+    expect((await coll(TARGET, 'kept').listIndexes().toArray()).map((i) => i.name).sort()).toEqual(['_id_', 'n_1']);
+    expect(await coll(TARGET, 'kept').findOne({ _id: 'old' })).not.toBeNull();
+  });
+
+  it('says nothing of a TTL index the collection already has', async () => {
+    await coll(TARGET, 'has_ttl').drop().catch(() => undefined);
+    await coll(TARGET, 'has_ttl').insertOne({ _id: 'x', at: new Date() });
+    await coll(TARGET, 'has_ttl').createIndex({ at: 1 }, { name: 'at_ttl', expireAfterSeconds: 3600 * 24 * 365 });
+    const restore = await CollectionRestore.open(client.db(TARGET), 'has_ttl', { indexes: [{ ...ttl, expireAfterSeconds: new Int32(3600 * 24 * 365) }] }, false);
+    expect(await restore.finish(false)).toMatchObject({ indexes: 1, indexErrors: [] });
+    // The same key with another delay is a change to the collection's index: refused like a new one.
+    const changed = await CollectionRestore.open(client.db(TARGET), 'has_ttl', { indexes: [ttl] }, false);
+    expect((await changed.finish(false)).indexErrors).toHaveLength(1);
+    expect((await coll(TARGET, 'has_ttl').listIndexes().toArray()).find((i) => i.name === 'at_ttl')).toMatchObject({ expireAfterSeconds: 3600 * 24 * 365 });
+  });
+
+  it('creates the TTL indexes of a collection the restore creates, or drops first', async () => {
+    await coll(TARGET, 'fresh').drop().catch(() => undefined);
+    const created = await CollectionRestore.open(client.db(TARGET), 'fresh', { indexes: [{ ...ttl, expireAfterSeconds: 3600 * 24 * 365 }] }, false);
+    expect(await created.finish(false)).toMatchObject({ indexes: 1, indexErrors: [] });
+    const dropped = await CollectionRestore.open(client.db(TARGET), 'fresh', { indexes: [{ ...ttl, expireAfterSeconds: 3600 * 24 * 366 }] }, true);
+    expect(await dropped.finish(false)).toMatchObject({ indexes: 1, indexErrors: [] });
+    expect((await coll(TARGET, 'fresh').listIndexes().toArray()).find((i) => i.name === 'at_ttl')).toMatchObject({ expireAfterSeconds: 3600 * 24 * 366 });
+  });
+
+  it('tells which collections a view of the backup would replace', async () => {
+    const db = client.db(TARGET);
+    await db.collection('real').drop().catch(() => undefined);
+    await db.collection('a_view').drop().catch(() => undefined);
+    await coll(TARGET, 'real').insertOne({ _id: 1 });
+    await db.createCollection('a_view', { viewOn: 'real', pipeline: [] });
+    const views = ['real', 'a_view', 'missing'].map((name) => ({ database: TARGET, name }));
+    expect(await collectionsReplacedByViews(client, views)).toEqual([`${TARGET}.real`]);
   });
 });

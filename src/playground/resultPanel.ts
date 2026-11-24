@@ -5,6 +5,7 @@ import { ThemeColors } from '../themeColors';
 import { paintTab } from '../connectionColors';
 import type { ConnectionColor } from '../connections';
 import type { PlaygroundHostMessage, PlaygroundViewMessage } from '../shared/messages';
+import { newNonce } from '../nonce';
 
 export class PlaygroundResultPanel {
   private static current: PlaygroundResultPanel | undefined;
@@ -80,7 +81,7 @@ export class PlaygroundResultPanel {
   private html(): string {
     const webview = this.panel.webview;
     const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...p));
-    const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+    const nonce = newNonce();
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>

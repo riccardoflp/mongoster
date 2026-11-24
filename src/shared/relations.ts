@@ -450,8 +450,33 @@ export function toMermaid(graph: RelGraph, keysOnly: boolean): string {
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+/** Farther than any diagram reaches: a coordinate beyond it is not one a layout or a drag produced. */
+const MAX_COORDINATE = 1_000_000;
+
+/**
+ * The boxes of `graph` among what a webview sent: one per collection, with finite numbers in range. The
+ * coordinates are written into the SVG's attributes, so anything else (a string, NaN, a box of no
+ * collection) is dropped rather than written.
+ */
+export function safeBoxes(graph: RelGraph, boxes: unknown): Box[] {
+  if (!Array.isArray(boxes)) return [];
+  const names = new Set(graph.collections.map((c) => c.name));
+  const coordinate = (v: unknown, min: number) => (typeof v === 'number' && Number.isFinite(v) && v >= min && v <= MAX_COORDINATE ? v : undefined);
+  const safe: Box[] = [];
+  for (const box of boxes as unknown[]) {
+    if (!box || typeof box !== 'object') continue;
+    const { name, x, y, w, h } = box as Record<string, unknown>;
+    if (typeof name !== 'string' || !names.delete(name)) continue;
+    const at = { x: coordinate(x, -MAX_COORDINATE), y: coordinate(y, -MAX_COORDINATE), w: coordinate(w, 0), h: coordinate(h, 0) };
+    if (at.x === undefined || at.y === undefined || at.w === undefined || at.h === undefined) continue;
+    safe.push({ name, x: at.x, y: at.y, w: at.w, h: at.h });
+  }
+  return safe;
+}
+
 /** A standalone SVG of the diagram (light colours), with the boxes where they are on screen. */
-export function toSvg(graph: RelGraph, boxes: Box[], keysOnly: boolean): string {
+export function toSvg(graph: RelGraph, received: Box[], keysOnly: boolean): string {
+  const boxes = safeBoxes(graph, received);
   const pad = 20;
   const minX = Math.min(0, ...boxes.map((b) => b.x)) - pad;
   const minY = Math.min(0, ...boxes.map((b) => b.y)) - pad;

@@ -42,10 +42,14 @@ export type RunOutcome = 'done' | 'busy' | 'gone';
 
 const plural = (n: number, what: string) => `${n.toLocaleString('en-US')} ${what}${n === 1 ? '' : 's'}`;
 
+// The tasks say which connections are backed up and where to: only the user reads them (no effect on Windows).
+const PRIVATE_FILE = 0o600;
+const PRIVATE_FOLDER = 0o700;
+
 /** Writes a file at once: a reader never sees half of it. */
 function writeAtomic(file: string, value: unknown): void {
   const temp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
-  fs.writeFileSync(temp, JSON.stringify(value, null, 1));
+  fs.writeFileSync(temp, JSON.stringify(value, null, 1), { mode: PRIVATE_FILE });
   for (let attempt = 0; ; attempt++) {
     try {
       fs.renameSync(temp, file);
@@ -98,7 +102,13 @@ export class Scheduler implements vscode.Disposable {
     private readonly columns: (task: ScheduledTask) => TaskRunHooks['columns'],
   ) {
     this.dir = path.join(context.globalStorageUri.fsPath, 'scheduledTasks');
-    fs.mkdirSync(this.dir, { recursive: true });
+    fs.mkdirSync(this.dir, { recursive: true, mode: PRIVATE_FOLDER });
+    try {
+      // A folder made by a version that left the mode to the umask.
+      fs.chmodSync(this.dir, PRIVATE_FOLDER);
+    } catch {
+      // Not there to change (a file system without modes): the files still get theirs.
+    }
     this.load();
     // Changes made by the other windows show up at once where the file system says so, at the next tick otherwise.
     try {

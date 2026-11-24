@@ -66,19 +66,23 @@ connection file takes a hex color to its nearest old color and drops a new prese
 | `<global storage>/scheduledTasks/<id>.json` | JSON `TaskState`: the last scheduled time handled, the run log (last 20 runs), the outputs written | atomically | Yes, losing the log and the outputs that retention deletes |
 | `<global storage>/scheduledTasks/<id>.lock`, `<id>.cancel` | the lock of a run, the request to cancel it | by the window running the task | Yes |
 
+The files and folders above are written for the user only on macOS and Linux: files with mode `0600`, the `history/`
+and `scheduledTasks/` folders with `0700` (on Windows the profile folder's permissions do it). Folders made by a
+version before this are changed when Mongoster starts.
+
 ### Files in the user's places
 
 | Path | Format | Promise |
 | --- | --- | --- |
-| `.mongoster/queries/<database>/<collection>/<name>.json` (or `mongoster.savedQueries.folder`) | JSON: `name`, `description`, `database`, `collection`, optional `connection`, `filter` / `sort` / `projection` or `pipeline` in mongosh syntax, text on several lines as an array of lines | Shared through git by teams: other versions of Mongoster read and write the same files; invalid ones are skipped with a warning and `Open File` (D15) |
-| Backups: `.agz`, `.archive`, folders of `.bson` and `.metadata.json` (gzipped or not) | mongodump's formats | Readable by `mongorestore` and from `mongodump` ([D10](08-decisions.md#d10--backups-in-mongodumps-formats-written-by-mongoster)) |
+| `.mongoster/queries/<database>/<collection>/<name>.json` (or `mongoster.savedQueries.folder`; a value of that setting from the workspace's own settings is taken only inside the workspace) | JSON: `name`, `description`, `database`, `collection`, optional `connection`, `filter` / `sort` / `projection` or `pipeline` in mongosh syntax, text on several lines as an array of lines | Shared through git by teams: other versions of Mongoster read and write the same files; invalid ones are skipped with a warning and `Open File` (D15) |
+| Backups: `.agz`, `.archive`, folders of `.bson` and `.metadata.json` (gzipped or not) | mongodump's formats. In a folder, the names of the files and of the database folders are the collections' and databases' percent-encoded (`a/b` → `a%2Fb.bson`, `con` → `%63on.bson`; `backup.folder-layout`); backups written by versions up to 0.8.0 hold the names as they are, and are still read: a file name with a `%` is told apart by the `collectionName` of its metadata | Readable by `mongorestore` and from `mongodump` ([D10](08-decisions.md#d10--backups-in-mongodumps-formats-written-by-mongoster)) |
 | Exports: JSON, JSON Lines (canonical Extended JSON), CSV with a UTF-8 BOM | as `mongoexport` writes them, for JSON Lines | Importable again by Mongoster and `mongoimport` |
 | Connection files: Mongoster's JSON, Compass's JSON, lists of connection strings | `src/shared/connectionsFile.ts` | Compass reads Mongoster's Compass export, passwords included when encrypted with a passphrase. Mongoster's JSON may have `collectionColors`, `excluded` and `exclusions` per connection (added in 0.9.0); a file without them reads as before, and an older Mongoster ignores them |
 
 ### The desktop app
 
 Besides the equivalents above, in its folder: `secrets.json`, the settings as `settings.json`, `globalState` as a JSON
-file, `window.json` (the window's bounds), written atomically by `JsonFile` in `src/standalone/vscode/storage.ts`.
+file, `window.json` (the window's bounds), written atomically by `JsonFile` in `src/standalone/vscode/storage.ts`, with mode `0600` (not `window.json`); files written by an older version are changed when the app starts.
 `settings.json` also has the app's own `app.theme` and `app.layout`. `app.theme` was `system`, `dark` or `light`
 before the other themes came; those values still name the same themes (Mongoster Dark and Light). An unknown value,
 from a later version, reads as the default.

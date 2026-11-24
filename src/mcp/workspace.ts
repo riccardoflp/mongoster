@@ -7,8 +7,12 @@ import type { HistoryEntry, HistoryUsage, MonitorTab, QueryText, SavedQuery } fr
 import { McpTool, ToolError, boolArg, intArg, stringArg, truncate } from '../shared/mcp';
 import { inScope, oplogMessage } from '../shared/oplog';
 import type { PipelineStage } from '../shared/pipeline';
+import { shapeOf } from '../shared/profile';
+import { parseQuery } from '../shared/query';
 import {
   MAX_OUTPUT,
+  MAX_TIME_MS,
+  READ_DOCUMENTS,
   ToolContext,
   collectionProp,
   connectionProp,
@@ -19,6 +23,7 @@ import {
   pipelineProp,
   plural,
   projectionProp,
+  refuseSystemCollection,
   shell,
   sortProp,
 } from './context';
@@ -94,29 +99,44 @@ const hideUrls = (text: string) => text.replace(/rediss?:\/\/\S+/gi, '<Redis URL
 /** Stored mongosh text on one line. */
 const oneLine = (text: string) => text.trim().replace(/\s*\n\s*/g, ' ');
 
-/** One line of the undo history. */
-function entryLine(e: HistoryEntry): string {
+/**
+ * One line of the undo history. Without `values` (readDocuments off) the label is left out: it names
+ * the document written ("Delete document ObjectId(…)") or quotes the filter of an update.
+ */
+function entryLine(e: HistoryEntry, values = true): string {
   const counts = [e.inserted && `${e.inserted.toLocaleString('en-US')} inserted`, e.updated && `${e.updated.toLocaleString('en-US')} updated`, e.deleted && `${e.deleted.toLocaleString('en-US')} deleted`].filter(Boolean);
   return [
     `- id ${e.id}`,
     time(e.time),
     `${e.connectionName} › ${e.database}.${e.collection}`,
-    e.label,
+    ...(values ? [e.label] : []),
     counts.join(', ') || 'no documents',
     ...(e.undone ? [`undone ${time(e.undone)}`] : []),
     ...(e.undoOf ? [`undo of ${e.undoOf}`] : []),
   ].join(' · ');
 }
 
-/** A saved or recent query as indented lines: filter, sort, projection, or the pipeline. */
-function queryLines(q: SavedQuery): string[] {
+/** Stored mongosh text with its literal values replaced by ?; nothing of it when it can't be parsed. */
+function shapeOfText(text: string, keepNumbers = false): string {
+  try {
+    return shapeOf(parseQuery(text), keepNumbers);
+  } catch {
+    return '(not shown: it could not be parsed)';
+  }
+}
+
+/**
+ * A saved or recent query as indented lines: filter, sort, projection, or the pipeline. Without `values`
+ * (readDocuments off) as their shapes: the user's queries carry values of the documents they look for.
+ */
+function queryLines(q: SavedQuery, values = true): string[] {
   if (q.pipeline) {
-    const stage = (s: PipelineStage) => `{ ${s.op.trim()}: ${oneLine(s.body)} }`;
+    const stage = (s: PipelineStage) => `{ ${s.op.trim()}: ${values ? oneLine(s.body) : shapeOfText(s.body, /^\$(sort|project)$/.test(s.op.trim()))} }`;
     const enabled = q.pipeline.filter((s) => s.enabled);
     const disabled = q.pipeline.filter((s) => !s.enabled);
     return [`  pipeline: [ ${enabled.map(stage).join(', ')} ]`, ...(disabled.length ? [`  disabled stages: ${disabled.map(stage).join(', ')}`] : [])];
   }
-  const parts = (['filter', 'sort', 'projection'] as const).filter((k) => q[k].trim()).map((k) => `  ${k}: ${oneLine(q[k])}`);
+  const parts = (['filter', 'sort', 'projection'] as const).filter((k) => q[k].trim()).map((k) => `  ${k}: ${values ? oneLine(q[k]) : shapeOfText(q[k], k !== 'filter')}`);
   return parts.length ? parts : ['  filter: {}'];
 }
 
@@ -151,6 +171,7 @@ export function workspaceTools(ctx: ToolContext, host: WorkspaceHost): McpTool[]
         const collection = stringArg(args, 'collection');
         if (collection && !database) throw new ToolError('collection needs database.');
         const limit = intArg(args, 'limit', 20, 1, 200);
+        const values = ctx.readDocuments();
         const all = (await host.history()).sort((a, b) => b.time - a.time);
         const matching = all.filter((e) => (!info || e.connectionId === info.id) && (!database || e.database === database) && (!collection || e.collection === collection));
         const usage = host.historyUsage();
@@ -159,7 +180,8 @@ export function workspaceTools(ctx: ToolContext, host: WorkspaceHost): McpTool[]
           matching.length
             ? `${plural(matching.length, 'write')}${where ? ` ${where}` : ''} in the undo history${matching.length > limit ? `, the newest ${limit}` : ''} (newest first):`
             : `No writes${where ? ` ${where}` : ''} in the undo history.`,
-          ...matching.slice(0, limit).map(entryLine),
+          ...matching.slice(0, limit).map((e) => entryLine(e, values)),
+          ...(values || !matching.length ? [] : [`What each write did is left out (it names documents and quotes filters) because ${READ_DOCUMENTS} is off: open_history shows it to the user.`]),
           '',
           `The history keeps up to ${plural(usage.maxEntries, 'write')} from the last ${plural(usage.maxDays, 'day')}, of up to ${plural(usage.maxDocuments, 'document')} each: older or larger writes aren't listed.`,
         ];
@@ -301,6 +323,8 @@ export function workspaceTools(ctx: ToolContext, host: WorkspaceHost): McpTool[]
         const info = connection(args);
         const database = required(args, 'database');
         const collection = required(args, 'collection');
+        refuseSystemCollection(database, collection);
+        const values = ctx.readDocuments();
         const { saved, recent } = host.queries({ connectionId: info.id, database, collection });
         if (!saved.length && !recent.length) {
           // Nothing stored: say so, unless the collection doesn't exist.
@@ -314,17 +338,17 @@ export function workspaceTools(ctx: ToolContext, host: WorkspaceHost): McpTool[]
             ? `- ${JSON.stringify(q.name ?? '')}, in the project: ${q.file}${q.connection ? ` (only on the connection ${q.connection})` : ''}`
             : `- ${JSON.stringify(q.name ?? '')}, saved for the user ${time(q.at)}`,
           ...(q.description ? [`  description: ${oneLine(q.description)}`] : []),
-          ...queryLines(q),
+          ...queryLines(q, values),
         ];
         const counts = [project.length && `${project.length} in the project`, user.length && `${user.length} for the user`].filter(Boolean).join(', ');
         const lines = [
-          `Queries of ${database}.${collection} on ${info.name}.`,
+          `Queries of ${database}.${collection} on ${info.name}${values ? '' : ` (their values are replaced by ? because ${READ_DOCUMENTS} is off)`}.`,
           '',
           saved.length ? `Saved (${counts}):` : 'Saved: none.',
           ...[...project, ...user].flatMap(savedLines),
           '',
           recent.length ? `Recent (${recent.length}, newest first):` : 'Recent: none.',
-          ...[...recent].sort((a, b) => b.at - a.at).flatMap((q) => [`- run ${time(q.at)}`, ...queryLines(q)]),
+          ...[...recent].sort((a, b) => b.at - a.at).flatMap((q) => [`- run ${time(q.at)}`, ...queryLines(q, values)]),
         ];
         return truncate(lines.join('\n'), MAX_OUTPUT);
       },
@@ -353,7 +377,7 @@ export function workspaceTools(ctx: ToolContext, host: WorkspaceHost): McpTool[]
         if (collection) await target(args);
         let standalone = false;
         try {
-          const hello = await (await client(info)).db('admin').command({ hello: 1 });
+          const hello = await (await client(info)).db('admin').command({ hello: 1, maxTimeMS: MAX_TIME_MS });
           standalone = !hello.setName && hello.msg !== 'isdbgrid';
         } catch {
           // The tab shows the error.

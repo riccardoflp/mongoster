@@ -8,23 +8,17 @@
 import * as vscode from 'vscode';
 import * as http from 'http';
 import * as net from 'net';
-import { randomBytes, timingSafeEqual } from 'crypto';
-import { McpTool, PARSE_ERROR, ServerInfo, handleMessage } from './shared/mcp';
+import { randomBytes } from 'crypto';
+import { McpTool, ServerInfo, handleMessage, logText } from './shared/mcp';
+import { MCP_PATH as PATH, ProofChecker, handleRequest, probe, requestRelease } from './mcp/http';
 import { ToolHost, mcpTools } from './mcpTools';
 
 const TOKEN_KEY = 'mongoster.mcp.token';
-const PATH = '/mcp';
-/** Asked by another window of this VS Code when it gets the focus. */
-const RELEASE_PATH = '/mcp/release';
-/** On every response: how a window recognizes Mongoster on the port, without sending the token. */
-const MARK = 'x-mongoster-mcp';
-const MAX_BODY = 1024 * 1024;
 export const DEFAULT_PORT = 37017;
 export const MIN_PORT = 1024;
 export const MAX_PORT = 65535;
 /** A window without the port checks this often whether it is free (the window that had it closed). */
 const RETRY_MS = 3000;
-const PROBE_MS = 800;
 
 const INSTRUCTIONS = `Mongoster is the MongoDB extension open in the user's VS Code. Its tools read the connections the user saved there and never write to a database.
 Start with list_connections, then list_databases and list_collections. Call describe_collection before writing a filter or a pipeline, to use the real field names and types.
@@ -54,6 +48,8 @@ export class McpServer implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [this.output, this.changed];
   private readonly info: ServerInfo;
   private readonly retry: ReturnType<typeof setInterval>;
+  /** The release proofs already accepted: each one moves the port once. */
+  private readonly proofs = new ProofChecker();
   /** Starts and stops run one after the other: settings, focus and commands can ask at the same time. */
   private queue = Promise.resolve();
 
@@ -95,7 +91,7 @@ export class McpServer implements vscode.Disposable {
   }
 
   private enqueue(task: () => Promise<void>): Promise<void> {
-    this.queue = this.queue.then(task).catch((err) => this.log(`Error: ${err instanceof Error ? err.message : String(err)}`));
+    this.queue = this.queue.then(task).catch((err) => this.log(`Error: ${logText(err instanceof Error ? err.message : String(err))}`));
     return this.queue;
   }
 
@@ -151,8 +147,11 @@ export class McpServer implements vscode.Disposable {
         this.logOnce(`Port ${port} is with Mongoster in another VS Code window: it comes here when this window is used.`);
         return;
       }
-      const status = await release(port, this.token);
-      if (status === 401) return this.blocked(port, `Port ${port} is used by Mongoster in another VS Code installation, which has a different access token.`, take);
+      // The mark only says the listener claims to be Mongoster: it gets a proof of having the token, not the token.
+      const status = await requestRelease(port, this.token);
+      if (status === 401) {
+        return this.blocked(port, `Port ${port} is used by Mongoster in another VS Code installation, which has a different access token, or by an older version of Mongoster in a window not reloaded since the update.`, take);
+      }
       if (status !== 200) await delay(50);
     }
     this.blocked(port, `Port ${port} is taken and was not released.`, take);
@@ -226,63 +225,28 @@ export class McpServer implements vscode.Disposable {
     if (line !== this.lastLog) this.log(line);
   }
 
-  private async handle(req: http.IncomingMessage, res: http.ServerResponse, server: http.Server, port: number): Promise<void> {
-    const send = (status: number, body?: unknown, headers: Record<string, string> = {}) => {
-      const text = body === undefined ? '' : JSON.stringify(body);
-      // No kept-alive connections: after the port moves to another window, no client stays on this one.
-      res.writeHead(status, { ...(body !== undefined && { 'Content-Type': 'application/json' }), Connection: 'close', [MARK]: this.info.version, ...headers });
-      res.end(text);
-    };
-    // DNS rebinding: only the loopback names, and no web page of another origin.
-    const hostHeader = (req.headers.host ?? '').toLowerCase();
-    if (hostHeader !== `127.0.0.1:${port}` && hostHeader !== `localhost:${port}`) return send(403, { error: 'Forbidden host' });
-    const origin = req.headers.origin;
-    if (origin && !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(origin)) return send(403, { error: 'Forbidden origin' });
-    const route = (req.url ?? '').split('?')[0];
-    if (route !== PATH && route !== RELEASE_PATH) return send(404, { error: 'Not found' });
-    if (!this.authorized(req.headers.authorization)) return send(401, { error: 'Unauthorized' }, { 'WWW-Authenticate': 'Bearer' });
-    if (req.method !== 'POST') return send(405, { error: 'Method not allowed' }, { Allow: 'POST' });
-
-    if (route === RELEASE_PATH) {
-      req.resume();
-      if (this.server === server) {
-        this.stop();
-        this.elsewhere = true;
-        this.logOnce(`Port ${port} moved to the VS Code window in use: it comes back when this window is used.`);
-        this.changed.fire();
-      }
-      return send(200, { released: true });
-    }
-
-    let body: string;
-    try {
-      body = await readBody(req);
-    } catch {
-      return send(413, { error: 'Request too large' });
-    }
-    let message: unknown;
-    try {
-      message = JSON.parse(body);
-    } catch {
-      return send(400, { jsonrpc: '2.0', id: null, error: { code: PARSE_ERROR, message: 'Parse error' } });
-    }
-    const tools = this.tools();
-    const answer = (m: unknown) => handleMessage(m, tools, this.info, (tool, args, outcome) => this.log(`${tool} ${summary(args)} → ${outcome}`));
-    if (Array.isArray(message)) {
-      const responses = (await Promise.all(message.map(answer))).filter((r) => r !== undefined);
-      return responses.length ? send(200, responses) : send(202);
-    }
-    const response = await answer(message);
-    return response ? send(200, response) : send(202);
-  }
-
-  private authorized(header: string | undefined): boolean {
-    const token = this.token;
-    const given = /^Bearer\s+(.+)$/i.exec(header ?? '')?.[1]?.trim();
-    if (!token || !given) return false;
-    const a = Buffer.from(given);
-    const b = Buffer.from(token);
-    return a.length === b.length && timingSafeEqual(a, b);
+  /** The checks on the request are in mcp/http.ts (handleRequest), which has no vscode dependency and is tested. */
+  private handle(req: http.IncomingMessage, res: http.ServerResponse, server: http.Server, port: number): Promise<void> {
+    // The tools of this request: mongoster.mcp.readDocuments is read once for all the messages of a batch.
+    let tools: McpTool[] | undefined;
+    return handleRequest(
+      req,
+      res,
+      {
+        port: () => port,
+        version: this.info.version,
+        token: () => this.token,
+        answer: (m) => handleMessage(m, (tools ??= this.tools()), this.info, (tool, args, outcome) => this.log(`${tool} ${summary(args)} → ${outcome}`)),
+        release: () => {
+          if (this.server !== server) return;
+          this.stop();
+          this.elsewhere = true;
+          this.logOnce(`Port ${port} moved to the VS Code window in use: it comes back when this window is used.`);
+          this.changed.fire();
+        },
+      },
+      this.proofs,
+    );
   }
 
   /** VS Code's own MCP support (Copilot agent mode): the server appears there with its token, nothing to configure. */
@@ -305,7 +269,7 @@ export class McpServer implements vscode.Disposable {
         }),
       );
     } catch (err) {
-      this.log(`VS Code's MCP support is not available: ${err instanceof Error ? err.message : String(err)}`);
+      this.log(`VS Code's MCP support is not available: ${logText(err instanceof Error ? err.message : String(err))}`);
     }
   }
 
@@ -406,41 +370,6 @@ async function copy(text: string): Promise<void> {
   void vscode.window.showInformationMessage('Copied. It contains the access token of the MCP server: keep it private.');
 }
 
-/** Who listens on the port: nobody, Mongoster (its responses carry the mark) or something else. The token is not sent. */
-function probe(port: number): Promise<'free' | 'mongoster' | 'other'> {
-  return new Promise((resolve) => {
-    const req = http.request({ host: '127.0.0.1', port, path: PATH, method: 'GET', timeout: PROBE_MS, agent: false }, (res) => {
-      res.resume();
-      resolve(res.headers[MARK] ? 'mongoster' : 'other');
-    });
-    req.on('timeout', () => {
-      resolve('other');
-      req.destroy();
-    });
-    req.on('error', (err: NodeJS.ErrnoException) => resolve(err.code === 'ECONNREFUSED' ? 'free' : 'other'));
-    req.end();
-  });
-}
-
-/** Asks Mongoster in another window for the port; the HTTP status, 0 when it didn't answer. */
-function release(port: number, token: string): Promise<number> {
-  return new Promise((resolve) => {
-    const req = http.request(
-      { host: '127.0.0.1', port, path: RELEASE_PATH, method: 'POST', timeout: PROBE_MS, agent: false, headers: { Authorization: `Bearer ${token}`, 'Content-Length': '0' } },
-      (res) => {
-        res.resume();
-        resolve(res.statusCode ?? 0);
-      },
-    );
-    req.on('timeout', () => {
-      resolve(0);
-      req.destroy();
-    });
-    req.on('error', () => resolve(0));
-    req.end();
-  });
-}
-
 /** The first port from `from` nothing listens on. */
 async function freePort(from: number): Promise<number> {
   for (let port = Math.max(from, MIN_PORT); port <= Math.min(from + 50, MAX_PORT); port++) {
@@ -454,26 +383,7 @@ async function freePort(from: number): Promise<number> {
   return from;
 }
 
-function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    req.on('data', (c: Buffer) => {
-      size += c.length;
-      if (size > MAX_BODY) {
-        reject(new Error('too large'));
-        req.destroy();
-        return;
-      }
-      chunks.push(c);
-    });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
-  });
-}
-
 /** The arguments for the log, on one line and short. */
 function summary(args: Record<string, unknown>): string {
-  const text = JSON.stringify(args);
-  return text.length > 300 ? `${text.slice(0, 300)}…` : text;
+  return logText(JSON.stringify(args));
 }
