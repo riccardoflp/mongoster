@@ -34,7 +34,7 @@ import type { RelGraph } from './shared/relations';
 import { collectionReferences } from './shared/references';
 import { readFormatRules } from './shared/formatting';
 import { queryBarHtml } from './queryBarHtml';
-import { POSITION_SETTING, QueryPane, positionOf, readQueryPane } from './shared/queryPane';
+import { POSITION_SETTING, QueryPane, queryPaneSave, readQueryPane } from './shared/queryPane';
 
 const { EJSON } = BSON;
 /** Documents sampled for the autocompletion of field names and values. */
@@ -281,13 +281,11 @@ export class CollectionPanel {
       case 'saveQueryPane': {
         // One choice for every collection. The place is a setting: changing it reaches every tab through
         // onDidChangeConfiguration. The width is Mongoster's own state, sent to the other tabs here.
-        const pane = readQueryPane(positionOf(m.pane), m.pane);
         const config = vscode.workspace.getConfiguration('mongoster');
-        if (config.get(POSITION_SETTING) !== positionOf(pane)) {
-          await config.update(POSITION_SETTING, positionOf(pane), vscode.ConfigurationTarget.Global);
-        }
-        if (readQueryPane(undefined, this.context.globalState.get(QUERY_PANE_KEY)).width !== pane.width) {
-          await this.context.globalState.update(QUERY_PANE_KEY, { width: pane.width });
+        const save = queryPaneSave(config.get(POSITION_SETTING), this.context.globalState.get(QUERY_PANE_KEY), m.pane);
+        if (save.position) await config.update(POSITION_SETTING, save.position, vscode.ConfigurationTarget.Global);
+        if (save.width !== undefined) {
+          await this.context.globalState.update(QUERY_PANE_KEY, { width: save.width });
           for (const p of CollectionPanel.panels.values()) if (p !== this) p.post({ type: 'queryPane', pane: p.queryPane() });
         }
         break;

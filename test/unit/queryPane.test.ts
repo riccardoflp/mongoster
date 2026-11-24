@@ -1,5 +1,16 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { QUERY_PANE_WIDTH, clampPaneWidth, draggedWidth, keyedWidth, paneLayout, positionOf, readQueryPane } from '../../src/shared/queryPane';
+import {
+  POSITION_SETTING,
+  QUERY_PANE_WIDTH,
+  clampPaneWidth,
+  draggedWidth,
+  keyedWidth,
+  paneLayout,
+  positionOf,
+  queryPaneSave,
+  readQueryPane,
+} from '../../src/shared/queryPane';
 
 describe('query.pane: the stored choice', () => {
   it('defaults to the query above the results', () => {
@@ -72,5 +83,46 @@ describe('query.pane: the splitter', () => {
     expect(keyedWidth(380, 'ArrowRight', true)).toBe(320);
     expect(keyedWidth(270, 'ArrowRight', false)).toBe(QUERY_PANE_WIDTH.min);
     expect(keyedWidth(380, 'Enter', false)).toBeNull();
+  });
+});
+
+describe('query.pane: saving the choice', () => {
+  it('writes the setting when the place changed, and nothing else', () => {
+    expect(queryPaneSave('top', { width: 380 }, { side: true, width: 380 })).toEqual({ position: 'right' });
+    expect(queryPaneSave('right', { width: 380 }, { side: false, width: 380 })).toEqual({ position: 'top' });
+  });
+
+  it('stores the width when it changed, and leaves the setting alone', () => {
+    expect(queryPaneSave('right', { width: 380 }, { side: true, width: 500 })).toEqual({ width: 500 });
+  });
+
+  it('saves nothing when nothing changed, the default width counting as stored', () => {
+    expect(queryPaneSave('right', { width: 500 }, { side: true, width: 500 })).toEqual({});
+    expect(queryPaneSave('top', undefined, { side: false, width: QUERY_PANE_WIDTH.default })).toEqual({});
+  });
+
+  it('keeps what the tab sends within the limits, and reads anything else as above at the default width', () => {
+    expect(queryPaneSave('right', { width: 900 }, { side: true, width: 5000 })).toEqual({});
+    expect(queryPaneSave('right', { width: 500 }, 'right')).toEqual({ position: 'top', width: QUERY_PANE_WIDTH.default });
+  });
+
+  it('replaces a setting of another value', () => {
+    expect(queryPaneSave('left', { width: 380 }, { side: false, width: 380 })).toEqual({ position: 'top' });
+  });
+});
+
+describe('query.pane: the setting', () => {
+  const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as {
+    contributes: { configuration: { properties: Record<string, { type: string; enum?: string[]; default?: unknown; markdownDescription?: string }> } };
+  };
+  const setting = pkg.contributes.configuration.properties[`mongoster.${POSITION_SETTING}`];
+
+  it('is contributed with the two places, above by default', () => {
+    expect(setting).toBeDefined();
+    expect(setting.type).toBe('string');
+    expect(setting.enum).toEqual([positionOf({ side: false, width: 380 }), positionOf({ side: true, width: 380 })]);
+    expect(setting.default).toBe('top');
+    expect(readQueryPane(setting.default, undefined).side).toBe(false);
+    expect(setting.markdownDescription).toBeTruthy();
   });
 });

@@ -32,6 +32,21 @@ export function positionOf(pane: QueryPane): QueryBarPosition {
   return pane.side ? 'right' : 'top';
 }
 
+/**
+ * What the host saves when a tab sends the user's choice (`sent`, from the webview, so read like anything
+ * stored): the setting's new value when the place changed, the width when it changed. Only a changed width is
+ * sent to the other tabs by the host; a changed setting reaches them through the configuration's change event.
+ * `position` is the setting's current value, `stored` what globalState holds.
+ */
+export function queryPaneSave(position: unknown, stored: unknown, sent: unknown): { position?: QueryBarPosition; width?: number } {
+  const s = sent && typeof sent === 'object' ? (sent as Record<string, unknown>) : {};
+  const pane = readQueryPane(s.side === true ? 'right' : 'top', sent);
+  const save: { position?: QueryBarPosition; width?: number } = {};
+  if (position !== positionOf(pane)) save.position = positionOf(pane);
+  if (readQueryPane(undefined, stored).width !== pane.width) save.width = pane.width;
+  return save;
+}
+
 /** A width within the limits; the default for a value that isn't a number. */
 export function clampPaneWidth(width: unknown): number {
   if (typeof width !== 'number' || !Number.isFinite(width)) return QUERY_PANE_WIDTH.default;

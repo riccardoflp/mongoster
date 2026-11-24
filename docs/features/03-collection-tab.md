@@ -174,10 +174,11 @@ table or in a resizable pane at its right; the choice is a setting and holds for
 - **Kind**: Operation
 - **Function**: `src/webview/queryPane.ts › QueryPaneUi`; stored by `src/collectionPanel.ts ›
   CollectionPanel.onMessage` (`case 'saveQueryPane'`).
-- **Implemented in**: `src/shared/queryPane.ts › readQueryPane`, `positionOf`, `clampPaneWidth`, `paneLayout`,
-  `draggedWidth`, `keyedWidth`; `src/queryBarHtml.ts › queryBarHtml` (the markup, with `src/shared/icons.ts › iconSvg`);
-  `src/collectionPanel.ts › QUERY_PANE_KEY`, `queryPane`, `postInit`, `html`, the configuration listener; `src/webview/main.ts`; `src/shared/messages.ts`
-  (`saveQueryPane`, `queryPane`, `init.queryPane`); `media/webview.css` (`body.query-side`).
+- **Implemented in**: `src/shared/queryPane.ts › readQueryPane`, `positionOf`, `queryPaneSave`, `clampPaneWidth`,
+  `paneLayout`, `draggedWidth`, `keyedWidth`; `src/queryBarHtml.ts › queryBarHtml` (the markup, with
+  `src/shared/icons.ts › iconSvg`); `src/collectionPanel.ts › QUERY_PANE_KEY`, `queryPane`, `postInit`, `html`, the
+  configuration listener; `src/webview/main.ts`; `src/shared/messages.ts` (`saveQueryPane`, `queryPane`,
+  `init.queryPane`); `media/webview.css` (`body.query-side`).
 - **Entry points**: the toggle at the right end of the tab's top row, after `Insert` (tooltip `Query at the right
   of the results` or `Query above the results`); the splitter between the pane and the results (drag, `←` `→` by 20 px,
   with Shift by 60 px, double-click for the default width).
@@ -194,8 +195,9 @@ table or in a resizable pane at its right; the choice is a setting and holds for
   the setting is changed in the settings.
 - **Settings**: `mongoster.queryBar.position` (`top`, the default, or `right`).
 - **Tested by**: `test/unit/queryPane.test.ts › 'query.pane: the stored choice'`, `'query.pane: the width'`,
-  `'query.pane: above or beside'`, `'query.pane: the splitter'`; `test/unit/queryBar.test.ts › 'query.pane: the
-  markup'`, `'query.pane: the icons'`. The CSS of the two places and the DOM wiring: none (checked by hand).
+  `'query.pane: above or beside'`, `'query.pane: the splitter'`, `'query.pane: saving the choice'`, `'query.pane:
+  the setting'`; `test/unit/queryBar.test.ts › 'query.pane: the markup'`, `'query.pane: the icons'`. The CSS of the
+  two places, the DOM wiring and the configuration listener: none (checked by hand).
 
 Rules:
 
