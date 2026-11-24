@@ -107,11 +107,46 @@ export const safeErrorText = (err: unknown, values: boolean): string =>
 /** A name of the collections the server keeps for itself (users and their credentials, the profiler's queries, views…). */
 export const isSystemCollection = (collection: string): boolean => collection.startsWith('system.');
 
-/** Refuses a `system.*` collection named by the caller: the tools that need one read it by themselves. */
+/**
+ * The oplog, by the names it has in `local` (a replica set's, and the one of the old master and slave
+ * setup): it holds every write, the ones to the system collections too, so reading it is reading them.
+ */
+export const isOplogCollection = (collection: string): boolean => collection === 'oplog.rs' || collection === 'oplog.$main';
+
+/** Refuses a `system.*` collection, or the oplog, named by the caller: the tools that need one read it by themselves. */
 export function refuseSystemCollection(database: string, collection: string): void {
   if (isSystemCollection(collection)) {
     throw new ToolError(`${database}.${collection} is a system collection: Mongoster's MCP server doesn't read the system.* collections (users, profiler, views…).`);
   }
+  if (database === 'local' && isOplogCollection(collection)) {
+    throw new ToolError(`${database}.${collection} is the oplog: Mongoster's MCP server doesn't read it as a collection (write_history and watch_changes give the writes).`);
+  }
+}
+
+/** Operators that run JavaScript on the server: not a plain read, wherever they are in a filter, a projection or a pipeline. */
+const SERVER_SCRIPT = new Set(['$where', '$function', '$accumulator']);
+
+/** The first operator of a value that runs JavaScript on the server, looked for at any depth. */
+export function serverScript(v: unknown, depth = 0): string | undefined {
+  if (typeof v !== 'object' || v === null || depth > 100) return undefined;
+  if (Array.isArray(v)) {
+    for (const x of v) {
+      const found = serverScript(x, depth + 1);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  for (const [k, x] of Object.entries(v)) {
+    if (SERVER_SCRIPT.has(k)) return k;
+    const found = serverScript(x, depth + 1);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function refuseServerScript(v: unknown): void {
+  const op = serverScript(v);
+  if (op) throw new ToolError(`${op} runs JavaScript on the server: Mongoster's MCP server only runs plain reads.`);
 }
 
 /** A value with its literal values replaced by ?: the field names and operators stay. */
@@ -211,8 +246,11 @@ export function toolContext(connections: ToolConnections, readDocuments: () => b
     query: (args) => {
       const text = { filter: stringArg(args, 'filter') ?? '', sort: stringArg(args, 'sort') ?? '', projection: stringArg(args, 'projection') ?? '' };
       try {
-        return { text, filter: toBson(text.filter, 'Filter') ?? {}, sort: toBson(text.sort, 'Sort'), projection: toBson(text.projection, 'Projection') };
+        const parsed = { text, filter: toBson(text.filter, 'Filter') ?? {}, sort: toBson(text.sort, 'Sort'), projection: toBson(text.projection, 'Projection') };
+        refuseServerScript([parsed.filter, parsed.projection]);
+        return parsed;
       } catch (err) {
+        if (err instanceof ToolError) throw err;
         throw new ToolError(message(err));
       }
     },
@@ -234,8 +272,13 @@ export function toolContext(connections: ToolConnections, readDocuments: () => b
               : `${refused} is refused: Mongoster's MCP server runs only pipelines that read the collection (watch_changes follows the changes, current_operations lists the operations, slow_queries gives the query shapes).`,
           );
         }
-        const system = joinedCollections(parsed).find(isSystemCollection);
+        refuseServerScript(parsed);
+        const joined = joinedCollections(parsed);
+        const system = joined.find(isSystemCollection);
         if (system) throw new ToolError(`The pipeline reads ${system}: Mongoster's MCP server doesn't read the system.* collections (users, profiler, views…).`);
+        // Whatever the database: the pipeline may run on `local`, or name it in { db, coll }.
+        const oplog = joined.find(isOplogCollection);
+        if (oplog) throw new ToolError(`The pipeline reads ${oplog}: Mongoster's MCP server doesn't read the oplog as a collection (write_history and watch_changes give the writes).`);
         return { stages, pipeline: built };
       } catch (err) {
         if (err instanceof ToolError) throw err;

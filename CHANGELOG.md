@@ -6,6 +6,8 @@
 - Importing a CSV file whose header names a field `__proto__` or `constructor` now gives documents with that field; reading the file could change every object of the extension.
 - Mongoster no longer looks for the optional modules of its MongoDB and SSH libraries in `node_modules` folders outside itself: on a machine with other accounts, one of them could have its code loaded from such a folder (`/tmp` for the AppImage, `C:\` on Windows).
 - With `mongoster.mcp.readDocuments` off, the MCP server no longer shows a value that starts with `$` (a password hash, a price), a command that the server cut short, or a number in a projection that is not 1, 0 or -1: `slow_queries`, `current_operations`, `index_advice` and `list_saved_queries` took them for part of the shape.
+- The MCP server now refuses the oplog as a collection (`local.oplog.rs`, named or joined in a pipeline): it holds the writes to the system collections, users and their credentials among them.
+- The MCP server now refuses a filter, a projection or a pipeline that runs JavaScript on the server (`$where`, `$function`, `$accumulator`).
 
 ## 0.10.0
 

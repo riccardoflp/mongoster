@@ -385,6 +385,11 @@ Rules:
 - A `collection` whose name starts with `system.` is refused in every database, by every tool that takes a
   collection: `<database>.<collection> is a system collection: Mongoster's MCP server doesn't read the system.*
   collections (users, profiler, views…).` The tools that need one read it by themselves (`slow_queries` the profiler).
+- The oplog (`oplog.rs` or `oplog.$main` in the `local` database) is refused the same way, because it holds the
+  writes to the system collections: `local.oplog.rs is the oplog: Mongoster's MCP server doesn't read it as a
+  collection (write_history and watch_changes give the writes).`
+- A filter or a projection with `$where`, `$function` or `$accumulator`, at any depth:
+  `<operator> runs JavaScript on the server: Mongoster's MCP server only runs plain reads.`
 - Strings are trimmed and an empty one counts as absent; anything else gives `<key> must be a string.`
 - Whole numbers may come as numbers or digit strings: `<key> must be a whole number.`, and outside the range
   `<key> must be between <min> and <max>.`
@@ -478,8 +483,10 @@ refused before anything is sent.
   `test/unit/mcpWorkspace.test.ts › 'open tools' › 'open_explain opens a find query or a pipeline with explain'`,
   `test/unit/mcpGate.test.ts › 'pipelines' › 'finds the stages that are not a plain read, in the nested pipelines too'`,
   `› 'lists the collections a pipeline joins'`,
-  `› 'are refused by the tools when they are not a plain read or read a system collection'`;
-  `test/unit/mcpGate.test.ts › 'system collections' › 'are refused to the tools that take a collection, whatever readDocuments is'`;
+  `› 'are refused by the tools when they are not a plain read or read a system collection'`,
+  `› 'refuses the operators that run JavaScript on the server, at any depth'`;
+  `test/unit/mcpGate.test.ts › 'system collections' › 'are refused to the tools that take a collection, whatever readDocuments is'`,
+  `› 'refuses the oplog of local as a collection, whatever the setting'`;
   `test/integration/mcpGate.test.ts › 'what is refused whatever the setting' › 'the system collections'`,
   `› 'the stages that are not a plain read of the collection'`.
 
@@ -497,6 +504,10 @@ Rules:
 - A `$lookup` or `$graphLookup` whose `from`, or a `$unionWith` whose collection, starts with `system.`:
   `The pipeline reads <collection>: Mongoster's MCP server doesn't read the system.* collections (users, profiler,
   views…).`
+- The same for `oplog.rs` and `oplog.$main`, whatever the database: `The pipeline reads oplog.rs: Mongoster's MCP
+  server doesn't read the oplog as a collection (write_history and watch_changes give the writes).`
+- `$where`, `$function` or `$accumulator` anywhere in the pipeline:
+  `<operator> runs JavaScript on the server: Mongoster's MCP server only runs plain reads.`
 - Text that cannot be read: `Pipeline: <the parser's message>`.
 - Otherwise the stages are built into the pipeline sent to MongoDB, or put in the collection tab.
 - `watch_changes`' `filter` is only ever a `$match` of the change stream, so it cannot add a stage.
@@ -519,6 +530,8 @@ Acceptance:
   any depth.
 - [ ] No tool reads a `system.*` collection the caller named, as its collection or as the source of a `$lookup`,
   `$graphLookup` or `$unionWith`; `write_history` leaves out the writes to the `system.*` collections.
+- [ ] No tool reads the oplog of `local` as a collection, named or joined.
+- [ ] No tool sends a filter, a projection or a pipeline with `$where`, `$function` or `$accumulator`, at any depth.
 
 ### `mcp.log` — The Mongoster MCP output channel
 

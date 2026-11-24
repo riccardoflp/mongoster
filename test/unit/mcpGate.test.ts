@@ -257,6 +257,19 @@ describe('system collections', () => {
       expect(res.text, name).toContain('system collection');
     }
   });
+
+  // RS28: the oplog holds the writes to the system collections (users and their credentials) as documents.
+  it('refuses the oplog of local as a collection, whatever the setting', async () => {
+    for (const on of [true, false]) {
+      const { tools } = setup(on);
+      for (const name of ['find_documents', 'distinct_values', 'count_documents', 'describe_collection', 'explain_query']) {
+        if (!tools.some((t) => t.name === name)) continue;
+        const res = await call(tools, name, { connection: 'Local', database: 'local', collection: 'oplog.rs', field: 'ns' });
+        expect(res.isError, name).toBe(true);
+        expect(res.text, name).toContain('is the oplog');
+      }
+    }
+  });
 });
 
 describe('pipelines', () => {
@@ -298,7 +311,20 @@ describe('pipelines', () => {
     expect(run('[ { $facet: { plans: [ { $planCacheStats: {} } ] } } ]')).toThrow(/\$planCacheStats is refused/);
     expect(run('[ { $lookup: { from: "system.users", localField: "a", foreignField: "user", as: "u" } } ]')).toThrow(/reads system\.users/);
     expect(run('[ { $unionWith: "system.profile" } ]')).toThrow(/reads system\.profile/);
+    expect(run('[ { $lookup: { from: "oplog.rs", pipeline: [], as: "o" } } ]')).toThrow(/reads oplog\.rs/);
+    expect(run('[ { $unionWith: { coll: "users", pipeline: [ { $lookup: { from: { db: "local", coll: "oplog.rs" }, pipeline: [], as: "o" } } ] } } ]')).toThrow(/reads oplog\.rs/);
     expect(run('[ { $unionWith: { coll: "users", pipeline: [ { $graphLookup: { from: "system.js", startWith: "$a", connectFromField: "a", connectToField: "_id", as: "t" } } ] } } ]')).toThrow(/reads system\.js/);
+  });
+
+  // RS42: JavaScript that runs on the server is not a plain read.
+  it('refuses the operators that run JavaScript on the server, at any depth', () => {
+    const ctx = toolContext({ list: () => [], getClient: () => Promise.reject(new Error('no server')), isConnected: () => false });
+    expect(() => ctx.query({ filter: '{ $where: "sleep(1000) || true" }' })).toThrow(/\$where runs JavaScript/);
+    expect(() => ctx.query({ filter: '{ $or: [ { a: 1 }, { $expr: { $function: { body: "function() { return true }", args: [], lang: "js" } } } ] }' })).toThrow(/\$function runs JavaScript/);
+    expect(() => ctx.query({ filter: '{}', projection: '{ x: { $function: { body: "function() { return 1 }", args: [], lang: "js" } } }' })).toThrow(/\$function runs JavaScript/);
+    expect(() => ctx.pipeline({ pipeline: '[ { $group: { _id: null, n: { $accumulator: { init: "function() { return 0 }", accumulate: "function(s) { return s }", accumulateArgs: [], merge: "function(a) { return a }", lang: "js" } } } } ]' })).toThrow(/\$accumulator runs JavaScript/);
+    expect(() => ctx.pipeline({ pipeline: '[ { $lookup: { from: "users", as: "u", pipeline: [ { $match: { $where: "true" } } ] } } ]' })).toThrow(/\$where runs JavaScript/);
+    expect(() => ctx.query({ filter: '{ where: "x", note: "$where" }' })).not.toThrow();
   });
 
   it('bounds the skip of find_documents', async () => {
