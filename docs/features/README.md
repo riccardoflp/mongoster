@@ -1,6 +1,6 @@
 # The catalog of features
 
-Every feature, one card each, 156 in all. The template and the rules of the cards are in the
+Every feature, one card each, 160 in all. The template and the rules of the cards are in the
 feature contract. This index is written by `catalog.py --index`: change a status here in the commit that
 earns it, and run the script again after adding or renaming a card; the statuses are kept. A card with a
 **Differs** line is *Differs*; when the line goes, it becomes *Documented*.
@@ -8,7 +8,7 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | File | Area | Cards |
 | --- | --- | --- |
 | [01-connections.md](01-connections.md) | Connections | 29 |
-| [02-tree.md](02-tree.md) | The connections view | 3 |
+| [02-tree.md](02-tree.md) | The connections view | 7 |
 | [03-collection-tab.md](03-collection-tab.md) | The collection tab | 5 |
 | [04-documents.md](04-documents.md) | Writing documents | 15 |
 | [05-field-actions.md](05-field-actions.md) | Actions on a column | 10 |
@@ -65,6 +65,10 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | [`tree.set-collection-color`](02-tree.md#treeset-collection-color--set-the-color-of-a-collection-a-view-or-a-bucket) | Set the color of a collection, a view or a bucket | Operation | Built |
 | [`tree.color-of-collection`](02-tree.md#treecolor-of-collection--which-color-something-of-a-collection-takes) | Which color something of a collection takes | Derivation | Built |
 | [`tree.collection-color-follows`](02-tree.md#treecollection-color-follows--a-collections-color-follows-a-rename-and-goes-with-a-drop) | A collection's color follows a rename and goes with a drop | Operation | Built |
+| [`tree.exclude`](02-tree.md#treeexclude--exclude-from-searches-or-include-again) | Exclude from searches, or include again | Operation | Specified |
+| [`tree.excluded`](02-tree.md#treeexcluded--what-searches-leave-out) | What searches leave out | Derivation | Specified |
+| [`tree.exclusion-follows`](02-tree.md#treeexclusion-follows--an-exclusion-follows-a-rename-and-goes-with-a-drop) | An exclusion follows a rename and goes with a drop | Operation | Specified |
+| [`tree.type-ahead`](02-tree.md#treetype-ahead--move-to-a-node-by-typing-its-first-letters) | Move to a node by typing its first letters | Derivation | Specified |
 
 ## The collection tab
 

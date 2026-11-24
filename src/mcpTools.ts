@@ -3,6 +3,7 @@ import { BSON, Document } from 'mongodb';
 import type { ConnectionInfo } from './connections';
 import type { SearchScope } from './search';
 import type { SearchOptions } from './shared/messages';
+import { ownExclusion } from './shared/exclusions';
 import { McpTool, ToolError, boolArg, intArg, stringArg, truncate } from './shared/mcp';
 import { FieldSchema, analyzeSchema } from './shared/schema';
 import { searchIndexType } from './shared/searchIndexes';
@@ -53,12 +54,16 @@ export function mcpTools(host: ToolHost): McpTool[] {
     {
       name: 'list_connections',
       title: 'List connections',
-      description: 'The MongoDB connections saved in Mongoster (name, id, folder, whether they are read-only). Connection strings are never returned.',
+      description:
+        'The MongoDB connections saved in Mongoster (name, id, folder, whether they are read-only). Connection strings are never returned. Connections the user excluded from searches are left out.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       readOnly: true,
       run: async () => {
-        const all = connections.list();
-        if (!all.length) return 'No connections are saved in Mongoster.';
+        const saved = connections.list();
+        if (!saved.length) return 'No connections are saved in Mongoster.';
+        // What the user excluded from searches is left out of the lists; asked for by name, it still answers.
+        const all = saved.filter((c) => !c.excluded);
+        if (!all.length) return 'The user excluded every connection saved in Mongoster from searches.';
         return JSON.stringify(
           all.map((c) => ({ name: c.name, id: c.id, ...(c.folder && { folder: c.folder }), ...(c.readOnly && { readOnly: true }), connected: connections.isConnected(c.id) })),
           null,
@@ -69,26 +74,28 @@ export function mcpTools(host: ToolHost): McpTool[] {
     {
       name: 'list_databases',
       title: 'List databases',
-      description: 'The databases of a connection, with their size on disk.',
+      description: 'The databases of a connection, with their size on disk. Databases the user excluded from searches are left out.',
       inputSchema: { type: 'object', properties: { connection: connectionProp }, required: ['connection'], additionalProperties: false },
       readOnly: true,
       run: async (args) => {
         const info = connection(args);
         const { databases } = await (await client(info)).db('admin').admin().listDatabases({ nameOnly: false });
-        return JSON.stringify(databases.map((d) => ({ name: d.name, sizeOnDisk: d.sizeOnDisk, empty: d.empty })), null, 2);
+        return JSON.stringify(databases.filter((d) => !ownExclusion(info, d.name)).map((d) => ({ name: d.name, sizeOnDisk: d.sizeOnDisk, empty: d.empty })), null, 2);
       },
     },
     {
       name: 'list_collections',
       title: 'List collections',
-      description: 'The collections and views of a database.',
+      description: 'The collections and views of a database. Collections the user excluded from searches are left out.',
       inputSchema: { type: 'object', properties: { connection: connectionProp, database: databaseProp }, required: ['connection', 'database'], additionalProperties: false },
       readOnly: true,
       run: async (args) => {
         const info = connection(args);
         const database = required(args, 'database');
-        const list = await (await client(info)).db(database).listCollections({}, { nameOnly: false }).toArray();
-        if (!list.length) return `${database} has no collections.`;
+        const listed = await (await client(info)).db(database).listCollections({}, { nameOnly: false }).toArray();
+        if (!listed.length) return `${database} has no collections.`;
+        const list = listed.filter((c) => !ownExclusion(info, database, c.name));
+        if (!list.length) return `The user excluded every collection of ${database} from searches.`;
         return JSON.stringify(
           list
             .map((c) => ({

@@ -198,9 +198,10 @@ export type HostMessage =
 export type ShellMessage =
   | { type: 'ready' }
   | { type: 'treeCommand'; handle: string }
-  | { type: 'treeContext'; handle: string }
+  /** `handles`: the selected rows, when the one right-clicked is one of several selected. */
+  | { type: 'treeContext'; handle: string; handles?: string[] }
   | { type: 'viewTitleMore' }
-  | { type: 'execute'; command: string; handle?: string }
+  | { type: 'execute'; command: string; handle?: string; handles?: string[] }
   | { type: 'panelClosed'; id: number }
   | { type: 'panelMessage'; id: number; message: unknown }
   | { type: 'tabs'; active?: TabRef; visible: TabRef[] }

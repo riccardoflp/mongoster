@@ -1067,7 +1067,8 @@ export interface SearchProgress {
 
 export type SearchHostMessage =
   | { type: 'init'; connectionName: string; color?: string; database?: string; collection?: string }
-  | { type: 'plan'; searchId: number; collections: SearchCollection[] }
+  /** `excluded`: the databases and collections left out because they are excluded from searches. */
+  | { type: 'plan'; searchId: number; collections: SearchCollection[]; excluded?: number }
   | { type: 'progress'; searchId: number; updates: SearchProgress[] }
   | { type: 'done'; searchId: number; ms: number; stopped: boolean }
   | { type: 'failed'; searchId: number; message: string }

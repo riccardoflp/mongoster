@@ -3,6 +3,10 @@ import { ConnectionInfo, ConnectionManager } from './connections';
 import { connectionUri, themeColorOf } from './connectionColors';
 import { bucketNames } from './shared/gridfs';
 import { bucketCollection, colorOf } from './shared/collectionColors';
+import { bucketExclusionKey, isExcluded, ownExclusion } from './shared/exclusions';
+
+/** The color of what is excluded from searches: its icon, and its name through the decoration of its URI. */
+const EXCLUDED_COLOR = new vscode.ThemeColor('disabledForeground');
 
 export class FolderNode extends vscode.TreeItem {
   readonly kind = 'folder';
@@ -24,16 +28,25 @@ export class ConnectionNode extends vscode.TreeItem {
     filters = 0,
   ) {
     // A new id makes VS Code open them: with the same one it would keep their state, and forgets it when they're filtered.
-    const open = connected && filters > 0;
+    // An excluded connection isn't opened by the filter, so the filter doesn't connect it either.
+    const open = connected && filters > 0 && !info.excluded;
     super(info.name, open ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
     this.id = `conn:${info.id}${epoch ? `:${epoch}` : ''}${open ? `?${filters}` : ''}`;
-    this.contextValue = `connection${connected ? '.connected' : ''}${info.noHistory ? '.nohistory' : ''}${info.readOnly ? '.readonly' : ''}`;
-    // The connection's color wins over the green "connected" tint; the description then says it.
-    const color = info.color ? themeColorOf(info.color) : connected ? new vscode.ThemeColor('testing.iconPassed') : undefined;
+    this.contextValue = `connection${connected ? '.connected' : ''}${info.noHistory ? '.nohistory' : ''}${info.readOnly ? '.readonly' : ''}${info.excluded ? '.excluded' : ''}`;
+    // The connection's color wins over the green "connected" tint; the description then says it. Excluded, it's dimmed.
+    const color = info.excluded ? EXCLUDED_COLOR : info.color ? themeColorOf(info.color) : connected ? new vscode.ThemeColor('testing.iconPassed') : undefined;
     this.iconPath = new vscode.ThemeIcon(info.readOnly ? 'lock' : 'server', color);
     // Its name takes the color too, through the decoration of this URI.
-    if (info.color) this.resourceUri = connectionUri(info.id);
-    this.description = [info.readOnly && 'read-only', info.ssh && 'SSH', info.redisOplog && 'redis-oplog', connected && (info.color || info.readOnly) && 'connected'].filter(Boolean).join(' · ');
+    if (info.color || info.excluded) this.resourceUri = connectionUri(info.id);
+    this.description = [
+      info.excluded && 'excluded',
+      info.readOnly && 'read-only',
+      info.ssh && 'SSH',
+      info.redisOplog && 'redis-oplog',
+      connected && (info.color || info.readOnly || info.excluded) && 'connected',
+    ]
+      .filter(Boolean)
+      .join(' · ');
     this.tooltip = [
       `${info.name}${connected ? ' (connected)' : ''}`,
       info.readOnly && 'Read-only: Mongoster refuses writes through this connection',
@@ -41,6 +54,7 @@ export class ConnectionNode extends vscode.TreeItem {
       info.ssh && `Through the SSH tunnel ${info.ssh}`,
       info.tls && 'TLS certificates or options set',
       info.redisOplog && `Publishes its writes to Redis for redis-oplog${info.redisOplog.scope ? ` (${info.redisOplog.scope.join(', ')})` : ''}`,
+      info.excluded && "Excluded: the tree's filter doesn't open it",
     ]
       .filter(Boolean)
       .join('\n');
@@ -52,8 +66,22 @@ export class ConnectionNode extends vscode.TreeItem {
  * color when it has one: the names stay in the usual one.
  */
 function connectionIcon(id: string, connection: ConnectionInfo, database?: string, collection?: string): vscode.ThemeIcon {
+  if (database !== undefined && isExcluded(connection, database, collection)) return new vscode.ThemeIcon(id, EXCLUDED_COLOR);
   const color = database !== undefined && collection !== undefined ? colorOf(connection, database, collection) : connection.color;
   return new vscode.ThemeIcon(id, color ? themeColorOf(color) : undefined);
+}
+
+/**
+ * Marks a database, collection, view or bucket excluded from searches: dimmed, with `excluded` in its description when
+ * it has an entry of its own (only those offer `Include in Searches`), otherwise excluded with its database.
+ */
+function markExcluded(item: vscode.TreeItem, connection: ConnectionInfo, database: string, collection?: string, key = collection): void {
+  if (!isExcluded(connection, database, key)) return;
+  item.resourceUri = connectionUri(connection.id, database, key);
+  const own = ownExclusion(connection, database, key);
+  if (own) item.contextValue += '.excluded';
+  item.description = [own ? 'excluded' : collection !== undefined && 'excluded with its database', item.description].filter(Boolean).join(' · ');
+  item.tooltip = `${item.tooltip ?? item.label}\nExcluded from searches${own ? '' : ` with the database ${database}`}`;
 }
 
 export class DatabaseNode extends vscode.TreeItem {
@@ -67,8 +95,9 @@ export class DatabaseNode extends vscode.TreeItem {
     super(database, filter ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
     this.id = `db:${connection.id}/${database}${filter ? `?${filter}` : ''}`;
     this.contextValue = connection.readOnly ? 'database.readonly' : 'database';
-    this.iconPath = connectionIcon('database', connection);
+    this.iconPath = connectionIcon('database', connection, database);
     if (sizeOnDisk !== undefined) this.description = formatBytes(sizeOnDisk);
+    markExcluded(this, connection, database);
   }
 }
 
@@ -85,6 +114,7 @@ export class CollectionNode extends vscode.TreeItem {
     this.contextValue = `${isView ? 'view' : 'collection'}${connection.readOnly ? '.readonly' : ''}`;
     this.iconPath = connectionIcon(isView ? 'eye' : 'table', connection, database, collection);
     this.tooltip = `${database}.${collection}${isView ? ' (view)' : ''}`;
+    markExcluded(this, connection, database, collection);
     this.command = {
       command: 'mongoster.openCollection',
       title: 'Open Collection',
@@ -107,6 +137,7 @@ export class BucketNode extends vscode.TreeItem {
     this.contextValue = `bucket${connection.readOnly ? '.readonly' : ''}`;
     this.iconPath = connectionIcon('files', connection, database, bucketCollection(bucket));
     this.tooltip = `GridFS bucket ${database}.${bucket} (${bucket}.files and ${bucket}.chunks)`;
+    markExcluded(this, connection, database, bucket, bucketCollection(bucket));
     this.command = { command: 'mongoster.openGridFS', title: 'Open GridFS Bucket', arguments: [this] };
   }
 }
@@ -158,7 +189,9 @@ export class MongoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     this.refresh();
   }
 
-  private matches(database: string, collection?: string): boolean {
+  /** Whether the filter shows the database or the collection: what is excluded from searches never matches. */
+  private matches(info: ConnectionInfo, database: string, collection?: string): boolean {
+    if (isExcluded(info, database, collection)) return false;
     const name = collection === undefined ? database : `${database}.${collection}`;
     return name.toLowerCase().includes(this.filterText.toLowerCase());
   }
@@ -204,7 +237,8 @@ export class MongoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     const shown = await Promise.all(
       databases.map(
         async (d) =>
-          this.matches(d.name) || (await this.collectionInfos(info, d.name).catch(() => [])).some((c) => this.matches(d.name, c.name)),
+          !isExcluded(info, d.name) &&
+          (this.matches(info, d.name) || (await this.collectionInfos(info, d.name).catch(() => [])).some((c) => this.matches(info, d.name, c.name))),
       ),
     );
     const dbs = databases.filter((_, i) => shown[i]).map((d) => new DatabaseNode(info, d.name, d.sizeOnDisk, this.filterText));
@@ -219,7 +253,7 @@ export class MongoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   private async collections(node: DatabaseNode): Promise<TreeNode[]> {
     const infos = await this.collectionInfos(node.connection, node.database);
     const colls = infos
-      .filter((c) => this.matches(node.database, c.name))
+      .filter((c) => !this.filterText || this.matches(node.connection, node.database, c.name))
       .map((c) => new CollectionNode(node.connection, node.database, c.name, c.type === 'view'))
       .sort(
         (a, b) =>
@@ -228,7 +262,7 @@ export class MongoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       );
     // GridFS buckets first; their collections stay listed too.
     const buckets = bucketNames(infos.map((c) => c.name))
-      .filter((b) => this.matches(node.database, b))
+      .filter((b) => !this.filterText || (!isExcluded(node.connection, node.database, bucketCollection(b)) && this.matches(node.connection, node.database, b)))
       .map((b) => new BucketNode(node.connection, node.database, b));
     if (colls.length) return [...buckets, ...colls];
     return [this.filterText ? new MessageNode(`No collections match "${this.filterText}"`, 'filter') : new MessageNode('No collections')];

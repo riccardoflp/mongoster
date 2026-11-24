@@ -18,6 +18,10 @@ export interface ConnectionInfo {
   color?: ConnectionColor;
   /** Colors of single collections, views and buckets, keyed by `database.collection`; they win over `color` (D16). */
   collectionColors?: Record<string, CollectionColor>;
+  /** Left out of the tree's filter and of the MCP server's list of connections (`src/shared/exclusions.ts`). */
+  excluded?: boolean;
+  /** Databases (`shop`) and collections (`shop.orders`) left out of searches, the tree's filter and the MCP lists. */
+  exclusions?: string[];
   /** Mongoster refuses every write through this connection. */
   readOnly?: boolean;
   /** Writes through this connection aren't kept in the undo history. */
@@ -79,7 +83,7 @@ export class ConnectionManager implements vscode.Disposable {
     const current = this.get(id);
     if (!current) return undefined;
     const info: ConnectionInfo = { ...current, ...changes };
-    for (const key of ['folder', 'color', 'collectionColors', 'readOnly', 'noHistory', 'ssh', 'tls', 'redisOplog'] as const) if (!info[key]) delete info[key];
+    for (const key of ['folder', 'color', 'collectionColors', 'excluded', 'exclusions', 'readOnly', 'noHistory', 'ssh', 'tls', 'redisOplog'] as const) if (!info[key]) delete info[key];
     if (uri !== undefined && uri !== (await this.uri(id))) {
       await this.context.secrets.store(secretKey(id), uri);
       await this.disconnect(id);

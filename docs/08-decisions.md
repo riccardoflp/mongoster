@@ -134,6 +134,20 @@ JSON), any CSS color (unreadable in one of the themes), rules in the project's `
 left to a later proposal). The cost: a matcher that must keep MongoDB's semantics, and is for display only.
 *Decided 2026-11-23, [proposal 0002](proposals/0002-conditional-formatting.md).*
 
+## D19 — What is excluded from searches stays in the tree and answers when asked for by name
+
+A connection, a database, a collection, a view or a GridFS bucket can be excluded from searches (`Exclude From
+Searches`), for what the user doesn't use or doesn't want searched. The exclusions are kept on the connection, as the
+colors of collections are (D16): `excluded` for the connection, `exclusions` for its databases (`shop`) and collections
+(`shop.orders`, a bucket by its `.files`). Something excluded stays in the tree, dimmed, and what goes across
+connections, databases or collections leaves it out: the tree's filter, the global search over a deployment or a
+database, the MCP server's `list_connections`, `list_databases` and `list_collections`. What the user or a tool asks
+for by name still works, excluded or not: opening it, a search started on it, a tool given its name. Rejected: hiding
+what is excluded (a second way to lose a collection from sight, and a `Show Excluded` switch to explain), excluding
+from backups and exports (an incomplete backup nobody asked for), a list kept per user apart from the connection (the
+export would lose it). New code that goes across databases or collections on its own decides whether it leaves the
+excluded out, with `leaveOutExcluded` in `src/shared/exclusions.ts`.
+
 ## Open questions
 
 - **Q1** — Adopt the target of [04-feature-contract.md](04-feature-contract.md#the-target-for-new-code-and-code-that-is-changed-anyway)

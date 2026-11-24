@@ -35,6 +35,8 @@ let scope: { database?: string; collection?: string } = {};
 let searchId = 0;
 let running = false;
 let groups: Group[] = [];
+/** Databases and collections the search left out because they are excluded from searches. */
+let excluded = 0;
 let finished: { ms: number; stopped: boolean } | undefined;
 let failure = '';
 /** The text of the last search, for the empty message. */
@@ -177,6 +179,7 @@ function renderSummary(): void {
   if (groups.length) parts.push(`${plural(read, 'document')} read`);
   if (docs) parts.push(`${plural(docs, 'document')} found in ${plural(withMatches, 'collection')}`);
   if (failed) parts.push(`${fmt(failed)} not readable`);
+  if (excluded) parts.push(`${fmt(excluded)} excluded`);
   if (finished) parts.push(`${(finished.ms / 1000).toFixed(1)} s`);
   el('summary').textContent = parts.join(' · ');
 
@@ -228,6 +231,7 @@ function start(): void {
   failure = '';
   searched = state.options.text.trim();
   groups = [];
+  excluded = 0;
   el('results').textContent = '';
   renderSummary();
   vscode.postMessage({ type: 'search', searchId, options: state.options });
@@ -251,6 +255,7 @@ window.addEventListener('message', (e: MessageEvent<SearchHostMessage>) => {
   switch (m.type) {
     case 'plan':
       groups = m.collections.map((info, index) => ({ info, progress: { index, state: 'scanning', scanned: 0, matches: 0, results: [] }, results: [], collapsed: false }));
+      excluded = m.excluded ?? 0;
       renderSummary();
       break;
     case 'progress':

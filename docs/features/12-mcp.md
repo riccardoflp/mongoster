@@ -458,19 +458,21 @@ found with a query or an aggregation.
   `listCollections`, `estimatedDocumentCount`, a `$sample`, `indexes()`, `listSearchIndexes()`, `find`,
   `countDocuments` and `aggregate`.
 - **Settings**: `mongoster.mcp.readDocuments` hides `find_documents` and `aggregate`.
-- **Uses**: `mcp.arguments`, `mcp.output-limits`, `mcp.refuse-write-stages`, `mcp.read-documents`.
+- **Uses**: `mcp.arguments`, `mcp.output-limits`, `mcp.refuse-write-stages`, `mcp.read-documents`, `tree.excluded`.
 - **Tested by**: `test/unit/mcpTools.test.ts › 'mcpTools' › 'gives every tool a unique name, a description and an object schema'`,
   `› 'offers only read-only tools'`,
-  `› 'leaves out the tools that return documents when readDocuments is off'`. None of the six tools is run against a
-  server by a test.
+  `› 'leaves out the tools that return documents when readDocuments is off'`; the three lists against a fake client:
+  `test/unit/exclusions.test.ts › 'the lists of the MCP server' › 'leave out the excluded connections, databases and
+  collections'`, `› 'still answer for what is asked for by name, and say when everything is excluded'`. None of the six
+  tools is run against a server by a test.
 
 The tools:
 
 | Tool | Arguments | Returns | Without `readDocuments` |
 | --- | --- | --- | --- |
-| `list_connections` | none | JSON: `name`, `id`, `folder` when set, `readOnly: true` on a read-only connection, `connected`; `No connections are saved in Mongoster.` | offered |
-| `list_databases` | `connection` | JSON: `name`, `sizeOnDisk`, `empty` of each database | offered |
-| `list_collections` | `connection`, `database` | JSON sorted by name: `name`, `type`, `viewOn` for a view; `<database> has no collections.` | offered |
+| `list_connections` | none | JSON: `name`, `id`, `folder` when set, `readOnly: true` on a read-only connection, `connected`, of the connections not excluded from searches; `No connections are saved in Mongoster.`, or `The user excluded every connection saved in Mongoster from searches.` | offered |
+| `list_databases` | `connection` | JSON: `name`, `sizeOnDisk`, `empty` of each database not excluded from searches | offered |
+| `list_collections` | `connection`, `database` | JSON sorted by name: `name`, `type`, `viewOn` for a view, of the collections without an exclusion of their own; `<database> has no collections.`, or `The user excluded every collection of <database> from searches.` | offered |
 | `describe_collection` | `connection`, `database`, `collection`, `sample` (1 to 1000, default 200) | the estimated count, the indexes with their options, the search indexes when the server has them, and each field of a random sample with its types and how often it is present | offered |
 | `find_documents` | `connection`, `database`, `collection`, `filter`, `sort`, `projection`, `skip` (default 0), `limit` (1 to 100, default 20) | how many match and the documents in mongosh syntax | hidden |
 | `aggregate` | `connection`, `database`, `collection`, `pipeline`, `limit` (1 to 100, default 20) | the first results in mongosh syntax | hidden |

@@ -20,6 +20,7 @@ const FONTS = {
 const DARK: Record<string, string> = {
   foreground: '#cccccc',
   descriptionForeground: '#9d9d9d',
+  disabledForeground: '#cccccc80',
   errorForeground: '#f85149',
   focusBorder: '#0078d4',
   'icon-foreground': '#cccccc',
@@ -146,6 +147,7 @@ const DARK: Record<string, string> = {
 const LIGHT: Record<string, string> = {
   foreground: '#3b3b3b',
   descriptionForeground: '#6f6f6f',
+  disabledForeground: '#61616180',
   errorForeground: '#f85149',
   focusBorder: '#005fb8',
   'icon-foreground': '#3b3b3b',
@@ -290,6 +292,8 @@ function paletteColors(p: Palette, kind: ThemeKind, syntax: SyntaxColors): Recor
   return {
     foreground: p.foreground,
     descriptionForeground: p.muted,
+    // What is excluded from searches in the tree: the text at half strength, as VS Code's default themes have it.
+    disabledForeground: `${p.foreground}80`,
     focusBorder: focus,
     'icon-foreground': p.foreground,
     'editor-background': p.background,

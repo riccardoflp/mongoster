@@ -1,6 +1,7 @@
 // The tree of the side bar. The host has the data: the shell asks for the children of the nodes that
 // are open, and remembers which ones are.
 import type { MenuAction, TreeItemData } from '../protocol';
+import { typeAheadTarget, typedText } from '../../shared/typeAhead';
 import { h, host, icon, iconButton } from './dom';
 
 interface Node {
@@ -21,7 +22,15 @@ let loaded = false;
 /** Opened by the user, and closed by the user among those that start open. */
 const expanded = new Set<string>();
 const collapsed = new Set<string>();
-let selected: string | undefined;
+/** The row the keys move from: the last one clicked or moved to. */
+let focused: string | undefined;
+/** The rows selected: the focused one, or several with Ctrl and Shift. Commands from a menu act on all of them. */
+const selection = new Set<string>();
+/** Where Shift+click and Shift+arrow select from. */
+let anchor: string | undefined;
+/** The letters of the type-ahead, and when the last one was typed. */
+let typed = '';
+let typedAt = 0;
 /** Each load of a node's children has a number: only the last one asked is kept. */
 const loads = new Map<string, number>();
 let nextLoad = 1;
@@ -124,12 +133,12 @@ function row(node: Node): HTMLElement {
   const { data } = node;
   const open = isOpen(node);
   const el = h('div', {
-    class: `row${data.handle === selected ? ' selected' : ''}`,
+    class: `row${selection.has(data.handle) ? ' selected' : ''}${data.handle === focused ? ' focused' : ''}`,
     role: 'treeitem',
     title: data.tooltip,
     'data-handle': data.handle,
     'aria-level': node.depth + 1,
-    'aria-selected': data.handle === selected,
+    'aria-selected': selection.has(data.handle),
     'aria-expanded': data.collapsible === 0 ? undefined : String(open),
     style: `--depth: ${node.depth}`,
   });
@@ -157,7 +166,9 @@ function row(node: Node): HTMLElement {
       h(
         'span',
         { class: 'row-actions' },
-        ...data.inline.map((a) => iconButton(a.icon ?? 'circle-small', a.title, () => host.send({ type: 'execute', command: a.command, handle: data.handle }))),
+        ...data.inline.map((a) =>
+          iconButton(a.icon ?? 'circle-small', a.title, () => host.send({ type: 'execute', command: a.command, handle: data.handle, handles: selectedWith(data.handle) })),
+        ),
       ),
     );
   }
@@ -169,14 +180,57 @@ function render(): void {
   welcome.hidden = !empty;
   list.hidden = empty;
   const nodes = visible();
-  if (selected !== undefined && !nodes.some((n) => n.data.handle === selected)) selected = undefined;
+  const shown = new Set(nodes.map((n) => n.data.handle));
+  if (focused !== undefined && !shown.has(focused)) focused = undefined;
+  for (const handle of selection) if (!shown.has(handle)) selection.delete(handle);
   list.replaceChildren(...nodes.map(row));
 }
 
-function select(handle: string | undefined, reveal = false): void {
-  selected = handle;
+/**
+ * Moves to a row: selecting it alone, adding or removing it (`toggle`, Ctrl+click), or selecting from the anchor to it
+ * (`range`, Shift+click and Shift+arrow).
+ */
+function select(handle: string | undefined, reveal = false, how: 'only' | 'toggle' | 'range' = 'only'): void {
+  focused = handle;
+  if (handle === undefined) selection.clear();
+  else if (how === 'toggle') {
+    if (!selection.delete(handle)) selection.add(handle);
+    anchor = handle;
+  } else if (how === 'range') {
+    const handles = visible().map((n) => n.data.handle);
+    const from = handles.indexOf(anchor ?? handle);
+    const to = handles.indexOf(handle);
+    selection.clear();
+    for (const h of handles.slice(Math.min(from < 0 ? to : from, to), Math.max(from, to) + 1)) selection.add(h);
+  } else {
+    selection.clear();
+    selection.add(handle);
+    anchor = handle;
+  }
   render();
   if (reveal && handle !== undefined) list.querySelector(`[data-handle="${CSS.escape(handle)}"]`)?.scrollIntoView({ block: 'nearest' });
+}
+
+/** The selected rows, in the tree's order, when `handle` is one of several selected: what a command then acts on. */
+function selectedWith(handle: string): string[] | undefined {
+  if (selection.size < 2 || !selection.has(handle)) return undefined;
+  return visible()
+    .map((n) => n.data.handle)
+    .filter((h) => selection.has(h));
+}
+
+/** A letter typed in the tree: the next row whose name starts with it (`typeAheadTarget`). */
+function typeAhead(key: string): void {
+  const now = Date.now();
+  typed = typedText(typed, key, now - typedAt);
+  typedAt = now;
+  const nodes = visible();
+  const index = typeAheadTarget(
+    nodes.map((n) => n.data.label),
+    nodes.findIndex((n) => n.data.handle === focused),
+    typed,
+  );
+  if (index >= 0) select(nodes[index].data.handle, true);
 }
 
 function activateNode(node: Node): void {
@@ -217,23 +271,28 @@ export function initTree(): void {
   list.addEventListener('click', (e) => {
     const node = nodeOf(e.target);
     if (!node) return;
-    selected = node.data.handle;
+    // Ctrl (Cmd on macOS) and Shift change the selection without opening anything.
+    if (e.ctrlKey || e.metaKey) return select(node.data.handle, false, 'toggle');
+    if (e.shiftKey) return select(node.data.handle, false, 'range');
+    select(node.data.handle);
     activateNode(node);
-    render();
   });
   list.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     const node = nodeOf(e.target);
     if (!node) return;
-    select(node.data.handle);
-    host.send({ type: 'treeContext', handle: node.data.handle });
+    // Right-clicking one of the selected rows keeps the selection, as in VS Code: the menu's command acts on them all.
+    if (selection.has(node.data.handle)) focused = node.data.handle;
+    else select(node.data.handle);
+    render();
+    host.send({ type: 'treeContext', handle: node.data.handle, handles: selectedWith(node.data.handle) });
   });
   list.addEventListener('keydown', (e) => {
     const nodes = visible();
-    const index = nodes.findIndex((n) => n.data.handle === selected);
+    const index = nodes.findIndex((n) => n.data.handle === focused);
     const current = nodes[index];
     const go = (to: Node | undefined) => {
-      if (to) select(to.data.handle, true);
+      if (to) select(to.data.handle, true, e.shiftKey ? 'range' : 'only');
     };
     switch (e.key) {
       case 'ArrowDown':
@@ -263,10 +322,15 @@ export function initTree(): void {
         if (current) activateNode(current);
         break;
       case 'ContextMenu':
-        if (current) host.send({ type: 'treeContext', handle: current.data.handle });
+        if (current) host.send({ type: 'treeContext', handle: current.data.handle, handles: selectedWith(current.data.handle) });
+        break;
+      case 'Escape':
+        if (current) select(current.data.handle);
         break;
       default:
-        return;
+        // A letter or a digit moves to the next row whose name starts with it; with Ctrl, Alt or Cmd it's a shortcut.
+        if (e.key.length !== 1 || e.key === ' ' || e.ctrlKey || e.metaKey || e.altKey) return;
+        typeAhead(e.key);
     }
     e.preventDefault();
   });

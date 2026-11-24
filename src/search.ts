@@ -10,6 +10,7 @@ import type { DocumentFileSystem } from './documentFs';
 import { fromRelaxed } from './queries';
 import type { SearchCollection, SearchHit, SearchHostMessage, SearchOptions, SearchProgress, SearchResult, SearchViewMessage } from './shared/messages';
 import { bucketNames } from './shared/gridfs';
+import { leaveOutExcluded } from './shared/exclusions';
 import { formatFilter, relaxEjson, toShell } from './shared/query';
 import { errorMessage } from './tree';
 
@@ -307,10 +308,14 @@ export class SearchPanel {
     }
   }
 
-  /** The collections to read, in order. */
-  private async collections(options: SearchOptions): Promise<SearchCollection[]> {
+  /**
+   * The collections to read, in order, and how many were left out because they are excluded from searches. What the
+   * search was started on is read even when excluded; inside it, the excluded databases and collections are not.
+   */
+  private async collections(options: SearchOptions): Promise<{ plan: SearchCollection[]; excluded: number }> {
     const client = await this.client();
     const { database, collection } = this.scope;
+    let excluded = 0;
     let databases: string[];
     if (database) databases = [database];
     else {
@@ -322,6 +327,9 @@ export class SearchPanel {
         databases = [client.options.dbName];
       }
       databases.sort((a, b) => a.localeCompare(b));
+      const all = databases.length;
+      databases = leaveOutExcluded(this.info, databases);
+      excluded += all - databases.length;
     }
     const plan: SearchCollection[] = [];
     for (const db of databases) {
@@ -331,9 +339,11 @@ export class SearchPanel {
         .toArray();
       // GridFS chunks are file contents, not documents to search.
       const chunks = new Set(bucketNames(infos.map((c) => c.name)).map((b) => `${b}.chunks`));
-      const names = infos
-        .filter((c) => collection || (!c.name.startsWith('system.') && !chunks.has(c.name) && (options.views || c.type !== 'view')))
-        .sort((a, b) => a.name.localeCompare(b.name));
+      const searched = infos.filter((c) => collection || (!c.name.startsWith('system.') && !chunks.has(c.name) && (options.views || c.type !== 'view')));
+      // A search started on a collection reads it even when it is excluded.
+      const kept = new Set(collection ? searched.map((c) => c.name) : leaveOutExcluded(this.info, searched.map((c) => c.name), db));
+      const names = searched.filter((c) => kept.has(c.name)).sort((a, b) => a.name.localeCompare(b.name));
+      excluded += searched.length - names.length;
       for (const c of names) plan.push({ database: db, collection: c.name, view: c.type === 'view' });
     }
     await Promise.all(
@@ -346,7 +356,7 @@ export class SearchPanel {
           .catch(() => undefined);
       }),
     );
-    return plan;
+    return { plan, excluded };
   }
 
   private async search(searchId: number, options: SearchOptions): Promise<void> {
@@ -357,9 +367,10 @@ export class SearchPanel {
     this.running = true;
     let needle: Needle;
     let plan: SearchCollection[];
+    let excluded: number;
     try {
       needle = needleOf(options);
-      plan = await this.collections(options);
+      ({ plan, excluded } = await this.collections(options));
     } catch (err) {
       if (generation !== this.generation) return;
       this.running = false;
@@ -370,7 +381,7 @@ export class SearchPanel {
     this.plan = plan;
     this.ids = plan.map(() => []);
     this.matches = plan.map(() => 0);
-    this.post({ type: 'plan', searchId, collections: plan });
+    this.post({ type: 'plan', searchId, collections: plan, excluded });
     let next = 0;
     const worker = async () => {
       while (generation === this.generation && next < plan.length) await this.scan(next++, generation, needle, options);

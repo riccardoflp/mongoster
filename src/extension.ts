@@ -32,6 +32,7 @@ import { ProjectQueries } from './projectQueries';
 import { mergeSavedQueries } from './shared/savedQueries';
 import { exportConnections, importConnections } from './connectionsTransfer';
 import { ConnectionDecorations, tabIcon } from './connectionColors';
+import { bucketExclusionKey, dropExclusions, exclusionKey, renameExclusion, setExclusions } from './shared/exclusions';
 import { CollectionColors, bucketCollection, dropCollectionColors, namespaceOf, ownColorOf, renameCollectionColor, setCollectionColor } from './shared/collectionColors';
 import { type ColorChoiceValue, colorChoices } from './shared/colors';
 import { pickCustomColor } from './colorPicker';
@@ -47,7 +48,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const backups = new Backups(context, connections);
   const projectQueries = ProjectQueries.init(context);
   const tree = new MongoTreeProvider(connections);
-  const treeView = vscode.window.createTreeView('mongoster.connections', { treeDataProvider: tree, showCollapseAll: true });
+  const treeView = vscode.window.createTreeView('mongoster.connections', { treeDataProvider: tree, showCollapseAll: true, canSelectMany: true });
   const documents = new DocumentFileSystem(connections);
   const manager = new Manager(connections);
   const definitions = new DefinitionFileSystem(connections);
@@ -89,12 +90,44 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
 
-  /** Changes the colors of a connection's collections (D16); `change` returns the same map when nothing changes. */
-  const changeCollectionColors = async (connectionId: string, change: (colors: CollectionColors | undefined) => CollectionColors | undefined) => {
+  /**
+   * Changes the colors of a connection's collections (D16), and with `changeExclusions` what it excludes from searches;
+   * each change returns the same map or list when nothing changes.
+   */
+  const changeCollectionColors = async (
+    connectionId: string,
+    change: (colors: CollectionColors | undefined) => CollectionColors | undefined,
+    changeExclusions: (exclusions: string[] | undefined) => string[] | undefined = (e) => e,
+  ) => {
     const info = connections.get(connectionId);
     if (!info) return;
     const colors = change(info.collectionColors);
-    if (colors !== info.collectionColors) await updateConnection(connectionId, { collectionColors: colors });
+    const exclusions = changeExclusions(info.exclusions);
+    if (colors !== info.collectionColors || exclusions !== info.exclusions) await updateConnection(connectionId, { collectionColors: colors, exclusions });
+  };
+
+  /**
+   * Excludes from searches, or includes again, the connections, databases, collections, views and buckets of `nodes`
+   * (or `node` alone): one change per connection.
+   */
+  const setExcluded = async (excluded: boolean, node?: TreeNode, nodes?: TreeNode[]) => {
+    const targets = nodes?.length ? nodes : node ? [node] : [];
+    const changes = new Map<string, { connection?: boolean; keys: string[] }>();
+    const changeOf = (id: string) => changes.get(id) ?? changes.set(id, { keys: [] }).get(id)!;
+    for (const t of targets) {
+      if (t instanceof ConnectionNode) changeOf(t.info.id).connection = excluded;
+      else if (t instanceof DatabaseNode) changeOf(t.connection.id).keys.push(exclusionKey(t.database));
+      else if (t instanceof CollectionNode) changeOf(t.connection.id).keys.push(exclusionKey(t.database, t.collection));
+      else if (t instanceof BucketNode) changeOf(t.connection.id).keys.push(bucketExclusionKey(t.database, t.bucket));
+    }
+    for (const [id, change] of changes) {
+      const info = connections.get(id);
+      if (!info) continue;
+      await updateConnection(id, {
+        ...(change.connection !== undefined && { excluded: change.connection }),
+        exclusions: setExclusions(info.exclusions, change.keys, excluded),
+      });
+    }
   };
 
   /**
@@ -235,6 +268,10 @@ export function activate(context: vscode.ExtensionContext): void {
       const color: CollectionColor | undefined = pick === 'connection' ? undefined : pick;
       await changeCollectionColors(info.id, (colors) => setCollectionColor(colors, namespaceOf(node.database, collection), color));
     }),
+
+    // With several nodes selected in the tree, VS Code gives the one clicked and all the selected ones.
+    vscode.commands.registerCommand('mongoster.exclude', (node?: TreeNode, nodes?: TreeNode[]) => setExcluded(true, node, nodes)),
+    vscode.commands.registerCommand('mongoster.include', (node?: TreeNode, nodes?: TreeNode[]) => setExcluded(false, node, nodes)),
 
     vscode.commands.registerCommand('mongoster.setReadOnly', (node?: ConnectionNode) =>
       node ? updateConnection(node.info.id, { readOnly: true }) : undefined,
@@ -501,8 +538,10 @@ export function activate(context: vscode.ExtensionContext): void {
       const from = collectionTarget(node);
       const to = { ...from, collection: name };
       await moveCollectionState(context.globalState, from, to);
-      await changeCollectionColors(node.connection.id, (colors) =>
-        renameCollectionColor(colors, namespaceOf(node.database, node.collection), namespaceOf(node.database, name)),
+      await changeCollectionColors(
+        node.connection.id,
+        (colors) => renameCollectionColor(colors, namespaceOf(node.database, node.collection), namespaceOf(node.database, name)),
+        (exclusions) => renameExclusion(exclusions, namespaceOf(node.database, node.collection), namespaceOf(node.database, name)),
       );
       RelationsCache.invalidate(node.connection.id, node.database);
       // The open panel belongs to the old name: reopen it under the new one.
@@ -541,7 +580,11 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mongoster.dropCollection', async (node?: CollectionNode) => {
       if (!node) return;
       if (!(await manager.dropCollection(node.connection, node.database, node.collection, node.isView))) return;
-      await changeCollectionColors(node.connection.id, (colors) => dropCollectionColors(colors, node.database, node.collection));
+      await changeCollectionColors(
+        node.connection.id,
+        (colors) => dropCollectionColors(colors, node.database, node.collection),
+        (exclusions) => dropExclusions(exclusions, node.database, node.collection),
+      );
       RelationsCache.invalidate(node.connection.id, node.database);
       CollectionPanel.close((t) => sameCollection(t, collectionTarget(node)));
       tree.refresh();
@@ -550,7 +593,11 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mongoster.dropDatabase', async (node?: DatabaseNode) => {
       if (!node) return;
       if (!(await manager.dropDatabase(node.connection, node.database))) return;
-      await changeCollectionColors(node.connection.id, (colors) => dropCollectionColors(colors, node.database));
+      await changeCollectionColors(
+        node.connection.id,
+        (colors) => dropCollectionColors(colors, node.database),
+        (exclusions) => dropExclusions(exclusions, node.database),
+      );
       RelationsCache.invalidate(node.connection.id, node.database);
       CollectionPanel.close((t) => t.connectionId === node.connection.id && t.database === node.database);
       GridFSPanel.close(node.connection.id, node.database);
@@ -597,7 +644,11 @@ export function activate(context: vscode.ExtensionContext): void {
       try {
         if (!(await dropBucket(await connections.getClient(info.id), target, `${info.name} › ${node.database} › ${node.bucket}`))) return;
         GridFSPanel.close(info.id, node.database, node.bucket);
-        await changeCollectionColors(info.id, (colors) => dropCollectionColors(colors, node.database, node.bucket, true));
+        await changeCollectionColors(
+          info.id,
+          (colors) => dropCollectionColors(colors, node.database, node.bucket, true),
+          (exclusions) => dropExclusions(exclusions, node.database, node.bucket, true),
+        );
         tree.refresh();
       } catch (err) {
         void vscode.window.showErrorMessage(errorMessage(err));

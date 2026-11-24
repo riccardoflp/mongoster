@@ -224,6 +224,18 @@
         "icon": "$(symbol-color)"
       },
       {
+        "command": "mongoster.exclude",
+        "title": "Exclude From Searches",
+        "category": "Mongoster",
+        "icon": "$(eye-closed)"
+      },
+      {
+        "command": "mongoster.include",
+        "title": "Include in Searches",
+        "category": "Mongoster",
+        "icon": "$(eye)"
+      },
+      {
         "command": "mongoster.setReadOnly",
         "title": "Make Read-Only",
         "category": "Mongoster",
@@ -544,17 +556,17 @@
         },
         {
           "command": "mongoster.insertDocument",
-          "when": "view == mongoster.connections && viewItem == collection",
+          "when": "view == mongoster.connections && viewItem =~ /^collection(\\.excluded)?$/",
           "group": "inline@1"
         },
         {
           "command": "mongoster.insertDocument",
-          "when": "view == mongoster.connections && viewItem == collection",
+          "when": "view == mongoster.connections && viewItem =~ /^collection(\\.excluded)?$/",
           "group": "1_document@1"
         },
         {
           "command": "mongoster.importDocuments",
-          "when": "view == mongoster.connections && viewItem == collection",
+          "when": "view == mongoster.connections && viewItem =~ /^collection(\\.excluded)?$/",
           "group": "2_transfer@1"
         },
         {
@@ -569,32 +581,32 @@
         },
         {
           "command": "mongoster.createDatabase",
-          "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?(\\.nohistory)?$/",
+          "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?(\\.nohistory)?(\\.excluded)?$/",
           "group": "0_create@1"
         },
         {
           "command": "mongoster.createCollection",
-          "when": "view == mongoster.connections && viewItem == database",
+          "when": "view == mongoster.connections && viewItem =~ /^database(\\.excluded)?$/",
           "group": "inline@1"
         },
         {
           "command": "mongoster.createCollection",
-          "when": "view == mongoster.connections && viewItem == database",
+          "when": "view == mongoster.connections && viewItem =~ /^database(\\.excluded)?$/",
           "group": "0_create@1"
         },
         {
           "command": "mongoster.dropDatabase",
-          "when": "view == mongoster.connections && viewItem == database",
+          "when": "view == mongoster.connections && viewItem =~ /^database(\\.excluded)?$/",
           "group": "9_drop@1"
         },
         {
           "command": "mongoster.renameCollection",
-          "when": "view == mongoster.connections && viewItem == collection",
+          "when": "view == mongoster.connections && viewItem =~ /^collection(\\.excluded)?$/",
           "group": "3_manage@1"
         },
         {
           "command": "mongoster.dropCollection",
-          "when": "view == mongoster.connections && viewItem =~ /^(collection|view)$/",
+          "when": "view == mongoster.connections && viewItem =~ /^(collection|view)(\\.excluded)?$/",
           "group": "9_drop@1"
         },
         {
@@ -623,23 +635,33 @@
           "group": "4_organize@1"
         },
         {
+          "command": "mongoster.exclude",
+          "when": "view == mongoster.connections && viewItem =~ /^(connection|database|collection|view|bucket)(?!.*\\.excluded$)/",
+          "group": "4_organize@5"
+        },
+        {
+          "command": "mongoster.include",
+          "when": "view == mongoster.connections && viewItem =~ /^(connection|database|collection|view|bucket).*\\.excluded$/",
+          "group": "4_organize@5"
+        },
+        {
           "command": "mongoster.setReadOnly",
-          "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?(\\.nohistory)?$/",
+          "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?(\\.nohistory)?(\\.excluded)?$/",
           "group": "4_organize@3"
         },
         {
           "command": "mongoster.clearReadOnly",
-          "when": "view == mongoster.connections && viewItem =~ /^connection.*\\.readonly$/",
+          "when": "view == mongoster.connections && viewItem =~ /^connection.*\\.readonly(\\.excluded)?$/",
           "group": "4_organize@3"
         },
         {
           "command": "mongoster.disableHistory",
-          "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?$/",
+          "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?(\\.excluded)?$/",
           "group": "4_organize@4"
         },
         {
           "command": "mongoster.enableHistory",
-          "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?\\.nohistory$/",
+          "when": "view == mongoster.connections && viewItem =~ /^connection(\\.connected)?\\.nohistory(\\.excluded)?$/",
           "group": "4_organize@4"
         },
         {
@@ -779,7 +801,7 @@
         },
         {
           "command": "mongoster.restore",
-          "when": "view == mongoster.connections && viewItem == collection",
+          "when": "view == mongoster.connections && viewItem =~ /^collection(\\.excluded)?$/",
           "group": "2_transfer@7"
         },
         {
@@ -873,6 +895,14 @@
         },
         {
           "command": "mongoster.setCollectionColor",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.exclude",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.include",
           "when": "false"
         },
         {

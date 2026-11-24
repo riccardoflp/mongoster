@@ -4,14 +4,22 @@
 import * as vscode from 'vscode';
 import type { ConnectionColor, ConnectionManager } from './connections';
 import { colorOf } from './shared/collectionColors';
+import { isExcluded } from './shared/exclusions';
 import { cssColorOf, isPreset, nearestPreset, themeColorId } from './shared/colors';
 
-/** The scheme of the URI a connection's tree node carries, so that its name takes the connection's color. */
+/**
+ * The scheme of the URI a connection's tree node carries, so that its name takes the connection's color; a database,
+ * collection or bucket excluded from searches carries one too (`/<id>/<database>/<collection>`), to be dimmed.
+ */
 export const CONNECTION_SCHEME = 'mongoster-connection';
 
-export function connectionUri(connectionId: string): vscode.Uri {
-  return vscode.Uri.from({ scheme: CONNECTION_SCHEME, path: `/${connectionId}` });
+export function connectionUri(connectionId: string, database?: string, collection?: string): vscode.Uri {
+  const path = [connectionId, database, collection].filter((p): p is string => p !== undefined).map(encodeURIComponent).join('/');
+  return vscode.Uri.from({ scheme: CONNECTION_SCHEME, path: `/${path}` });
 }
+
+/** The color of the names of what is excluded from searches. */
+const EXCLUDED_COLOR = new vscode.ThemeColor('disabledForeground');
 
 /**
  * The theme color of a connection color: the same one the icons in the tree take. VS Code takes only theme colors
@@ -77,11 +85,11 @@ export class ConnectionDecorations implements vscode.FileDecorationProvider, vsc
   }
 
   private signature(): string {
-    return JSON.stringify(this.connections.list().map((c) => [c.id, c.name, c.color, c.collectionColors]));
+    return JSON.stringify(this.connections.list().map((c) => [c.id, c.name, c.color, c.collectionColors, c.excluded, c.exclusions]));
   }
 
   connectionOf(uri: vscode.Uri): string | undefined {
-    if (uri.scheme === CONNECTION_SCHEME) return uri.path.slice(1);
+    if (uri.scheme === CONNECTION_SCHEME) return decodeURIComponent(uri.path.split('/')[1]);
     if (this.schemes.includes(uri.scheme)) return uri.authority;
     for (const other of this.others) {
       const id = other.connectionOf(uri);
@@ -94,6 +102,13 @@ export class ConnectionDecorations implements vscode.FileDecorationProvider, vsc
     const id = this.connectionOf(uri);
     const info = id ? this.connections.get(id) : undefined;
     if (!info) return undefined;
+    if (uri.scheme === CONNECTION_SCHEME) {
+      // A tree node: the connection's in its color or dimmed; below it, only what is excluded is decorated.
+      const [database, collection] = uri.path.split('/').slice(2).map(decodeURIComponent);
+      if (database ? isExcluded(info, database, collection) : info.excluded) return new vscode.FileDecoration(undefined, undefined, EXCLUDED_COLOR);
+      if (database || !info.color) return undefined;
+      return new vscode.FileDecoration(undefined, info.name, themeColorOf(info.color));
+    }
     const collection = this.collectionOf(uri);
     const color = collection ? colorOf(info, ...collection) : info.color;
     if (!color) return undefined;

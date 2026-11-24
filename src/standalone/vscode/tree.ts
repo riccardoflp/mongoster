@@ -71,7 +71,7 @@ export function postViewTitle(): void {
   post({ type: 'viewTitle', actions: viewTitleActions(), message: view?.message });
 }
 
-export function createTreeView<T>(viewId: string, options: { treeDataProvider: TreeDataProvider<T>; showCollapseAll?: boolean }): TreeView {
+export function createTreeView<T>(viewId: string, options: { treeDataProvider: TreeDataProvider<T>; showCollapseAll?: boolean; canSelectMany?: boolean }): TreeView {
   const current: View = { id: viewId, provider: options.treeDataProvider as TreeDataProvider<unknown>, elements: new Map() };
   view = current;
   const subscription = current.provider.onDidChangeTreeData?.((element) => {
@@ -121,11 +121,26 @@ onShell('treeCommand', (m) => {
   if (command) runCommand(command.command, ...(command.arguments ?? []));
 });
 
+/**
+ * The arguments of a command run on a node, as VS Code gives them: the node, and all the selected ones when it is
+ * one of several selected.
+ */
+function nodeArguments(handle: string, handles: string[] | undefined): unknown[] | undefined {
+  const known = view?.elements.get(handle);
+  if (!known) return undefined;
+  const selected = handles?.flatMap((h) => {
+    const element = view?.elements.get(h)?.element;
+    return element === undefined ? [] : [element];
+  });
+  return selected && selected.length > 1 ? [known.element, selected] : [known.element];
+}
+
 onShell('treeContext', (m) => {
   const known = view?.elements.get(m.handle);
-  if (!view || !known) return;
+  const args = nodeArguments(m.handle, m.handles);
+  if (!view || !known || !args) return;
   const entries = menu('view/item/context', { view: view.id, viewItem: known.item.contextValue }).filter((e) => e.group !== 'inline');
-  popupMenu(entries, (command) => runCommand(command, known.element));
+  popupMenu(entries, (command) => runCommand(command, ...args));
 });
 
 onShell('viewTitleMore', () => {
@@ -136,6 +151,6 @@ onShell('viewTitleMore', () => {
 
 onShell('execute', (m) => {
   if (m.handle === undefined) return runCommand(m.command);
-  const known = view?.elements.get(m.handle);
-  if (known) runCommand(m.command, known.element);
+  const args = nodeArguments(m.handle, m.handles);
+  if (args) runCommand(m.command, ...args);
 });
