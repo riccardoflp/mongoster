@@ -173,6 +173,13 @@ describe('playground runtime', () => {
     await expect(run('db.dropDatabase()', ro)).rejects.toThrow(/not allowed/);
     expect(await run('db.c.countDocuments()', ro)).toMatchObject({ value: 1 });
     expect(await run('const res = db.runCommand({ ping: 1 });\nres.ok', ro)).toMatchObject({ value: 1 });
+    // RS38: the profiler's level is read, not set; a collection is validated, not repaired.
+    await expect(run('db.runCommand({ profile: 2 })', ro)).rejects.toThrow(/Changing the profiler .* is not allowed/);
+    await expect(run('db.runCommand({ profile: 0, slowms: 5 })', ro)).rejects.toThrow(/is not allowed/);
+    await expect(run('db.runCommand({ validate: "c", repair: true })', ro)).rejects.toThrow(/validate with repair is not allowed/);
+    expect(await run('db.runCommand({ profile: -1 }).was', ro)).toMatchObject({ value: 0 });
+    expect(await run('db.runCommand({ validate: "c" }).valid', ro)).toMatchObject({ value: true });
+    expect((await client.db(DB).listCollections({ name: 'system.profile' }).toArray()).length).toBe(0);
     expect(await coll('c').countDocuments()).toBe(1);
   });
 

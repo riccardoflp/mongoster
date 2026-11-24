@@ -441,6 +441,10 @@ class Shell {
     if (this.opts.readOnly) {
       if (!READ_COMMANDS.has(name)) refuse(`The command ${name}`);
       if (name === 'aggregate') this.checkPipeline(doc.pipeline);
+      // Two commands that read as they are mostly used, and write otherwise: { profile: -1 } gives the
+      // profiler's level and any other value sets it (and creates system.profile); validate may repair.
+      if (name === 'profile' && doc.profile !== -1) refuse('Changing the profiler (the command profile with a level other than -1)');
+      if (name === 'validate' && doc.repair) refuse('The command validate with repair');
     }
     return db.command(doc, session && { session });
   }
