@@ -87,8 +87,12 @@ An installer is built on the system it is for (a macOS disk image can only be ma
 
 `.github/workflows/build.yml` runs on every pull request, on demand, and inside each release. It publishes nothing:
 
-- **Extension** (Ubuntu): `npm ci`, typecheck, unit tests, integration tests, `npm run package`; the `.vsix` is kept as an artifact of the run.
+- **Extension** (Ubuntu): `npm ci`, `npm audit` of the packages bundled in the extension (a known flaw of moderate severity or more stops the build), typecheck, unit tests, integration tests, `npm run package`; the `.vsix` is kept as an artifact of the run.
 - **App** (Windows, macOS, Linux): `npm run package:app`; the installers are kept as artifacts.
+
+The workflows name their actions by commit, with the tag in a comment: a tag can be moved, a commit cannot.
+`.github/dependabot.yml` proposes the updates of the actions and of the npm packages once a week; Electron and
+Monaco, bundled from the development tree, are followed that way and not by `npm audit`.
 
 `.github/workflows/release.yml` runs on a `v*` tag ([D20](08-decisions.md#d20--a-tag-publishes-the-release-once-the-maintainer-approves)):
 

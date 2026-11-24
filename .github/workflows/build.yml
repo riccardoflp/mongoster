@@ -26,19 +26,22 @@ jobs:
     name: Extension
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The packages bundled in the extension (the driver, ssh2…): a known flaw in one stops the build. The
+      # ones bundled from the development tree (Electron, Monaco) are followed by Dependabot.
+      - run: npm audit --omit=dev --audit-level=moderate
       - run: npm run typecheck
       - run: npm test
       # Against a mongod that mongodb-memory-server downloads.
       - run: npm run test:integration
       # Only packaged: release.yml publishes this .vsix to the Marketplace.
       - run: npm run package
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: mongoster-Extension
           path: '*.vsix'
@@ -58,15 +61,15 @@ jobs:
           - name: Linux
             os: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       # Never published from here: release.yml attaches the installers to the draft release.
       - run: npm run package:app -- --publish never
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: mongoster-${{ matrix.name }}
           path: |

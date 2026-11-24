@@ -1,0 +1,19 @@
+# Proposes the updates of what Mongoster is built from and with, once a week: the packages of npm (the
+# driver, ssh2, Electron and Monaco are what reaches the users) and the actions of the workflows, which are
+# named by commit so that a tag moved by someone else changes nothing here.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # The tools that only build and test, in one pull request.
+      development:
+        dependency-type: development
+        exclude-patterns: ['electron', 'monaco-editor', '@vscode/codicons']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

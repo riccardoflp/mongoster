@@ -7,7 +7,7 @@ machine, so a weakness in it can expose data. Reports are welcome.
 
 | Version | Gets security fixes |
 | --- | --- |
-| The latest release (0.8.x) | Yes |
+| The latest release | Yes |
 | Older releases | No: update to the latest |
 
 The extension (Marketplace) and the desktop app (the installers on the Releases page) of the same version get the same
