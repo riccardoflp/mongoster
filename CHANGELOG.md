@@ -3,6 +3,7 @@
 ## Unreleased
 
 - A document's history now keeps a field named `__proto__` or `constructor` inside the document: an update written through such a name by someone else could change every object of the extension, and of the extensions running beside it.
+- Importing a CSV file whose header names a field `__proto__` or `constructor` now gives documents with that field; reading the file could change every object of the extension.
 
 ## 0.10.0
 

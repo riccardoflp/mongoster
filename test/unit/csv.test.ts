@@ -62,6 +62,14 @@ describe('toCsv / parseCsv', () => {
 });
 
 describe('csvToDocs', () => {
+  // RS25: a header is a path of fields of the document, whatever its names.
+  it('keeps a header through __proto__ or constructor inside the document', () => {
+    const [doc] = csvToDocs(parseCsv('a,__proto__.polluted,constructor.prototype.polluted,__proto__\n1,yes,no,{"x":1}\n'));
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(Object.keys(Object.getPrototypeOf({}) as object)).toEqual([]);
+    expect(JSON.stringify(doc)).toBe('{"a":1,"__proto__":{"x":1},"constructor":{"prototype":{"polluted":"no"}}}');
+  });
+
   it('infers types from the text', () => {
     const [doc] = csvToDocs([
       ['_id', 'n', 'neg', 'f', 'exp', 'big', 'zip', 't', 'nul', 'when', 'notdate', 'obj', 'arr', 'bad', 's'],

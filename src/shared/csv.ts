@@ -1,6 +1,6 @@
 // CSV export (documents flattened like the grid) and import (CSV rows -> relaxed EJSON documents).
 import { ColumnNode, MISSING, getAt, isSubdocument, leaves } from './columns';
-import { isEjsonWrapper } from './query';
+import { getField, isEjsonWrapper, setField } from './query';
 
 /**
  * Header + rows for `docs` (relaxed EJSON) with the grid's columns: one column per leaf, and one
@@ -154,8 +154,8 @@ function inferValue(raw: string, key: string): unknown {
 function setPath(doc: Record<string, unknown>, path: string[], value: unknown): void {
   let current = doc;
   path.slice(0, -1).forEach((segment) => {
-    if (!isSubdocument(current[segment])) current[segment] = {};
+    if (!isSubdocument(getField(current, segment))) setField(current, segment, {});
     current = current[segment] as Record<string, unknown>;
   });
-  current[path[path.length - 1]] = value;
+  setField(current, path[path.length - 1], value);
 }
