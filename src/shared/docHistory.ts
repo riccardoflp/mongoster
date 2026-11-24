@@ -5,7 +5,7 @@
 // versions before it are partial. Values are canonical EJSON ({ $numberInt: "1" }…), as in compare.ts,
 // so every BSON type survives.
 import { FieldDiff, fieldDiff, normalize } from './compare';
-import { isEjsonWrapper, isPlainObject, relaxEjson, toShell } from './query';
+import { getField, hasField, isEjsonWrapper, isPlainObject, relaxEjson, setField, toShell } from './query';
 
 type Obj = Record<string, unknown>;
 
@@ -244,11 +244,11 @@ function setPath(root: Obj, parts: string[], value: unknown): void {
       node = child;
     } else {
       if (last) {
-        node[key] = value;
+        setField(node, key, value);
         return;
       }
-      if (node[key] === undefined) node[key] = {};
-      const child: unknown = node[key];
+      if (getField(node, key) === undefined) setField(node, key, {});
+      const child: unknown = getField(node, key);
       if (!isContainer(child)) throw new Mismatch(`${parts.slice(0, n + 1).join('.')} can't hold fields`);
       node = child;
     }
@@ -258,7 +258,7 @@ function setPath(root: Obj, parts: string[], value: unknown): void {
 /** The value at a dotted path's next step. */
 function child(node: unknown, key: string): unknown {
   if (Array.isArray(node)) return /^\d+$/.test(key) ? node[Number(key)] : undefined;
-  return isDoc(node) ? node[key] : undefined;
+  return isDoc(node) ? getField(node, key) : undefined;
 }
 
 /** $unset of a dotted path: an array element becomes null, as the server does. */
@@ -271,7 +271,7 @@ function unsetPath(root: Obj, parts: string[]): void {
   const key = parts[parts.length - 1];
   if (Array.isArray(node)) {
     if (/^\d+$/.test(key) && Number(key) < node.length) node[Number(key)] = null;
-  } else if (isDoc(node)) delete node[key];
+  } else if (isDoc(node) && hasField(node, key)) delete node[key];
 }
 
 /** The $v 2 diff of a sub-document: d deletes, u updates in place, i adds at the end, s<field> changes inside. */
@@ -286,16 +286,16 @@ function applyObjectDiff(doc: Obj, diff: Obj): Obj {
     subs.set(k.slice(1), obj(v));
   }
   for (const k of [...Object.keys(del), ...Object.keys(upd), ...subs.keys()]) {
-    if (!(k in doc)) throw new Mismatch(`The diff changes ${k}, which the document doesn't have`);
+    if (!hasField(doc, k)) throw new Mismatch(`The diff changes ${k}, which the document doesn't have`);
   }
   const out: Obj = {};
   for (const [k, v] of Object.entries(doc)) {
-    if (k in del || k in ins) continue;
-    if (k in upd) out[k] = clone(upd[k]);
-    else if (subs.has(k)) out[k] = applySubDiff(v, subs.get(k)!);
-    else out[k] = v;
+    if (hasField(del, k) || hasField(ins, k)) continue;
+    if (hasField(upd, k)) setField(out, k, clone(upd[k]));
+    else if (subs.has(k)) setField(out, k, applySubDiff(v, subs.get(k)!));
+    else setField(out, k, v);
   }
-  for (const [k, v] of Object.entries(ins)) out[k] = clone(v);
+  for (const [k, v] of Object.entries(ins)) setField(out, k, clone(v));
   return out;
 }
 
@@ -373,13 +373,13 @@ function markUnknown(root: Obj, parts: string[]): void {
     const idx = Number(key);
     if (idx >= container.length) return;
     markElement(container, idx);
-  } else container[key] = unknownValue();
+  } else setField(container, key, unknownValue());
   for (let n = chain.length - 1; n > 0; n--) {
     const [c] = chain[n];
     if (Array.isArray(c) || !Object.values(c).every(isUnknown)) break;
     const [parent, pkey] = chain[n - 1];
     if (Array.isArray(parent)) parent[Number(pkey)] = unknownValue();
-    else parent[pkey] = unknownValue();
+    else setField(parent, pkey, unknownValue());
   }
 }
 
@@ -388,12 +388,12 @@ function markUnknown(root: Obj, parts: string[]): void {
  * may also have been there before, moved), the sub-documents and arrays it changed inside are walked.
  */
 function revertObjectDiff(doc: Obj, diff: Obj): void {
-  for (const section of ['u', 'd', 'i']) for (const k of Object.keys(obj(diff[section]))) doc[k] = unknownValue();
+  for (const section of ['u', 'd', 'i']) for (const k of Object.keys(obj(diff[section]))) setField(doc, k, unknownValue());
   for (const [k, v] of Object.entries(diff)) {
     if (k === 'd' || k === 'u' || k === 'i') continue;
     if (!k.startsWith('s')) throw new Mismatch(`Unknown diff section ${k}`);
     const field = k.slice(1);
-    doc[field] = revertSubDiff(doc[field], obj(v));
+    setField(doc, field, revertSubDiff(getField(doc, field), obj(v)));
   }
 }
 
@@ -485,8 +485,8 @@ function agrees(exact: unknown, partial: unknown): boolean {
   }
   if (isDoc(partial)) {
     if (!isDoc(exact)) return false;
-    for (const [k, v] of Object.entries(partial)) if (k in exact ? !agrees(exact[k], v) : !isUnknown(v)) return false;
-    return Object.keys(exact).every((k) => k in partial);
+    for (const [k, v] of Object.entries(partial)) if (hasField(exact, k) ? !agrees(exact[k], v) : !isUnknown(v)) return false;
+    return Object.keys(exact).every((k) => hasField(partial, k));
   }
   return JSON.stringify(exact) === JSON.stringify(partial);
 }
@@ -617,7 +617,7 @@ function diffValues(a: unknown, b: unknown, path: string, out: VersionDiff[]): v
     return;
   }
   if (isDoc(a) && isDoc(b)) {
-    for (const k of [...Object.keys(a), ...Object.keys(b).filter((k) => !(k in a))]) diffValues(a[k], b[k], join(path, k), out);
+    for (const k of [...Object.keys(a), ...Object.keys(b).filter((k) => !hasField(a, k))]) diffValues(getField(a, k), getField(b, k), join(path, k), out);
     return;
   }
   if (Array.isArray(a) && Array.isArray(b) && a.length === b.length) {

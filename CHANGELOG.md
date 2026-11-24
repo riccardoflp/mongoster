@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A document's history now keeps a field named `__proto__` or `constructor` inside the document: an update written through such a name by someone else could change every object of the extension, and of the extensions running beside it.
+
 ## 0.10.0
 
 - **Formatting by a field's values**: right-click a column header → `Color by This Field` colors the table by that field with no condition to write: `true` green and `false` red, numbers and dates on a scale (one color growing stronger, or `Red to green` / `Green to red`, between two ends taken from the page that you can change, or take again with `From This Page`), anything else with one color per distinct value, the same on every page. Click a value's color in the rule's legend to pin it to a color of its own (`"failed"` red), or type one in `+ Pin a Value…`; no other value takes a pinned color. `Palette` chooses where the other values take theirs: `All Colors`, or the shades of one (`Shades of Gray` …). A rule colors its field's cell or the whole row.

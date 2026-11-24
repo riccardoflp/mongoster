@@ -26,6 +26,22 @@ export function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+// A document's fields by a name that comes from outside (a dotted path of an update, a CSV header): only
+// the object's own fields count, and a field is always created on the object itself. With `o[name]`, a field
+// named `__proto__` or `constructor` reads what every object inherits, and writing through it changes
+// every object of the program.
+
+/** Whether the object itself has the field. */
+export const hasField = (o: Record<string, unknown>, name: string): boolean => Object.prototype.hasOwnProperty.call(o, name);
+
+/** The object's own field, undefined when it has none of that name. */
+export const getField = (o: Record<string, unknown>, name: string): unknown => (hasField(o, name) ? o[name] : undefined);
+
+/** Sets the object's own field, whatever its name. */
+export function setField(o: Record<string, unknown>, name: string, value: unknown): void {
+  Object.defineProperty(o, name, { value, writable: true, enumerable: true, configurable: true });
+}
+
 /** An EJSON type wrapper such as { $oid: "..." } (as opposed to a query operator object). */
 export function isEjsonWrapper(v: unknown): v is Record<string, unknown> {
   if (!isPlainObject(v)) return false;

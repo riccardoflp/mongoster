@@ -281,3 +281,36 @@ describe('buildHistory', () => {
     expect(buildHistory([], canon({ _id: 1 }))).toEqual({ versions: [], before: { state: 'exact', doc: canon({ _id: 1 }) }, conflict: false });
   });
 });
+
+// RS24: a field can be named `__proto__` or `constructor`; a path through one must stay inside the document.
+describe('fields named like what every object inherits', () => {
+  const untouched = () => expect(Object.keys(Object.getPrototypeOf({}) as object)).toEqual([]);
+  const own = (o: unknown, k: string) => Object.getOwnPropertyDescriptor(o as object, k)?.value as unknown;
+
+  it('sets a dotted path through __proto__ and constructor inside the document only', () => {
+    const doc = applyUpdate({ _id: 1 }, { $set: { '__proto__.polluted': 'x', 'constructor.prototype.polluted': 'y' } });
+    untouched();
+    expect(({} as Obj).polluted).toBeUndefined();
+    expect(own(doc, '__proto__')).toEqual({ polluted: 'x' });
+    expect(own(doc, 'constructor')).toEqual({ prototype: { polluted: 'y' } });
+  });
+
+  it('applies and undoes a diff on such fields as on any other', () => {
+    const before = JSON.parse('{"_id":1,"__proto__":{"p":1},"toString":2}') as Obj;
+    const after = applyUpdate(before, { $v: 2, diff: { s__proto__: { u: { p: 2 } }, d: { toString: false }, i: { constructor: 3 } } });
+    untouched();
+    expect(JSON.stringify(after)).toBe('{"_id":1,"__proto__":{"p":2},"constructor":3}');
+    expect(() => applyUpdate({ _id: 1 }, { $v: 2, diff: { s__proto__: { u: { p: 2 } } } })).toThrow(/doesn't have/);
+    const undone = revertUpdate(after, { $v: 2, diff: { s__proto__: { u: { p: 2 } } } });
+    untouched();
+    expect(Object.keys(own(undone, '__proto__') as object)).toEqual(['p']);
+    revertUpdate({ _id: 1 }, { $set: { '__proto__.polluted': 1 }, $unset: { 'constructor.prototype.polluted': '' } });
+    untouched();
+  });
+
+  it('rebuilds a history that writes through __proto__ without touching other objects', () => {
+    const history = buildHistory(opsOf(insert({ _id: 1 }), update({ $set: { '__proto__.polluted': 'x' } }), update({ $unset: { '__proto__.polluted': '' } })), canon({ _id: 1 }));
+    untouched();
+    expect(history.versions).toHaveLength(3);
+  });
+});
