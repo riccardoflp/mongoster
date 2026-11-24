@@ -4,6 +4,7 @@
 import * as vscode from 'vscode';
 import type { ConnectionColor, ConnectionInfo, ConnectionManager } from './connections';
 import { paintTab } from './connectionColors';
+import { colorOf } from './shared/collectionColors';
 import { applyOp, readStructure } from './structure';
 import { StructureDiff, diffStructure, diffTitle, orderForScript, planSummary } from './shared/structure';
 import type { StructureHostMessage, StructureSide, StructureViewMessage } from './shared/messages';
@@ -144,7 +145,7 @@ export class StructurePanel {
     const t = this.target(side);
     const info = this.connections.get(t.connectionId);
     const why = info?.readOnly ? `The connection ${info.name} is read-only.` : undefined;
-    return { connectionName: info?.name ?? '?', database: t.database, readOnly: !!why, why, color: info?.color };
+    return { connectionName: info?.name ?? '?', database: t.database, readOnly: !!why, why, color: this.sideColor(side) };
   }
 
   private where(side: Side): string {
@@ -152,9 +153,15 @@ export class StructurePanel {
     return `${s.connectionName} › ${s.database}`;
   }
 
+  /** The color of a side: its database's (`colorOf`). */
+  private sideColor(side: Side): ConnectionColor | undefined {
+    const t = this.target(side);
+    return colorOf(this.connections.get(t.connectionId), t.database);
+  }
+
   /** The tab's color: the one both sides have, or the only one there is (comparing with production, say). */
   private color(): ConnectionColor | undefined {
-    const [left, right] = [this.connections.get(this.left.connectionId)?.color, this.connections.get(this.right.connectionId)?.color];
+    const [left, right] = [this.sideColor('left'), this.sideColor('right')];
     return left === right || !right ? left : !left ? right : undefined;
   }
 

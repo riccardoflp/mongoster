@@ -63,7 +63,8 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | Feature | Title | Kind | Status |
 | --- | --- | --- | --- |
 | [`tree.set-collection-color`](02-tree.md#treeset-collection-color--set-the-color-of-a-collection-a-view-or-a-bucket) | Set the color of a collection, a view or a bucket | Operation | Built |
-| [`tree.color-of-collection`](02-tree.md#treecolor-of-collection--which-color-something-of-a-collection-takes) | Which color something of a collection takes | Derivation | Built |
+| [`tree.set-database-color`](02-tree.md#treeset-database-color--set-the-color-of-a-database) | Set the color of a database | Operation | Built |
+| [`tree.color-of-collection`](02-tree.md#treecolor-of-collection--which-color-something-of-a-database-or-a-collection-takes) | Which color something of a database or a collection takes | Derivation | Built |
 | [`tree.collection-color-follows`](02-tree.md#treecollection-color-follows--a-collections-color-follows-a-rename-and-goes-with-a-drop) | A collection's color follows a rename and goes with a drop | Operation | Built |
 | [`tree.exclude`](02-tree.md#treeexclude--exclude-from-searches-or-include-again) | Exclude from searches, or include again | Operation | Specified |
 | [`tree.excluded`](02-tree.md#treeexcluded--what-searches-leave-out) | What searches leave out | Derivation | Specified |

@@ -1,6 +1,6 @@
 // The color of a connection wherever something of that connection is shown: the icon of its tabs, the
 // names of the tabs of its documents and playgrounds, its node in the tree and the icons below it. A collection's
-// own color (D16) takes its place for the documents and definitions of that collection.
+// own color, or its database's (D16), takes its place for the documents and definitions of that collection.
 import * as vscode from 'vscode';
 import type { ConnectionColor, ConnectionManager } from './connections';
 import { colorOf } from './shared/collectionColors';
@@ -85,7 +85,7 @@ export class ConnectionDecorations implements vscode.FileDecorationProvider, vsc
   }
 
   private signature(): string {
-    return JSON.stringify(this.connections.list().map((c) => [c.id, c.name, c.color, c.collectionColors, c.excluded, c.exclusions]));
+    return JSON.stringify(this.connections.list().map((c) => [c.id, c.name, c.color, c.databaseColors, c.collectionColors, c.excluded, c.exclusions]));
   }
 
   connectionOf(uri: vscode.Uri): string | undefined {

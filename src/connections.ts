@@ -6,7 +6,7 @@ import type { Color } from './shared/colors';
 
 /** A connection's color: one of the presets or a custom `#rrggbb` (`src/shared/colors.ts`, D17). */
 export type ConnectionColor = Color;
-/** The color of a single collection: one of a connection's, or `none` to show it plain in a colored connection. */
+/** The color of a single database or collection: one of a connection's, or `none` to show it plain below something colored. */
 export type CollectionColor = ConnectionColor | 'none';
 
 export interface ConnectionInfo {
@@ -16,7 +16,9 @@ export interface ConnectionInfo {
   folder?: string;
   /** Marks the connection (tree icon, stripe on its collection tabs), e.g. red for production. */
   color?: ConnectionColor;
-  /** Colors of single collections, views and buckets, keyed by `database.collection`; they win over `color` (D16). */
+  /** Colors of single databases, keyed by the database's name; they win over `color` (D16). */
+  databaseColors?: Record<string, CollectionColor>;
+  /** Colors of single collections, views and buckets, keyed by `database.collection`; they win over the database's (D16). */
   collectionColors?: Record<string, CollectionColor>;
   /** Left out of the tree's filter and of the MCP server's list of connections (`src/shared/exclusions.ts`). */
   excluded?: boolean;
@@ -83,7 +85,7 @@ export class ConnectionManager implements vscode.Disposable {
     const current = this.get(id);
     if (!current) return undefined;
     const info: ConnectionInfo = { ...current, ...changes };
-    for (const key of ['folder', 'color', 'collectionColors', 'excluded', 'exclusions', 'readOnly', 'noHistory', 'ssh', 'tls', 'redisOplog'] as const) if (!info[key]) delete info[key];
+    for (const key of ['folder', 'color', 'databaseColors', 'collectionColors', 'excluded', 'exclusions', 'readOnly', 'noHistory', 'ssh', 'tls', 'redisOplog'] as const) if (!info[key]) delete info[key];
     if (uri !== undefined && uri !== (await this.uri(id))) {
       await this.context.secrets.store(secretKey(id), uri);
       await this.disconnect(id);

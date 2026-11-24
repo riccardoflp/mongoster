@@ -7,6 +7,7 @@ import { createHash } from 'crypto';
 import { AnyBulkWriteOperation, BSON, Collection, Document } from 'mongodb';
 import type { ConnectionColor, ConnectionInfo, ConnectionManager } from './connections';
 import { paintTab } from './connectionColors';
+import { colorOf } from './shared/collectionColors';
 import type { DocumentFileSystem } from './documentFs';
 import { toBson } from './queries';
 import { CompareCounts, CompareOptions, DiffKind, comparable, fieldDiff } from './shared/compare';
@@ -167,12 +168,18 @@ export class ComparePanel {
     const t = this.target(side);
     const info = this.connections.get(t.connectionId);
     const why = info?.readOnly ? `The connection ${info.name} is read-only.` : t.isView ? `${t.collection} is a view.` : undefined;
-    return { connectionName: info?.name ?? '?', database: t.database, collection: t.collection, readOnly: !!why, why, color: info?.color };
+    return { connectionName: info?.name ?? '?', database: t.database, collection: t.collection, readOnly: !!why, why, color: this.sideColor(side) };
+  }
+
+  /** The color of a side: its collection's (`colorOf`). */
+  private sideColor(side: Side): ConnectionColor | undefined {
+    const t = this.target(side);
+    return colorOf(this.connections.get(t.connectionId), t.database, t.collection);
   }
 
   /** The tab's color: the one both sides have, or the only one there is (comparing with production, say). */
   private color(): ConnectionColor | undefined {
-    const [left, right] = [this.connections.get(this.left.connectionId)?.color, this.connections.get(this.right.connectionId)?.color];
+    const [left, right] = [this.sideColor('left'), this.sideColor('right')];
     return left === right || !right ? left : !left ? right : undefined;
   }
 

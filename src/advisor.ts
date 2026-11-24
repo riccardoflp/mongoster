@@ -6,6 +6,7 @@ import { ThemeColors } from './themeColors';
 import { BSON, Document, MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
 import { paintTab } from './connectionColors';
+import { scopeColor } from './shared/collectionColors';
 import { openOperation } from './monitor';
 import { Advice, AdvisorCollection, AdvisorIndex, analyze } from './shared/advisor';
 import type { AdvisorHostMessage, AdvisorReport, AdvisorSources, AdvisorViewMessage } from './shared/messages';
@@ -62,7 +63,7 @@ export class AdvisorPanel {
       if (p.scope.connectionId !== info.id) continue;
       p.info = info;
       p.panel.title = scopeTitle(p.scope, info);
-      paintTab(p.panel, p.context.extensionUri, info.color);
+      paintTab(p.panel, p.context.extensionUri, scopeColor(info, p.scope));
       p.postInit();
     }
   }
@@ -83,7 +84,7 @@ export class AdvisorPanel {
       vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')] },
     );
-    paintTab(this.panel, context.extensionUri, info.color);
+    paintTab(this.panel, context.extensionUri, scopeColor(info, scope));
     this.panel.webview.html = this.html();
     ThemeColors.attach(this.panel);
     this.panel.onDidDispose(() => AdvisorPanel.panels.delete(scopeKey(scope)));
@@ -95,7 +96,7 @@ export class AdvisorPanel {
   }
 
   private postInit(): void {
-    this.post({ type: 'init', connectionName: this.info.name, color: this.info.color, readOnly: !!this.info.readOnly, database: this.scope.database, collection: this.scope.collection });
+    this.post({ type: 'init', connectionName: this.info.name, color: scopeColor(this.info, this.scope), readOnly: !!this.info.readOnly, database: this.scope.database, collection: this.scope.collection });
   }
 
   private client(): Promise<MongoClient> {

@@ -113,7 +113,7 @@ Every tab other than the editors is a `vscode.WebviewPanel`, built the same way.
 
 - A class with a `private static readonly panels = new Map<string, Panel>()` keyed by what the tab shows (connection, database, collection…), and a `static show(…)` that reveals the existing tab or creates one.
 - `vscode.window.createWebviewPanel(…, { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [dist, media] })`.
-- `paintTab(panel, extensionUri, color)` from `src/connectionColors.ts` gives the tab the connection's color, or for a tab of one collection the color `colorOf` in `src/shared/collectionColors.ts` gives (the collection's own, when it has one).
+- `paintTab(panel, extensionUri, color)` from `src/connectionColors.ts` gives the tab the connection's color, or for a tab of one collection the color `colorOf` in `src/shared/collectionColors.ts` gives (the collection's own, otherwise its database's own, when they have one); a tab opened on a connection, a database or a collection takes `scopeColor` of what it was opened on.
 - `html()` writes the page: a Content-Security-Policy with a nonce, the CSS files from `media/` (`media/controls.css` last), and `<script nonce src="dist/<tab>.js">`.
 - `receive(m: XViewMessage)` handles what the webview sends; `post(m: XHostMessage)` answers. The webview starts with `{ type: 'ready' }`, and the host answers with `{ type: 'init', … }`.
 - `static connectionChanged(info)` (name, color, read-only changed) and `static close(connectionId)` (connection removed): `src/extension.ts` calls them for every tab type in `updateConnection` and when a connection is removed.
@@ -175,7 +175,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `src/connections.ts` – saved connections, their secrets and the `MongoClient` cache
 - `src/transport.ts` – TLS options and SSH tunnel (`ssh2`) with host key verification
 - `src/tree.ts` – connections / folders / databases / collections / GridFS buckets tree, the tree filter; `errorMessage`
-- `src/connectionColors.ts` – a connection's color on its tabs, its documents' and playgrounds' tab names and its tree nodes; a collection's own color on its documents' and definitions' tab names
+- `src/connectionColors.ts` – a connection's color on its tabs, its documents' and playgrounds' tab names and its tree nodes; a collection's own color, or its database's, on its documents' and definitions' tab names
 - `src/themeColors.ts`, `src/shared/tokenColors.ts`, `src/webview/tokenColors.ts` – syntax colors of the active theme (its file, its includes and `editor.tokenColorCustomizations`) sent to the webviews
 - `src/manage.ts` – creating, renaming and dropping databases and collections
 - `src/documentFs.ts` – `mongoster://` file system to open, edit and save documents in editor tabs
@@ -226,7 +226,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `oplog.ts` – redis-oplog channels and messages, the fields an update changes
 - `schedule.ts` – scheduled tasks: next runs in local time, missed runs, file name patterns
 - `colors.ts` – the eleven preset colors and custom `#rrggbb` ones: reading them, the nearest preset where VS Code takes only theme colors, a color as CSS, the choices of `Set Color…` (D17)
-- `collectionColors.ts` – the colors of single collections: which color something of a collection takes, and the map of colors through a rename or a drop (D16)
+- `collectionColors.ts` – the colors of single databases and collections: which color something of a database or a collection takes (collection over database over connection), and the maps of colors through a rename or a drop (D16)
 - `exclusions.ts` – what is excluded from searches: whether a database or collection is, what a search leaves out, the list through a rename or a drop (D19)
 - `typeAhead.ts` – the desktop app's tree moving to the next name starting with the letters typed
 - `gridfs.ts`, `advisor.ts`, `mcp.ts`, `connectionsFile.ts`, `savedQueries.ts`, `tokenColors.ts` – see their features

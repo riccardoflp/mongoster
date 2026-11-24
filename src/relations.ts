@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import type { MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
 import { paintTab } from './connectionColors';
+import { colorOf } from './shared/collectionColors';
 import type { DiagramHostMessage, DiagramViewMessage } from './shared/messages';
 import { RelationsCache, analyzeRelations } from './relationsAnalysis';
 import { Box, RelGraph, toSvg } from './shared/relations';
@@ -40,7 +41,7 @@ export class DiagramPanel {
     for (const p of DiagramPanel.panels.values()) {
       if (p.scope.connectionId !== info.id) continue;
       p.info = info;
-      paintTab(p.panel, p.context.extensionUri, info.color);
+      paintTab(p.panel, p.context.extensionUri, colorOf(info, p.scope.database));
       p.postInit();
     }
   }
@@ -63,7 +64,7 @@ export class DiagramPanel {
       vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')] },
     );
-    paintTab(this.panel, context.extensionUri, info.color);
+    paintTab(this.panel, context.extensionUri, colorOf(info, scope.database));
     this.panel.webview.html = this.html();
     this.panel.onDidDispose(() => DiagramPanel.panels.delete(scopeKey(scope)));
     this.panel.webview.onDidReceiveMessage((m: DiagramViewMessage) => void this.receive(m));
@@ -74,7 +75,7 @@ export class DiagramPanel {
   }
 
   private postInit(): void {
-    this.post({ type: 'init', connectionName: this.info.name, color: this.info.color, database: this.scope.database, focus: this.scope.collection });
+    this.post({ type: 'init', connectionName: this.info.name, color: colorOf(this.info, this.scope.database), database: this.scope.database, focus: this.scope.collection });
   }
 
   private client(): Promise<MongoClient> {

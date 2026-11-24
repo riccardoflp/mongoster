@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **The color of a database**: right-click a database → `Set Color…` gives it its own color (one of the eleven, or `Custom Color…`), `None` to show it plain in a colored connection, or `Connection's Color` to follow the connection again. The database's color shows on its icon in the tree, on the tabs opened on the database (search, watch, index advisor, diagram, compare structure) and on its collections, views and GridFS buckets that have no color of their own: a collection's color wins over its database's, which wins over the connection's. `Set Color…` on such a collection now offers `Database's Color` in place of `Connection's Color`. Dropping the database from Mongoster removes its color, and Mongoster's connection export carries it.
+- The search, watch, index advisor and compare tabs opened on one collection now take the collection's own color, like its collection tab; they kept the connection's.
+
 ## 0.9.0
 
 - The desktop app's window no longer has the system's title bar: its own bar at the top, in the colors of the theme, holds the menus (`File`, `Edit`, `View`, `Tools`, `Help`; `Alt` and the underlined letter, or `F10`, open them), the name of the active tab and the buttons that minimize, maximize and close the window. Dragging the bar moves the window. On macOS the menus stay in the system's menu bar and the window's buttons at the left of the bar.

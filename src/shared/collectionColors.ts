@@ -1,5 +1,6 @@
-// The colors of single collections, views and GridFS buckets, kept on their connection (D16): which color something
-// of a collection takes, and how the map of colors changes when a collection is colored, renamed or dropped.
+// The colors of single databases, and of single collections, views and GridFS buckets, kept on their connection
+// (D16): which color something of a database or a collection takes (the collection's wins over the database's, which
+// wins over the connection's), and how the maps of colors change when one is colored, renamed or dropped.
 // No vscode dependency: the tree, the tabs, the decorations and the import of connections use it.
 import type { CollectionColor, ConnectionColor } from '../connections';
 import { readColor } from './colors';
@@ -7,9 +8,13 @@ import { readColor } from './colors';
 /** The colors of a connection's collections, keyed by `database.collection`. */
 export type CollectionColors = Record<string, CollectionColor>;
 
+/** The colors of a connection's databases, keyed by the database's name. */
+export type DatabaseColors = Record<string, CollectionColor>;
+
 /** What `colorOf` needs of a connection. */
 export interface ColoredConnection {
   color?: ConnectionColor;
+  databaseColors?: DatabaseColors;
   collectionColors?: CollectionColors;
 }
 
@@ -23,20 +28,37 @@ export function bucketCollection(bucket: string): string {
   return `${bucket}.files`;
 }
 
-/** The color of something of the collection: its own, none when it is `none`, otherwise the connection's. */
-export function colorOf(connection: ColoredConnection | undefined, database: string, collection: string): ConnectionColor | undefined {
+/**
+ * The color of something of the collection, or of the database without `collection`: the collection's own, otherwise
+ * the database's own, otherwise the connection's. An own `none` is no color, and ends the search there.
+ */
+export function colorOf(connection: ColoredConnection | undefined, database: string, collection?: string): ConnectionColor | undefined {
   if (!connection) return undefined;
-  const own = connection.collectionColors?.[namespaceOf(database, collection)];
+  const own = (collection !== undefined ? connection.collectionColors?.[namespaceOf(database, collection)] : undefined) ?? connection.databaseColors?.[database];
   if (own === 'none') return undefined;
   return own ?? connection.color;
 }
 
-/** The collection's own color, as the quick pick shows it: undefined when it follows the connection. */
-export function ownColorOf(connection: ColoredConnection, database: string, collection: string): CollectionColor | undefined {
-  return connection.collectionColors?.[namespaceOf(database, collection)];
+/**
+ * The color of a tab opened on a connection, on one of its databases or on one of its collections: the connection's
+ * without a database, otherwise the one `colorOf` gives.
+ */
+export function scopeColor(connection: ColoredConnection | undefined, scope: { database?: string; collection?: string }): ConnectionColor | undefined {
+  return scope.database === undefined ? connection?.color : colorOf(connection, scope.database, scope.collection);
 }
 
-/** The map with `namespace` given `color`, or following the connection's again when `color` is undefined. */
+/**
+ * The own color of the collection, or of the database without `collection`, as the quick pick shows it: undefined
+ * when it follows what is above it.
+ */
+export function ownColorOf(connection: ColoredConnection, database: string, collection?: string): CollectionColor | undefined {
+  return collection === undefined ? connection.databaseColors?.[database] : connection.collectionColors?.[namespaceOf(database, collection)];
+}
+
+/**
+ * The map with `namespace` (or the database's name, in the map of the databases) given `color`, or following what
+ * is above it again when `color` is undefined.
+ */
 export function setCollectionColor(colors: CollectionColors | undefined, namespace: string, color: CollectionColor | undefined): CollectionColors | undefined {
   const next = { ...colors };
   if (color) next[namespace] = color;
@@ -69,10 +91,19 @@ export function dropCollectionColors(colors: CollectionColors | undefined, datab
 
 /** The valid entries of a map read from a file: a `database.collection` key and a preset, a hex color or `none`. */
 export function readCollectionColors(value: unknown): CollectionColors | undefined {
+  return readColors(value, /^[^.]+\..+$/);
+}
+
+/** The valid entries of a map of databases read from a file: a database's name and a preset, a hex color or `none`. */
+export function readDatabaseColors(value: unknown): DatabaseColors | undefined {
+  return readColors(value, /^[^.]+$/);
+}
+
+function readColors(value: unknown, key: RegExp): Record<string, CollectionColor> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const entries = Object.entries(value as Record<string, unknown>).flatMap(([ns, value]): [string, CollectionColor][] => {
+  const entries = Object.entries(value as Record<string, unknown>).flatMap(([name, value]): [string, CollectionColor][] => {
     const color = value === 'none' ? 'none' : readColor(value);
-    return /^[^.]+\..+$/.test(ns) && color ? [[ns, color]] : [];
+    return key.test(name) && color ? [[name, color]] : [];
   });
   return orUndefined(Object.fromEntries(entries));
 }

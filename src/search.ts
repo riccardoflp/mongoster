@@ -6,6 +6,7 @@ import { ThemeColors } from './themeColors';
 import { BSON, Document, FindCursor, MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
 import { paintTab } from './connectionColors';
+import { scopeColor } from './shared/collectionColors';
 import type { DocumentFileSystem } from './documentFs';
 import { fromRelaxed } from './queries';
 import type { SearchCollection, SearchHit, SearchHostMessage, SearchOptions, SearchProgress, SearchResult, SearchViewMessage } from './shared/messages';
@@ -234,7 +235,7 @@ export class SearchPanel {
       if (p.scope.connectionId !== info.id) continue;
       p.info = info;
       p.panel.title = scopeTitle(p.scope, info);
-      paintTab(p.panel, p.context.extensionUri, info.color);
+      paintTab(p.panel, p.context.extensionUri, scopeColor(info, p.scope));
       p.postInit();
     }
   }
@@ -256,7 +257,7 @@ export class SearchPanel {
       vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')] },
     );
-    paintTab(this.panel, context.extensionUri, info.color);
+    paintTab(this.panel, context.extensionUri, scopeColor(info, scope));
     this.panel.webview.html = this.html();
     ThemeColors.attach(this.panel);
     this.panel.onDidDispose(() => {
@@ -271,7 +272,7 @@ export class SearchPanel {
   }
 
   private postInit(): void {
-    this.post({ type: 'init', connectionName: this.info.name, color: this.info.color, database: this.scope.database, collection: this.scope.collection });
+    this.post({ type: 'init', connectionName: this.info.name, color: scopeColor(this.info, this.scope), database: this.scope.database, collection: this.scope.collection });
   }
 
   private client(): Promise<MongoClient> {

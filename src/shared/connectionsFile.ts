@@ -13,7 +13,7 @@
 // PBKDF2-SHA512, 100,000 iterations (encrypt.ts). Mongoster's own file encrypts its secrets the same way.
 import { createCipheriv, createDecipheriv, pbkdf2, randomBytes, randomUUID } from 'crypto';
 import type { CollectionColor, ConnectionColor } from '../connections';
-import { readCollectionColors } from './collectionColors';
+import { readCollectionColors, readDatabaseColors } from './collectionColors';
 import { readExclusions } from './exclusions';
 import { type PresetColor, nearestPreset, readColor } from './colors';
 import type { SshOptions, TlsOptions } from '../transport';
@@ -25,6 +25,8 @@ export interface PortableConnection {
   uri: string;
   folder?: string;
   color?: ConnectionColor;
+  /** The colors of single databases, keyed by the database's name (D16): only Mongoster's format has them. */
+  databaseColors?: Record<string, CollectionColor>;
   /** The colors of single collections, keyed by `database.collection` (D16): only Mongoster's format has them. */
   collectionColors?: Record<string, CollectionColor>;
   /** Excluded from searches: the connection itself, and its databases and collections. Only Mongoster's format has them. */
@@ -534,6 +536,8 @@ async function fromMongoster(entry: Json, decrypter: Decrypter | undefined): Pro
   if (str(entry.folder)?.trim()) c.folder = str(entry.folder)!.trim();
   const color = colorFrom(entry.color, true);
   if (color) c.color = color;
+  const databaseColors = readDatabaseColors(entry.databaseColors);
+  if (databaseColors) c.databaseColors = databaseColors;
   const collectionColors = readCollectionColors(entry.collectionColors);
   if (collectionColors) c.collectionColors = collectionColors;
   if (entry.excluded === true) c.excluded = true;
@@ -609,7 +613,7 @@ export async function serializeConnections(list: PortableConnection[], format: C
     }
     const ssh = list.filter((c) => c.ssh).length;
     if (ssh) notes.add(`${count(ssh, ssh === 1 ? 'SSH tunnel was' : 'SSH tunnels were')} left out (a connection string can't hold one)`);
-    const other = list.filter((c) => c.folder || c.color || c.collectionColors || c.readOnly || c.redis).length;
+    const other = list.filter((c) => c.folder || c.color || c.databaseColors || c.collectionColors || c.readOnly || c.redis).length;
     if (other) notes.add('folders, colors, read-only and redis-oplog were left out');
     if (list.some((c) => c.excluded || c.exclusions)) notes.add('exclusions from searches were left out');
     return { text: `${lines.join('\n')}\n`, notes: [...notes] };
@@ -649,7 +653,7 @@ export async function serializeConnections(list: PortableConnection[], format: C
     }
     const other = list.filter((c) => c.folder || c.readOnly || c.redis).length;
     if (other) notes.add("folders, read-only and redis-oplog were left out (Compass doesn't have them)");
-    if (list.some((c) => c.collectionColors)) notes.add("colors of collections were left out (Compass doesn't have them)");
+    if (list.some((c) => c.databaseColors || c.collectionColors)) notes.add("colors of databases and collections were left out (Compass doesn't have them)");
     if (list.some((c) => c.excluded || c.exclusions)) notes.add("exclusions from searches were left out (Compass doesn't have them)");
     return { text: `${JSON.stringify({ type: COMPASS_TYPE, version: FILE_VERSION, connections }, null, 2)}\n`, notes: [...notes] };
   }
@@ -661,6 +665,7 @@ export async function serializeConnections(list: PortableConnection[], format: C
     if (urlPassword(c.uri)) secrets.password = urlPassword(c.uri);
     if (c.folder) entry.folder = c.folder;
     if (c.color) entry.color = c.color;
+    if (c.databaseColors) entry.databaseColors = c.databaseColors;
     if (c.collectionColors) entry.collectionColors = c.collectionColors;
     if (c.excluded) entry.excluded = true;
     if (c.exclusions) entry.exclusions = c.exclusions;

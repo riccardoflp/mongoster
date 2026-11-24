@@ -224,6 +224,12 @@
         "icon": "$(symbol-color)"
       },
       {
+        "command": "mongoster.setDatabaseColor",
+        "title": "Set Color…",
+        "category": "Mongoster",
+        "icon": "$(symbol-color)"
+      },
+      {
         "command": "mongoster.exclude",
         "title": "Exclude From Searches",
         "category": "Mongoster",
@@ -635,6 +641,11 @@
           "group": "4_organize@1"
         },
         {
+          "command": "mongoster.setDatabaseColor",
+          "when": "view == mongoster.connections && viewItem =~ /^database/",
+          "group": "4_organize@1"
+        },
+        {
           "command": "mongoster.exclude",
           "when": "view == mongoster.connections && viewItem =~ /^(connection|database|collection|view|bucket)(?!.*\\.excluded$)/",
           "group": "4_organize@5"
@@ -895,6 +906,10 @@
         },
         {
           "command": "mongoster.setCollectionColor",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.setDatabaseColor",
           "when": "false"
         },
         {

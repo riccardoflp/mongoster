@@ -122,7 +122,7 @@ changed ([07-roadmap.md](07-roadmap.md)). Cross-references use these prefixes on
 | File | Prefix | Area | Cards |
 | --- | --- | --- | --- |
 | `01-connections.md` | `connection.` | Saved connections: add, edit, TLS and SSH, test, remove, folders, color, read-only, import and export, secrets | now |
-| `02-tree.md` | `tree.` | The connections view: nodes, refresh, disconnect, the filter, colors of collections, exclusions from searches, type-ahead | now: colors of collections, exclusions, type-ahead |
+| `02-tree.md` | `tree.` | The connections view: nodes, refresh, disconnect, the filter, colors of databases and collections, exclusions from searches, type-ahead | now: colors of databases and collections, exclusions, type-ahead |
 | `03-collection-tab.md` | `query.` | The collection tab: table, filter, sort, projection, builder, autocomplete, drag and drop, columns, conditional formatting, history, aggregate | now: conditional formatting |
 | `04-documents.md` | `document.` | Writing documents: inline edit, edit in the editor, insert, duplicate, delete, selected rows, update many, delete many, restore a version | now |
 | `05-field-actions.md` | `field.` | Rename, remove or convert a field from its column header | now |

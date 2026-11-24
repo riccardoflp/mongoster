@@ -111,6 +111,13 @@ connection removes them, and the open tabs hear of a change the way they hear of
 drop from Mongoster moves or removes the color; one done elsewhere leaves it. *Accepted in
 [proposal 0001](proposals/0001-collection-colors.md).*
 
+A database can have a color of its own too, kept the same way as `databaseColors`, keyed by the database's name. The
+most specific one wins: a collection's color over its database's, the database's over the connection's; `none` at
+either level shows no color and ends the search there. The database's color applies to the database's node and to
+what a collection's color applies to, for the collections without one of their own. A tab opened on a database or
+on a collection (search, watch, index advisor, diagram, the two compare tabs) takes the color of what it was opened
+on by the same rule; the tabs of a whole connection and the playground results keep the connection's.
+
 ## D17 — Eleven preset colors and custom colors, exact where Mongoster draws them
 
 The colors of connections and collections are eleven presets, the theme's six `charts.*` colors and five Mongoster

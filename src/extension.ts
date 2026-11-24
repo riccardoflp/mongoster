@@ -33,8 +33,8 @@ import { mergeSavedQueries } from './shared/savedQueries';
 import { exportConnections, importConnections } from './connectionsTransfer';
 import { ConnectionDecorations, tabIcon } from './connectionColors';
 import { bucketExclusionKey, dropExclusions, exclusionKey, renameExclusion, setExclusions } from './shared/exclusions';
-import { CollectionColors, bucketCollection, dropCollectionColors, namespaceOf, ownColorOf, renameCollectionColor, setCollectionColor } from './shared/collectionColors';
-import { type ColorChoiceValue, colorChoices } from './shared/colors';
+import { CollectionColors, bucketCollection, colorOf, dropCollectionColors, namespaceOf, ownColorOf, renameCollectionColor, setCollectionColor } from './shared/collectionColors';
+import { type ColorChoiceValue, type InheritedColor, colorChoices } from './shared/colors';
 import { pickCustomColor } from './colorPicker';
 import { Scheduler } from './scheduler';
 import { ScheduledTasksPanel } from './scheduledTasks';
@@ -91,19 +91,23 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   /**
-   * Changes the colors of a connection's collections (D16), and with `changeExclusions` what it excludes from searches;
-   * each change returns the same map or list when nothing changes.
+   * Changes the colors of a connection's collections (D16), with `changeExclusions` what it excludes from searches,
+   * and with `droppedDatabase` forgets that database's own color; each change returns the same map or list when
+   * nothing changes.
    */
   const changeCollectionColors = async (
     connectionId: string,
     change: (colors: CollectionColors | undefined) => CollectionColors | undefined,
     changeExclusions: (exclusions: string[] | undefined) => string[] | undefined = (e) => e,
+    droppedDatabase?: string,
   ) => {
     const info = connections.get(connectionId);
     if (!info) return;
     const colors = change(info.collectionColors);
     const exclusions = changeExclusions(info.exclusions);
-    if (colors !== info.collectionColors || exclusions !== info.exclusions) await updateConnection(connectionId, { collectionColors: colors, exclusions });
+    const databaseColors = droppedDatabase !== undefined && info.databaseColors?.[droppedDatabase] ? setCollectionColor(info.databaseColors, droppedDatabase, undefined) : info.databaseColors;
+    if (colors !== info.collectionColors || exclusions !== info.exclusions || databaseColors !== info.databaseColors)
+      await updateConnection(connectionId, { collectionColors: colors, databaseColors, exclusions });
   };
 
   /**
@@ -138,12 +142,12 @@ export function activate(context: vscode.ExtensionContext): void {
     title: string,
     placeHolder: string,
     current: CollectionColor | undefined,
-    collection?: { connectionColor: ConnectionColor | undefined },
+    inherited?: InheritedColor,
   ): Promise<Exclude<ColorChoiceValue, 'custom'> | undefined> => {
-    const items = colorChoices(current, collection).map((c) => ({ ...c, ...(c.icon && { iconPath: tabIcon(context.extensionUri, c.icon) }) }));
+    const items = colorChoices(current, inherited).map((c) => ({ ...c, ...(c.icon && { iconPath: tabIcon(context.extensionUri, c.icon) }) }));
     const pick = await vscode.window.showQuickPick(items, { title, placeHolder });
     if (!pick || pick.value !== 'custom') return pick?.value as Exclude<ColorChoiceValue, 'custom'> | undefined;
-    return pickCustomColor(context, title, current && current !== 'none' ? current : collection?.connectionColor);
+    return pickCustomColor(context, title, current && current !== 'none' ? current : inherited?.color);
   };
 
   const workspace: WorkspaceHost = {
@@ -250,7 +254,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!node) return;
       const info = connections.get(node.info.id) ?? node.info;
       const pick = await askColor(`Color of ${info.name}`, 'Shown on the tree icon and as a stripe on its tabs, e.g. red for production', info.color);
-      if (pick) await updateConnection(info.id, { color: pick === 'none' || pick === 'connection' ? undefined : pick });
+      if (pick) await updateConnection(info.id, { color: pick === 'none' || pick === 'inherit' ? undefined : pick });
     }),
 
     vscode.commands.registerCommand('mongoster.setCollectionColor', async (node?: CollectionNode | BucketNode) => {
@@ -258,15 +262,32 @@ export function activate(context: vscode.ExtensionContext): void {
       const info = connections.get(node.connection.id);
       if (!info) return;
       const [name, collection] = node instanceof BucketNode ? [node.bucket, bucketCollection(node.bucket)] : [node.collection, node.collection];
+      // Without a color of its own it follows its database, when that has one, otherwise its connection.
+      const fromDatabase = ownColorOf(info, node.database) !== undefined;
       const pick = await askColor(
         `Color of ${name}`,
-        `Shown on its tree icon, its tab and its documents' tabs, instead of the color of ${info.name}`,
+        `Shown on its tree icon, its tab and its documents' tabs, instead of the color of ${fromDatabase ? node.database : info.name}`,
         ownColorOf(info, node.database, collection),
-        { connectionColor: info.color },
+        { from: fromDatabase ? 'database' : 'connection', color: colorOf(info, node.database) },
       );
       if (!pick) return;
-      const color: CollectionColor | undefined = pick === 'connection' ? undefined : pick;
+      const color: CollectionColor | undefined = pick === 'inherit' ? undefined : pick;
       await changeCollectionColors(info.id, (colors) => setCollectionColor(colors, namespaceOf(node.database, collection), color));
+    }),
+
+    vscode.commands.registerCommand('mongoster.setDatabaseColor', async (node?: DatabaseNode) => {
+      if (!(node instanceof DatabaseNode)) return;
+      const info = connections.get(node.connection.id);
+      if (!info) return;
+      const pick = await askColor(
+        `Color of ${node.database}`,
+        `Shown on its tree icon and on its collections without a color of their own, instead of the color of ${info.name}`,
+        ownColorOf(info, node.database),
+        { from: 'connection', color: info.color },
+      );
+      if (!pick) return;
+      const color: CollectionColor | undefined = pick === 'inherit' ? undefined : pick;
+      await updateConnection(info.id, { databaseColors: setCollectionColor(info.databaseColors, node.database, color) });
     }),
 
     // With several nodes selected in the tree, VS Code gives the one clicked and all the selected ones.
@@ -597,6 +618,7 @@ export function activate(context: vscode.ExtensionContext): void {
         node.connection.id,
         (colors) => dropCollectionColors(colors, node.database),
         (exclusions) => dropExclusions(exclusions, node.database),
+        node.database,
       );
       RelationsCache.invalidate(node.connection.id, node.database);
       CollectionPanel.close((t) => t.connectionId === node.connection.id && t.database === node.database);

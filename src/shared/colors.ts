@@ -104,8 +104,14 @@ export function colorLabel(color: Color): string {
   return isPreset(color) ? `${color[0].toUpperCase()}${color.slice(1)}` : color;
 }
 
-/** What a choice of `Set Color…` sets: a color, none, the connection's color (collections only), or a custom one. */
-export type ColorChoiceValue = Color | 'none' | 'connection' | 'custom';
+/** What a choice of `Set Color…` sets: a color, none, the color of what is above (databases and collections only), or a custom one. */
+export type ColorChoiceValue = Color | 'none' | 'inherit' | 'custom';
+
+/** What a database or a collection without a color of its own follows, and the color that has (D16). */
+export interface InheritedColor {
+  from: 'connection' | 'database';
+  color: Color | undefined;
+}
 
 export interface ColorChoice {
   label: string;
@@ -116,16 +122,19 @@ export interface ColorChoice {
 }
 
 /**
- * The choices of `Set Color…`: the eleven presets, `None`, for a collection `Connection's Color` (described with the
- * connection's color), and `Custom Color…` (described with the custom color in use). The current choice is described
- * `current`: for a connection `current` undefined is `None`, for a collection it is `Connection's Color`.
+ * The choices of `Set Color…`: the eleven presets, `None`, for a database or a collection `Connection's Color` or
+ * `Database's Color` (what it follows, described with that color), and `Custom Color…` (described with the custom
+ * color in use). The current choice is described `current`: for a connection `current` undefined is `None`, for a
+ * database or a collection it is the color of what it follows.
  */
-export function colorChoices(current: Color | 'none' | undefined, collection?: { connectionColor: Color | undefined }): ColorChoice[] {
-  const now: ColorChoiceValue = current === undefined ? (collection ? 'connection' : 'none') : isPreset(current) || current === 'none' ? current : 'custom';
+export function colorChoices(current: Color | 'none' | undefined, inherited?: InheritedColor): ColorChoice[] {
+  const now: ColorChoiceValue = current === undefined ? (inherited ? 'inherit' : 'none') : isPreset(current) || current === 'none' ? current : 'custom';
   const choices: ColorChoice[] = [
     ...PRESET_COLORS.map((color): ColorChoice => ({ label: colorLabel(color), value: color, icon: color })),
     { label: 'None', value: 'none' },
-    ...(collection ? [{ label: "Connection's Color", value: 'connection' as const, description: collection.connectionColor ? colorLabel(collection.connectionColor) : 'none' }] : []),
+    ...(inherited
+      ? [{ label: inherited.from === 'database' ? "Database's Color" : "Connection's Color", value: 'inherit' as const, description: inherited.color ? colorLabel(inherited.color) : 'none' }]
+      : []),
     { label: 'Custom Color…', value: 'custom', ...(now === 'custom' && { description: current }) },
   ];
   return choices.map((c) => (c.value === now ? { ...c, description: [c.description, 'current'].filter(Boolean).join(' · ') } : c));

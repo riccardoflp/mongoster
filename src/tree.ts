@@ -63,12 +63,12 @@ export class ConnectionNode extends vscode.TreeItem {
 }
 
 /**
- * The icon of a node below a connection, in the connection's color, or for a collection, view or bucket in its own
- * color when it has one: the names stay in the usual one.
+ * The icon of a node below a connection, in the connection's color, or for a database, collection, view or bucket
+ * in the color `colorOf` gives it (its own, or its database's): the names stay in the usual one.
  */
 function connectionIcon(id: string, connection: ConnectionInfo, database?: string, collection?: string): vscode.ThemeIcon {
   if (database !== undefined && isExcluded(connection, database, collection)) return new vscode.ThemeIcon(id, EXCLUDED_COLOR);
-  const color = database !== undefined && collection !== undefined ? colorOf(connection, database, collection) : connection.color;
+  const color = database !== undefined ? colorOf(connection, database, collection) : connection.color;
   return new vscode.ThemeIcon(id, color ? themeColorOf(color) : undefined);
 }
 

@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { BSON, ChangeStream, ChangeStreamOptions, Document, MongoClient } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
 import { paintTab } from './connectionColors';
+import { scopeColor } from './shared/collectionColors';
 import type { DocumentFileSystem } from './documentFs';
 import { fromRelaxed, toBson } from './queries';
 import type { WatchEvent, WatchHostMessage, WatchOptions, WatchState, WatchViewMessage } from './shared/messages';
@@ -56,7 +57,7 @@ export class WatchPanel {
       if (p.scope.connectionId !== info.id) continue;
       p.info = info;
       p.panel.title = scopeTitle(p.scope, info);
-      paintTab(p.panel, p.context.extensionUri, info.color);
+      paintTab(p.panel, p.context.extensionUri, scopeColor(info, p.scope));
       void p.postInit();
     }
   }
@@ -85,7 +86,7 @@ export class WatchPanel {
       vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist'), vscode.Uri.joinPath(context.extensionUri, 'media')] },
     );
-    paintTab(this.panel, context.extensionUri, info.color);
+    paintTab(this.panel, context.extensionUri, scopeColor(info, scope));
     this.panel.webview.html = this.html();
     this.panel.onDidDispose(() => {
       WatchPanel.panels.delete(scopeKey(scope));
@@ -117,7 +118,7 @@ export class WatchPanel {
         preImages = false;
       }
     }
-    this.post({ type: 'init', connectionName: this.info.name, color: this.info.color, readOnly: !!this.info.readOnly, database, collection, preImages });
+    this.post({ type: 'init', connectionName: this.info.name, color: scopeColor(this.info, this.scope), readOnly: !!this.info.readOnly, database, collection, preImages });
   }
 
   private async receive(m: WatchViewMessage): Promise<void> {
