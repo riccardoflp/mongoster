@@ -496,6 +496,16 @@ describe('securityNotes', () => {
     expect(notes({ tls: { allowInvalidHostnames: true } })).toEqual(['TLS', 'invalid host names allowed']);
   });
 
+  // RS29: what a file from someone else can make the connection send elsewhere, beside its hosts.
+  it('says a way to sign in that sends the password or the machine\'s credentials, and a file on another machine', () => {
+    expect(notes({ uri: 'mongodb://ada@evil.example/?authMechanism=PLAIN&authSource=$external' })).toEqual(['signs in with PLAIN']);
+    expect(notes({ uri: 'mongodb://evil.example/?authMechanism=mongodb-aws' })).toEqual(['signs in with MONGODB-AWS']);
+    expect(notes({ uri: 'mongodb://ada@h/?authMechanism=SCRAM-SHA-256' })).toEqual([]);
+    expect(notes({ tls: { caFile: '\\\\evil\\share\\ca.pem', certificateKeyFile: 'C:\\keys\\k.pem' } })).toEqual(['TLS', 'reads \\\\evil\\share\\ca.pem']);
+    expect(notes({ uri: 'mongodb://h/?tls=true&tlsCAFile=%2F%2Fevil%2Fshare%2Fca.pem' })).toEqual(['reads //evil/share/ca.pem']);
+    expect(notes({ ssh: { host: 'bastion', username: 'ada', privateKeyFile: '//evil/share/id' } as PortableConnection['ssh'] })).toEqual(['reads //evil/share/id', 'SSH ada@bastion']);
+  });
+
   it('says the certificate checks the connection string turns off', () => {
     expect(notes({ uri: 'mongodb://h/?tls=true&tlsInsecure=true' })).toEqual(['invalid certificates allowed', 'invalid host names allowed']);
     expect(notes({ uri: 'mongodb://h/?TLSAllowInvalidCertificates=TRUE' })).toEqual(['invalid certificates allowed']);

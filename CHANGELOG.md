@@ -14,6 +14,7 @@
 - `watch_changes` of the MCP server now gives up when the server does not open the change stream within its wait and 30 seconds more (an old `since` on a large oplog), saying so; the call stayed open until the server had read it all.
 - The default name of a connection no longer takes part of a password written with a `/` or an `@` in it, or with no host after it: it is the hosts, or `MongoDB`.
 - Exporting connections `Without passwords` or with a passphrase now takes a Redis password with an `@` in it whole; its end stayed in the file in clear text.
+- `Import Connections…` now says, in the list, when a connection signs in in a way that sends the password as it is or the machine's own credentials (`signs in with PLAIN`, `MONGODB-AWS`, `MONGODB-OIDC`, `GSSAPI`), and when its TLS or SSH key file is on another machine (`reads \\server\share\…`).
 
 ## 0.10.0
 

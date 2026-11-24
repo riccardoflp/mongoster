@@ -225,8 +225,24 @@ function urlHost(url: string): string | undefined {
  * safeguards it turns off. The import shows these before anything is saved, since the file may come from
  * someone else. No password is ever part of them.
  */
+/** Ways to sign in that send the password as it is, or something the machine has (cloud credentials, a ticket), to the host of the file. */
+const MECHANISMS_SAID = ['PLAIN', 'MONGODB-AWS', 'MONGODB-OIDC', 'GSSAPI'];
+
+/** A file on another machine (`\\\\server\\share\\…`, `//server/share/…`): reading it signs in to that machine on Windows. */
+const isNetworkPath = (file: string | undefined): file is string => !!file && /^(\\\\|\/\/)[^\\/]/.test(file);
+
 export function securityNotes(c: PortableConnection): string[] {
   const get = (k: string) => uriParam(c.uri, k);
+  const mechanism = (get('authMechanism') ?? '').toUpperCase();
+  const files = [c.tls?.caFile, c.tls?.certificateKeyFile, get('tlsCAFile'), get('tlsCertificateKeyFile'), c.ssh?.privateKeyFile]
+    .map((f) => {
+      try {
+        return f && decodeURIComponent(f);
+      } catch {
+        return f;
+      }
+    })
+    .filter(isNetworkPath);
   const insecure = isTrue(get('tlsInsecure'));
   const proxy = get('proxyHost');
   const proxyPort = get('proxyPort');
@@ -235,6 +251,8 @@ export function securityNotes(c: PortableConnection): string[] {
     (c.tls?.allowInvalidCertificates || insecure || isTrue(get('tlsAllowInvalidCertificates'))) && 'invalid certificates allowed',
     (c.tls?.allowInvalidHostnames || insecure || isTrue(get('tlsAllowInvalidHostnames'))) && 'invalid host names allowed',
     proxy && `proxy ${proxy}${proxyPort ? `:${proxyPort}` : ''}`,
+    MECHANISMS_SAID.includes(mechanism) && `signs in with ${mechanism}`,
+    ...[...new Set(files)].map((f) => `reads ${f}`),
     c.ssh && `SSH ${c.ssh.username}@${c.ssh.host}${c.ssh.port && c.ssh.port !== 22 ? `:${c.ssh.port}` : ''}`,
     // The Redis server receives the ids and the names of the changed fields of every write: its host is said.
     c.redis && `redis-oplog → ${urlHost(c.redis.url) ?? 'a host that could not be read'}`,

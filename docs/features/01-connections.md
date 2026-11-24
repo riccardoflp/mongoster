@@ -694,7 +694,9 @@ Acceptance:
 - [ ] The detail also says what the connection turns off or where else it connects, since the file may come from
       someone else: **invalid certificates allowed** and **invalid host names allowed** (from the TLS settings, or
       `tlsInsecure` / `tlsAllowInvalidCertificates` / `tlsAllowInvalidHostnames` in the connection string), **proxy
-      <host>[:<port>]** (`proxyHost`), **no undo history**. No password is ever part of it: a Redis URL whose host
+      <host>[:<port>]** (`proxyHost`), **signs in with <mechanism>** for `PLAIN`, `MONGODB-AWS`, `MONGODB-OIDC` and
+      `GSSAPI` (the password as it is, or the machine's own credentials, go to the file's host), **reads <path>** for
+      a TLS or SSH key file on another machine (`\\\\server\\share\\…`), **no undo history**. No password is ever part of it: a Redis URL whose host
       cannot be read shows as **redis-oplog → a host that could not be read**.
 - [ ] Connections already there with the same name and the same connection string start unchecked; all others start
       checked.
