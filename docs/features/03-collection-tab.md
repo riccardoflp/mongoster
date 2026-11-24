@@ -2,8 +2,10 @@
 
 The tab of a collection or a view: the table, the query bar, the pipeline editor and the other sections. The user's
 side is in the README's [Features](../../README.md#features). This area is one of those written when it is next
-changed ([07-roadmap.md](../07-roadmap.md)): it has the cards of conditional formatting only, from
-[proposal 0002](../proposals/0002-conditional-formatting.md) and [D18](../08-decisions.md); the table, the query, the
+changed ([07-roadmap.md](../07-roadmap.md)): it has the cards of conditional formatting only, from proposals
+[0002](../proposals/0002-conditional-formatting.md) and
+[0003](../proposals/0003-formatting-by-field-scopes-and-pane.md) (D18, D21 in [08-decisions.md](../08-decisions.md));
+the table, the query, the
 builder, the pipeline and the columns get theirs when they change. The place of the query, above or beside the
 results, and dropping a field on Sort or Project have theirs since they changed.
 
@@ -11,46 +13,60 @@ Conditional formatting writes nothing to the database. Its rules are Mongoster's
 `globalState` under `mongoster.formatting.<connection>/<database>/<collection>` ([11-data.md](../11-data.md)), sent to
 the webview with `init` (`formatRules`) and stored back with `{ type: 'saveFormatRules', rules }`
 (`src/shared/messages.ts`). The decision of which row and cell gets which color is pure, in
-`src/shared/formatting.ts` and `src/shared/match.ts`; `renderGrid` in `src/webview/main.ts` only sets `data-fmt` on
-the document's `tbody` and on the cells, and `media/webview.css` paints them.
+`src/shared/formatting.ts`, `src/shared/formatField.ts` and `src/shared/match.ts`; `renderGrid` in
+`src/webview/main.ts` only sets it on the document's `tbody` and on the cells (`applyPaint`: `data-fmt`, and a
+strength or a mixed color for scales and shades), and `media/webview.css` paints them.
 
-### `query.format-rules` — Add, edit, reorder and turn off formatting rules
+### `query.format-rules` — Add, edit, name, reorder and turn off formatting rules
 
-The user keeps, for each collection, a list of formatting rules that color the rows or cells of the table.
+The user keeps, for each collection, a list of formatting rules that color the rows or cells of the table, and edits
+them in the Formatting pane beside the table.
 
 - **Kind**: Operation
-- **Function**: `src/webview/formatting.ts › FormattingPanel`, `FormatDialog.save`; stored by
-  `src/collectionPanel.ts › CollectionPanel.onMessage` (`case 'saveFormatRules'`).
-- **Implemented in**: `src/shared/formatting.ts › readFormatRules`, `conditionError`, `newRuleId`;
-  `src/webview/main.ts › saveFormatRules`, `formatCells`, `fieldItems`; `src/collectionPanel.ts ›
-  formattingStateKey`, `moveCollectionState`, `postInit`; `src/shared/messages.ts`; `media/webview.css`.
-- **Entry points**: the `Formatting` button in the bar above the table (`Formatting (n)` with `n` rules on), which
-  opens the panel: a line per rule (drag handle, checkbox, color, `Row` or the field, the condition, `✎`, `✕`) and
-  `+ Add rule…`; `Format Cells…` in a column header's right-click menu (tooltip `Color the cells of <field> when the
-  document matches a condition`).
+- **Function**: `src/webview/formatting.ts › FormattingPaneUi` (`addCondition`, `addField`); stored by
+  `src/collectionPanel.ts › CollectionPanel.onMessage` (`case 'saveFormatRules'`, `case 'saveFormattingPane'`).
+- **Implemented in**: `src/shared/formatting.ts › readFormatRules`, `conditionError`, `newRuleId`, `ruleSummary`,
+  `readFormattingPane`; `src/webview/main.ts › saveFormatRules`, `compileFormat`, `formatCells`, `fieldItems`;
+  `src/collectionPanel.ts › formattingStateKey`, `FORMATTING_PANE_KEY`, `moveCollectionState`, `postInit`;
+  `src/shared/messages.ts`; `media/webview.css`.
+- **Entry points**: the `Formatting` button in the bar above the table (`Formatting (n)` with `n` rules on,
+  `Formatting (off)` while the colors are hidden), which opens and closes the Formatting pane at the right of the
+  table; in the pane, `+ Add Rule…` → `Condition…` or `By Field…`, `Hide Formatting` / `Show Formatting`, `✕`; in a
+  column header's right-click menu, `Color by This Field` and `Format Cells…` (tooltip `Color the cells of <field>
+  when the document matches a condition`).
 - **Offered when**: always, in every mode, on views and on read-only connections: nothing is written to the database.
-- **Asks**: the dialog `Add formatting rule` or `Edit formatting rule`: `Color the row` or `Color the cell of` a
-  field (with the page's columns offered), `When the document matches` a filter in mongosh syntax (with the query
-  bar's coloring and autocompletion), a color among six; `Save` (Ctrl+Enter) or `Cancel` (Esc). A new rule takes the
-  first color no rule uses yet. `Format Cells…` starts with that column's cell and the condition
-  `{ <field>: <the selected cell's value> }` when a cell of that column is selected, else
-  `{ <field>: { $exists: true } }`.
+- **Asks**: nothing in a dialog. A rule is a line of the pane (drag handle, checkbox, its colors, `Row`, `Cell` or
+  the field, its name or else its condition or `by <field>` on one line, cut with an ellipsis and whole in the
+  tooltip, `✕`); clicking the line opens it in place:
+  - both kinds: `Name` (`F2` on the line goes to it);
+  - a condition rule: `Color the cell of` a field (empty: the whole row; the page's columns are offered), `When the
+    document matches` a filter in mongosh syntax (with the query bar's coloring and autocompletion), a color among
+    eleven. A new rule takes the first color no condition rule uses yet. `Format Cells…` adds one for that column's
+    cell with the condition `{ <field>: <the selected cell's value> }` when a cell of that column is selected, else
+    `{ <field>: { $exists: true } }`;
+  - a field rule: `Field`, `Color` (`The cell`, `The whole row`), `As` (`Automatic (…)`, `A color per value`, `A
+    scale, for numbers and dates`, `True and false`), then what `query.format-field` needs for that kind: `Swap
+    Colors`; `Scale`, its color, the two ends and `From This Page`; `Palette`, the legend whose colors pin a value,
+    `Unpin` and `+ Pin a Value…`. `Color by This Field` adds one in `Automatic` for that column: the first field rule
+    of the list colors the row, the next ones their cell, and a scale takes its ends from the page.
 - **Reads**: the rules from `globalState`, through `readFormatRules`, when the tab opens and when its connection
-  changes.
-- **Writes**: no database. The whole list, in its order, to `globalState` at each change (add, edit, remove, reorder,
-  turn on or off); the key is removed when the list is empty.
+  changes; the pane's state from `mongoster.formattingPane`, through `readFormattingPane`.
+- **Writes**: no database. The whole list, in its order, to `globalState` at each change (add, edit, name, remove,
+  reorder, turn on or off), as it is typed; the key is removed when the list is empty. The pane's state (open, width,
+  colors hidden) to `mongoster.formattingPane`, for every collection's tab: the other open tabs follow at once.
 - **Danger**: None. Removing a rule asks nothing; turning it off keeps it aside.
 - **Read-only**: Allowed, because it writes nothing to the database.
-- **Undo**: Cannot be undone: the undo history is for writes to databases; a removed rule is typed again.
+- **Undo**: Cannot be undone: the undo history is for writes to databases; a removed rule is made again.
 - **redis-oplog**: Not published.
-- **After**: the table is colored again at once, and the button's count changes. The rules follow a renamed
-  collection (`moveCollectionState`); they stay when the collection is dropped (RS4).
-- **Refuses**: `Save` with an empty field for a cell rule (`Type the field whose cell is colored.`), a field starting
-  with `$`, a condition that does not parse (`Invalid syntax: …`) or that `query.match` refuses (its message), and a
-  101st rule (`A collection keeps at most 100 formatting rules.`), each shown under the condition.
-- **Uses**: `query.format-table`, `query.match`.
-- **Tested by**: `test/unit/formatting.test.ts › 'query.format-rules: the stored rules'` (`readFormatRules`,
-  `conditionError`). The panel and the dialog: none.
+- **After**: the table is colored again at once, the legends follow the page shown, and the button's count changes.
+  The rules follow a renamed collection (`moveCollectionState`); they stay when the collection is dropped (RS4).
+- **Refuses**: a condition that does not parse (`Invalid syntax: …`) or that `query.match` refuses (its message),
+  shown under it: the rule keeps its last usable condition, and a new rule is not stored until it has one; a field
+  starting with `$` or, for a field rule, empty (the box is outlined, the rule unchanged); an end of a scale that is
+  not a number or a date; a 101st rule (`A collection keeps at most 100 formatting rules.`, at the top of the pane).
+- **Uses**: `query.format-table`, `query.format-field`, `query.match`.
+- **Tested by**: `test/unit/formatting.test.ts › 'query.format-rules: the stored rules'`, `'query.format-rules: field
+  rules and the pane'` (`readFormatRules`, `conditionError`, `readFormattingPane`). The pane itself: none.
 
 Acceptance:
 
@@ -61,18 +77,24 @@ Acceptance:
   condition is `Type a condition, such as { status: "failed" }.`
 - [ ] A value recorded from the first version (`[{ id, condition, color }, { id, condition, field, color, enabled:
   false }]`) is read unchanged.
+- [ ] A field rule with a scale, pinned values, a palette and a name is read back as written; one with an unknown
+  target, mode, palette or scale color keeps its field with `cell` and `auto`; a pinned entry without a string value
+  or a known color, or seen already, is dropped; an entry of a kind that is neither is dropped.
+- [ ] `readFormattingPane(undefined)` is closed, 320 px, colors shown; a width of 5000 is kept as 700.
 
 ### `query.format-table` — Color the table by the formatting rules
 
-The rows and cells whose documents match a rule's condition take its color.
+The rows and cells take the color of the first rule that gives them one: a condition rule whose condition the
+document matches, or a field rule whose field has a value.
 
 - **Kind**: View
-- **Function**: `src/shared/formatting.ts › TableFormat` (`rowColor`, `cellColor`)
-- **Implemented in**: `src/shared/formatting.ts › withElement`; `src/webview/main.ts › renderGrid`, `formatCell`;
-  `media/webview.css` (`[data-fmt]`).
+- **Function**: `src/shared/formatting.ts › TableFormat` (`rowPaint`, `cellPaint`)
+- **Implemented in**: `src/shared/formatting.ts › withElement`, `paintLevel`; `src/webview/formatting.ts ›
+  applyPaint`; `src/webview/main.ts › renderGrid`, `compileFormat`, `formatCell`; `media/webview.css` (`[data-fmt]`).
 - **Entry points**: the table, in `Find` and in the output of `Aggregate`, each time it is drawn.
-- **Uses**: `query.match`, `query.format-rules`, `connection.set-color` (the same six colors).
-- **Tested by**: `test/unit/formatting.test.ts › 'query.format-table'`.
+- **Uses**: `query.match`, `query.format-field`, `query.format-rules`, `connection.set-color` (the same eleven
+  colors).
+- **Tested by**: `test/unit/formatting.test.ts › 'query.format-table'`, `'query.format-table: field rules'`.
 
 Rules:
 
@@ -84,10 +106,16 @@ Rules:
 - In an expanded array, a cell rule of a field of the elements is matched against the document with the array
   replaced by that one element: `{ "items.qty": { $gt: 5 } }` on `items.qty` colors the `qty` of the elements over 5
   only. The `… more elements` cell and the filler under the last element are not colored.
-- A rule turned off, or whose condition can't be used, colors nothing; the panel marks the second with `⚠` and the
-  reason.
-- The colors are the theme's chart colors (`--vscode-charts-red` …), mixed at 25 % into the background, so the text
-  keeps the theme's foreground; a pinned cell stays opaque; a missing field keeps its hatching; hovering, a selected
+- A field rule colors the row, or its field's cell, of the documents where the field has a value
+  (`query.format-field`), and gives nothing to the others, which the rules after it may color. Rules of both kinds
+  are in one order: the first that gives a color wins.
+- In an expanded array, a field rule of a field of the elements colors each element's cell by that element's value.
+- A rule turned off, or whose condition can't be used, colors nothing; the pane marks the second with `⚠` and the
+  reason. While `Hide Formatting` is on, no rule colors anything.
+- The colors are the eleven presets, theme colors (`--vscode-charts-red` …, `--vscode-mongoster-color-pink` …), mixed
+  into the background so the text keeps the theme's foreground: 12 % for a row and 28 % for a cell, so that a cell
+  reads on a colored row; a scale or a shade goes from 4 % to 22 % on a row and from 6 % to 45 % on a cell; a
+  pinned cell stays opaque; a missing field keeps its hatching; hovering, a selected
   row and the selected cell show over the color.
 
 Examples:
@@ -109,6 +137,63 @@ Acceptance:
   the element 0 is not colored and the element 1 is.
 - [ ] The rules `{ status: ` and `{ $expr: … }` color nothing and give `Invalid syntax: …` and `$expr is not supported
   in a formatting rule.`; the other rules still apply.
+- [ ] With the row rules `by status` then `{ n: 2 }` purple, `{ status: "ok", n: 1 }` takes the color of `"ok"` and
+  `{ n: 2 }` is purple; with the cell rules of `status` `{ status: "failed" }` red then `by status`, a failed
+  document's `status` is red.
+- [ ] For `{ items: [ { qty: 0 }, { qty: 10 } ] }` and the cell rule `by items.qty`, the element 0 is at the faint
+  end of the scale and the element 1 at the strong end.
+- [ ] A row's plain color is mixed at 12 % and a cell's at 28 %.
+
+### `query.format-field` — The color a field rule gives a value
+
+Which color a value of the field gets, and what the rule's legend shows for a page.
+
+- **Kind**: Derivation
+- **Function**: `src/shared/formatField.ts › fieldPaint`, `fieldMode`
+- **Implemented in**: `src/shared/formatField.ts › resolveField`, `paletteOf`, `fieldLegend`, `valuesOf`, `valueAt`,
+  `valueText`.
+- **Uses**: nothing.
+- **Tested by**: `test/unit/formatting.test.ts › 'query.format-field'`.
+
+Inputs: a field rule, the documents of the page as relaxed Extended JSON, a value. Output: a color with its
+strength, or nothing.
+
+Rules:
+
+- **`auto`** is decided from the values of the field on the page, missing and `null` left out: all booleans →
+  `boolean`; all numbers (of any numeric type), or all dates → `scale`; anything else, a mix, or no value → `values`.
+- A missing or `null` value gets no color in any mode; nor does a value of another type than the mode's (a string
+  under a scale, a number under `boolean`).
+- **`boolean`**: `true` green and `false` red; swapped when the rule's `scale` is `{ from: 'green', to: 'red' }`.
+- **`scale`**: the value's place between `min` and `max` (a date is its milliseconds; Int64 and decimals are read as
+  JavaScript numbers), a value outside at the nearest end. With `scale.to` alone (blue when absent), that color from
+  faint to strong; with `scale.from` too, from `from` to yellow over the first half and from yellow to `to` over the
+  second. An end the rule does not have is the smallest or largest value of the page; without either, no color.
+- **`values`**: a value is known by its mongosh text on one line (`"home"`, `42`, `ObjectId("…")`; an array is one
+  value). A pinned value gets its pinned color at full strength, outlined when that color is the palette's own. Any
+  other value gets the color at `hash(text) mod n` of the palette, FNV-1a over the text, so the same value has the
+  same color on every page and for every user of the same rule. The palette `all` is the ten presets other than gray
+  less the colors pinned values use (all ten when every one is used); a color is five shades of it, from faint to
+  strong.
+- **The legend** of a page: for `values`, the pinned values first (also with none on the page), then the page's by
+  how many there are, each with its color and count, and how many colors the palette has; for `boolean`, `true` and
+  `false`; for `scale`, the two ends and whether they are dates. The path goes through arrays of sub-documents, one
+  value per element.
+
+Acceptance:
+
+- [ ] `fieldMode` is `boolean` for `[true, false]`, `scale` for `[1, NumberLong(5), NumberDecimal("2.5")]` and for
+  dates, `values` for a number with a date, a string with a number, and no value.
+- [ ] With `min` 0, `max` 200 and `scale.to` orange, 50 is orange at strength 0.25, 900 at 1, −5 at 0, and a string
+  gets nothing.
+- [ ] From red to green between 0 and 100, 25 is red half-way to yellow and 100 is green.
+- [ ] `by n` on a page with 10, 30, `null` and a missing field is a scale from 10 to 30; with `min` 0 and `max` 100
+  in the rule, from 0 to 100.
+- [ ] With `"home"` pinned to green, `"home"` is green and none of 200 other values is.
+- [ ] With the palette gray, the other values are shades of gray and a pinned value keeps its color; pinned to the
+  palette's own color, it is outlined.
+- [ ] The legend of `by status` with `"gone"` pinned, on `ok`, `ok`, `failed` and a document without the field, is
+  `"gone"` (0, pinned), `"ok"` (2), `"failed"` (1), with nine colors for the values that are not pinned.
 
 ### `query.match` — Match a document against a filter
 

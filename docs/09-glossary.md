@@ -59,8 +59,12 @@ these words; `catalog.py` reports the words of the **Avoid** column anywhere in 
 | Update many dialog | The modal of `Update many` and `Delete many`. | — | — | `BulkDialog` |
 | selection | The rows chosen with Ctrl or Shift and a click, kept by `_id`. | the text selected in an input | — | `Selection` |
 | column action | `Rename field…`, `Remove field…`, `Convert type…` on a column header. | the column's layout | — | `src/fieldActions.ts` |
-| conditional formatting | Coloring the rows and cells of the table by conditions on their documents, with formatting rules. | the syntax colors of values; a connection's color | — | `TableFormat` |
-| formatting rule | A condition (a filter), a color and what it colors: the row or the cell of one field. Kept per collection, in order; the first that matches wins. | a filter of the query bar; a validation rule | format rule | `FormatRule` |
+| conditional formatting | Coloring the rows and cells of the table by conditions on their documents or by the values of a field, with formatting rules. | the syntax colors of values; a connection's color | — | `TableFormat` |
+| formatting rule | What colors rows or cells of the table: a condition rule or a field rule, optionally named. Kept per collection, in order; the first that gives a color wins. | a filter of the query bar; a validation rule | format rule | `FormatRule` |
+| condition rule | A formatting rule with a condition (a filter), a color and what it colors: the row or the cell of one field. | a field rule | — | `ConditionRule` |
+| field rule | A formatting rule that colors by the values of one field, with no condition: true and false, a scale for numbers and dates, or a color per value. | a condition rule on one field's cell | — | `FieldRule` |
+| pinned value | A value of a field rule's field that the user gave a color of its own; no other value of the rule takes that color. | a pinned column | — | `FieldRule.pinned` |
+| Formatting pane | The pane at the right of the table that lists the formatting rules, edits them in place and shows the legend of a field rule. | the query pane; the `Columns` panel | — | `FormattingPaneUi`, `FormattingPane` |
 | query shape | A query with its literal values replaced by `?`, used to group slow operations. | a query | — | `src/shared/profile.ts` |
 
 ## Writes and their history

@@ -1483,15 +1483,18 @@ body:not(.mode-chart) .chart-only,
 body.mode-chart .not-chart,
 body.mode-chart .statusbar,
 body.mode-chart .grid-wrap,
+body.mode-chart .table-area,
 body.mode-chart.chart-pipeline .find-only,
 body:not(.mode-schema) .schema-only,
 body.mode-schema .not-schema,
 body.mode-schema .statusbar,
 body.mode-schema .grid-wrap,
+body.mode-schema .table-area,
 body:not(.mode-indexes) .indexes-only,
 body.mode-indexes .find-only,
 body.mode-indexes .statusbar,
 body.mode-indexes .grid-wrap,
+body.mode-indexes .table-area,
 body.mode-indexes .not-indexes {
   display: none !important;
 }
@@ -2572,13 +2575,34 @@ body.resizing * {
 
 /* ---------- conditional formatting ---------- */
 
-/* The six colors of connections, mixed into the background so that the text keeps the theme's foreground. */
-[data-fmt='red'] { --fmt-solid: var(--vscode-charts-red, #f14c4c); --fmt: color-mix(in srgb, var(--fmt-solid) 25%, transparent); }
-[data-fmt='orange'] { --fmt-solid: var(--vscode-charts-orange, #d18616); --fmt: color-mix(in srgb, var(--fmt-solid) 25%, transparent); }
-[data-fmt='yellow'] { --fmt-solid: var(--vscode-charts-yellow, #cca700); --fmt: color-mix(in srgb, var(--fmt-solid) 25%, transparent); }
-[data-fmt='green'] { --fmt-solid: var(--vscode-charts-green, #89d185); --fmt: color-mix(in srgb, var(--fmt-solid) 25%, transparent); }
-[data-fmt='blue'] { --fmt-solid: var(--vscode-charts-blue, #3794ff); --fmt: color-mix(in srgb, var(--fmt-solid) 25%, transparent); }
-[data-fmt='purple'] { --fmt-solid: var(--vscode-charts-purple, #b180d7); --fmt: color-mix(in srgb, var(--fmt-solid) 25%, transparent); }
+/* The eleven preset colors (D17), mixed into the background so that the text keeps the theme's foreground. A row
+   (tbody) is fainter than a cell, so that a colored cell reads on a colored row; a scale or a shade sets its own
+   --fmt-level, a scale between two colors its own --fmt-solid, on the element (applyPaint). */
+[data-fmt='red'] { --fmt-solid: var(--vscode-charts-red, #f14c4c); }
+[data-fmt='orange'] { --fmt-solid: var(--vscode-charts-orange, #d18616); }
+[data-fmt='yellow'] { --fmt-solid: var(--vscode-charts-yellow, #cca700); }
+[data-fmt='green'] { --fmt-solid: var(--vscode-charts-green, #89d185); }
+[data-fmt='blue'] { --fmt-solid: var(--vscode-charts-blue, #3794ff); }
+[data-fmt='purple'] { --fmt-solid: var(--vscode-charts-purple, #b180d7); }
+[data-fmt='pink'] { --fmt-solid: var(--vscode-mongoster-color-pink, #f075b5); }
+[data-fmt='teal'] { --fmt-solid: var(--vscode-mongoster-color-teal, #4ec9b0); }
+[data-fmt='indigo'] { --fmt-solid: var(--vscode-mongoster-color-indigo, #8c9eff); }
+[data-fmt='brown'] { --fmt-solid: var(--vscode-mongoster-color-brown, #c8956b); }
+[data-fmt='gray'] { --fmt-solid: var(--vscode-mongoster-color-gray, #a6a6a6); }
+[data-fmt] {
+  --fmt-level: 28%;
+  --fmt: color-mix(in srgb, var(--fmt-solid) var(--fmt-level), transparent);
+}
+
+tbody[data-fmt] {
+  --fmt-level: 12%;
+}
+
+/* A value pinned to the color its palette is the shades of. */
+.grid td[data-fmt-outlined],
+.fmt-swatch[data-fmt-outlined] {
+  box-shadow: inset 0 0 0 1px var(--fmt-solid);
+}
 
 /* A row rule colors the cells of its document (tbody), a cell rule its cell (td), which sets its own --fmt. Kept
    below the hover and the selection in specificity, so that those still show. */
@@ -3047,13 +3071,107 @@ body[data-color] .ns-conn {
   }
 }
 
-/* ---------- conditional formatting: the panel and the rule dialog ---------- */
+/* ---------- conditional formatting: the Formatting pane, at the right of the table ---------- */
 
-.formatting-panel {
-  width: 420px;
+.table-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
 }
 
-.formatting-row .formatting-target {
+.table-area .grid-wrap {
+  min-width: 0;
+}
+
+.fmt-pane,
+.fmt-splitter {
+  display: none;
+}
+
+body.fmt-pane-open .fmt-pane {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: var(--fmt-pane-width, 320px);
+  max-width: 70%;
+  min-height: 0;
+}
+
+body.fmt-pane-open .fmt-splitter {
+  display: block;
+  position: relative;
+  z-index: 2;
+  flex: none;
+  width: 7px;
+  margin: 0 -3px;
+  cursor: col-resize;
+  outline: none;
+}
+
+.fmt-splitter::after {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  background: var(--border);
+}
+
+.fmt-splitter:hover::after,
+.fmt-splitter:focus-visible::after,
+body.pane-resizing .fmt-splitter::after {
+  inset: 0 2px;
+  background: var(--accent);
+}
+
+.fmt-pane-head {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.fmt-pane-title {
+  font-weight: 600;
+}
+
+.fmt-pane-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.fmt-pane .formatting-hint {
+  flex: none;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.fmt-pane > .error {
+  margin: 6px 8px 0;
+}
+
+.fmt-rule {
+  border-bottom: 1px solid var(--border);
+}
+
+.fmt-rule-head {
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.fmt-rule.open > .fmt-rule-head {
+  background: var(--vscode-list-inactiveSelectionBackground, rgba(128, 128, 128, 0.15));
+}
+
+.fmt-rule.dim > .fmt-rule-head > :not(input, button) {
+  opacity: 0.5;
+}
+
+.fmt-rule-head .formatting-target {
   flex: none;
   max-width: 30%;
   overflow: hidden;
@@ -3062,7 +3180,8 @@ body[data-color] .ns-conn {
   color: var(--muted);
 }
 
-.formatting-row .formatting-condition {
+/* The rule's name, or its condition or field: one line, cut with an ellipsis, whole in the tooltip. */
+.fmt-rule-head .formatting-condition {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -3070,7 +3189,11 @@ body[data-color] .ns-conn {
   white-space: nowrap;
 }
 
-.formatting-row.invalid .formatting-condition {
+.fmt-rule-head .formatting-condition.named {
+  font-family: var(--vscode-font-family);
+}
+
+.fmt-rule.invalid .formatting-condition {
   text-decoration: underline wavy var(--vscode-editorError-foreground, #f14c4c);
 }
 
@@ -3078,18 +3201,10 @@ body[data-color] .ns-conn {
   color: var(--vscode-editorWarning-foreground, #cca700);
 }
 
-.formatting-foot {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px;
-  border-top: 1px solid var(--border);
-}
-
-.formatting-hint {
-  flex: 1;
-  color: var(--muted);
-  font-size: 0.92em;
+.fmt-swatches {
+  flex: none;
+  display: inline-flex;
+  gap: 2px;
 }
 
 .fmt-swatch {
@@ -3098,69 +3213,156 @@ body[data-color] .ns-conn {
   width: 14px;
   height: 14px;
   border-radius: 3px;
-  border: 1px solid var(--fmt-solid);
+  border: 1px solid color-mix(in srgb, var(--fmt-solid) 60%, transparent);
   background: linear-gradient(var(--fmt), var(--fmt)), var(--vscode-editor-background);
 }
 
-.format-box {
-  width: min(560px, 96vw);
+.fmt-scale-mini,
+.fmt-scale-bar {
+  display: inline-block;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
 }
 
-.format-body {
+.fmt-scale-mini {
+  flex: none;
+  width: 34px;
+}
+
+.fmt-scale-bar {
+  flex: 1;
+  min-width: 30px;
+}
+
+.fmt-rule-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px 0;
+  gap: 6px;
+  padding: 8px 8px 10px 26px;
 }
 
-.format-target {
+.fmt-field {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 14px;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.format-target input[type='text'],
-.format-target #formatField {
-  flex: 1;
-  min-width: 140px;
+.fmt-field-name,
+.fmt-muted {
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.fmt-warn {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.fmt-rule-body input:not([type='checkbox']),
+.fmt-rule-body textarea,
+.fmt-rule-body select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.fmt-rule-body textarea,
+.fmt-rule-field,
+.fmt-end,
+.fmt-pin-input,
+.fmt-value-text {
   font-family: var(--mono);
 }
 
-.format-target #formatField.dim {
-  opacity: 0.6;
-}
-
-.format-body textarea {
-  font-family: var(--mono);
+.fmt-rule-body textarea {
   resize: vertical;
 }
 
-.format-colors-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.fmt-rule-body button.secondary {
+  align-self: flex-start;
+}
+
+.fmt-rule-body .invalid {
+  outline: 1px solid var(--vscode-editorError-foreground, #f14c4c);
 }
 
 .format-colors {
   display: flex;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 2px;
 }
 
 .fmt-choice {
-  padding: 3px;
+  flex: none;
+  display: inline-flex;
+  padding: 2px;
   border: 2px solid transparent;
   border-radius: 4px;
   background: none;
 }
 
-.fmt-choice .fmt-swatch {
-  width: 20px;
-  height: 20px;
+button.fmt-choice {
+  cursor: pointer;
+}
+
+.format-colors .fmt-swatch {
+  width: 18px;
+  height: 18px;
 }
 
 .fmt-choice[aria-checked='true'] {
   border-color: var(--vscode-focusBorder, var(--accent));
+}
+
+.fmt-ends {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fmt-ends .fmt-end {
+  flex: 1 1 70px;
+  width: auto;
+}
+
+.fmt-values {
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.fmt-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fmt-value-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fmt-value-count {
+  flex: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.fmt-pin-mark {
+  flex: none;
+  font-size: 0.8em;
+}
+
+.fmt-pin-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0 6px 24px;
 }
 
 /* A hovered pinned cell: the hover over the color, both over an opaque background (after the pinned hover rule). */

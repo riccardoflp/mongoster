@@ -32,7 +32,7 @@ import type { ColumnLayout } from './shared/columns';
 import { RelationsCache } from './relationsAnalysis';
 import type { RelGraph } from './shared/relations';
 import { collectionReferences } from './shared/references';
-import { readFormatRules } from './shared/formatting';
+import { readFormatRules, readFormattingPane } from './shared/formatting';
 import { noLinks } from './shared/plainText';
 import { queryBarHtml } from './queryBarHtml';
 import { POSITION_SETTING, QueryPane, queryPaneSave, readQueryPane } from './shared/queryPane';
@@ -61,6 +61,8 @@ export const panelKey = (ref: CollectionRef) => `${ref.connectionId}/${ref.datab
 export const expandedStateKey = (ref: CollectionRef) => `mongoster.expanded.${panelKey(ref)}`;
 export const layoutStateKey = (ref: CollectionRef) => `mongoster.layout.${panelKey(ref)}`;
 export const formattingStateKey = (ref: CollectionRef) => `mongoster.formatting.${panelKey(ref)}`;
+/** The Formatting pane, for every collection's tab: `{ open, width, hidden }`. */
+export const FORMATTING_PANE_KEY = 'mongoster.formattingPane';
 /** The width of the query pane, for every collection's tab: `{ width }`. Its place is the setting `mongoster.queryBar.position`. */
 export const QUERY_PANE_KEY = 'mongoster.queryPane';
 
@@ -207,6 +209,7 @@ export class CollectionPanel {
       expanded: this.context.globalState.get<string[]>(expandedStateKey(t), []),
       layout: this.context.globalState.get<ColumnLayout>(layoutStateKey(t), {}),
       formatRules: readFormatRules(this.context.globalState.get(formattingStateKey(t))),
+      formattingPane: readFormattingPane(this.context.globalState.get(FORMATTING_PANE_KEY)),
       queryPane: this.queryPane(),
     });
   }
@@ -278,6 +281,13 @@ export class CollectionPanel {
         // Feature: query.format-rules. Kept for the user, like the layout; nothing is written to the database.
         const rules = readFormatRules(m.rules);
         await this.context.globalState.update(formattingStateKey(this.target), rules.length ? rules : undefined);
+        break;
+      }
+      case 'saveFormattingPane': {
+        // One pane for every collection's tab: open or closed, its width, the colors hidden or shown.
+        const pane = readFormattingPane(m.pane);
+        await this.context.globalState.update(FORMATTING_PANE_KEY, pane);
+        for (const p of CollectionPanel.panels.values()) if (p !== this) p.post({ type: 'formattingPane', pane });
         break;
       }
       case 'saveQueryPane': {
@@ -1235,7 +1245,7 @@ ${queryBarHtml()}
     <span id="selectionInfo" class="status-group selection-info hidden" aria-live="polite">
       <span id="selectionCount"></span><span aria-hidden="true">·</span><button id="selectionClear" class="link" title="Clear the selection (Esc)">Clear</button>
     </span>
-    <button id="formattingBtn" class="secondary columns-btn" title="Color rows and cells of the table by conditions" aria-haspopup="true" aria-expanded="false">Formatting</button>
+    <button id="formattingBtn" class="secondary columns-btn" title="Color rows and cells of the table by conditions or by a field's values: opens and closes the Formatting pane" aria-expanded="false">Formatting</button>
     <button id="columnsBtn" class="secondary columns-btn" title="Show, hide, pin and reorder the columns" aria-haspopup="true" aria-expanded="false">Columns</button>
     <span class="status-group">
     <label for="limit">Page size</label>
@@ -1257,19 +1267,28 @@ ${queryBarHtml()}
     </div>
     <div id="columnsList" class="columns-list"></div>
   </div>
-  <div id="formattingPanel" class="columns-panel formatting-panel hidden" role="dialog" aria-label="Formatting rules">
-    <div id="formattingList" class="columns-list"></div>
-    <div class="formatting-foot">
-      <span class="formatting-hint">The first matching rule wins; a cell rule over a row rule.</span>
-      <button id="formattingAdd" class="secondary">+ Add rule…</button>
-    </div>
-  </div>
   <div id="columnMenu" class="context-menu hidden" role="menu"></div>
   <div id="docMenu" class="context-menu hidden" role="menu"></div>
+  <div id="formattingMenu" class="context-menu hidden" role="menu"></div>
+  <div class="table-area">
   <main class="grid-wrap" id="gridWrap">
     <table id="grid" class="grid"></table>
     <div id="empty" class="empty hidden">No documents match this query.</div>
   </main>
+  <div class="fmt-splitter" id="formattingSplitter" role="separator" aria-orientation="vertical" aria-label="Width of the Formatting pane" tabindex="0" title="Drag to resize the Formatting pane (double-click: default width)"></div>
+  <aside id="formattingPane" class="fmt-pane" aria-label="Formatting">
+    <div class="fmt-pane-head">
+      <span class="fmt-pane-title">Formatting</span>
+      <span class="spacer"></span>
+      <button id="formattingEye" class="secondary" aria-pressed="false">Hide Formatting</button>
+      <button id="formattingAdd" class="secondary" aria-haspopup="menu" title="Add a formatting rule: a condition, or by a field's values">+ Add Rule…</button>
+      <button id="formattingClose" class="icon" title="Close the pane">✕</button>
+    </div>
+    <div id="formattingNote" class="error hidden"></div>
+    <div id="formattingList" class="fmt-pane-list"></div>
+    <div class="formatting-hint">The first rule that gives a color wins; a cell over a row.</div>
+  </aside>
+  </div>
   </div>
   </div>
   <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
@@ -1307,31 +1326,6 @@ ${queryBarHtml()}
       <div class="bulk-actions">
         <button id="codeOpen" class="secondary" title="Open the code in a new editor tab">Open in Editor</button>
         <button id="codeCopy" class="primary">Copy</button>
-      </div>
-    </div>
-  </div>
-  <div id="formatModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="formatTitle">
-    <div class="modal-box format-box">
-      <div class="modal-head">
-        <span id="formatTitle" class="doc-title">Add formatting rule</span>
-        <span class="spacer"></span>
-        <button id="formatClose" class="icon" title="Close (Esc)">✕</button>
-      </div>
-      <div class="format-body">
-        <div class="format-target" role="radiogroup" aria-label="What the rule colors">
-          <label><input type="radio" name="formatTarget" id="formatRow"> Color the row</label>
-          <label><input type="radio" name="formatTarget" id="formatCell"> Color the cell of</label>
-          <input id="formatField" list="formatFields" spellcheck="false" placeholder="field" aria-label="Field">
-          <datalist id="formatFields"></datalist>
-        </div>
-        <label for="formatCondition">When the document matches</label>
-        <textarea id="formatCondition" rows="3" spellcheck="false" placeholder="{ status: &quot;failed&quot; }  —  a filter, as in the query bar"></textarea>
-        <div id="formatError" class="error hidden"></div>
-        <div class="format-colors-row"><span>Color</span><div id="formatColors" class="format-colors" role="radiogroup" aria-label="Color"></div></div>
-      </div>
-      <div class="bulk-actions">
-        <button id="formatCancel" class="secondary">Cancel</button>
-        <button id="formatSave" class="primary" title="Ctrl+Enter">Save</button>
       </div>
     </div>
   </div>

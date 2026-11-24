@@ -10,7 +10,7 @@ import type { ColumnLayout } from './columns';
 import type { PipelineStage } from './pipeline';
 import type { ExplainSummary } from './explain';
 import type { CollectionReferences } from './references';
-import type { FormatRule } from './formatting';
+import type { FormatRule, FormattingPane } from './formatting';
 import type { QueryPane } from './queryPane';
 
 export interface QueryRequest {
@@ -157,6 +157,8 @@ export type WebviewMessage =
   | { type: 'saveLayout'; layout: ColumnLayout }
   /** Stores the collection's formatting rules, in their order (`query.format-rules`). */
   | { type: 'saveFormatRules'; rules: FormatRule[] }
+  /** Stores the Formatting pane's state (open, width, colors hidden) for every collection's tab. */
+  | { type: 'saveFormattingPane'; pane: FormattingPane }
   /** Stores where the query goes (above or beside the results) for every collection's tab. */
   | { type: 'saveQueryPane'; pane: QueryPane }
   /** Saves a query with a name; `place` skips the question of where (For me / In the project). */
@@ -220,10 +222,13 @@ export type HostMessage =
       layout: ColumnLayout;
       /** The collection's formatting rules, in their order. */
       formatRules: FormatRule[];
+      formattingPane: FormattingPane;
       queryPane: QueryPane;
     }
   /** The query was moved (or its pane resized) in another collection's tab. */
   | { type: 'queryPane'; pane: QueryPane }
+  /** The Formatting pane was opened, closed or resized, or the colors hidden or shown, in another collection's tab. */
+  | { type: 'formattingPane'; pane: FormattingPane }
   /** Shows a tab of the panel, e.g. Indexes when opened from the tree. */
   | { type: 'showMode'; mode: 'indexes' }
   | { type: 'result'; requestId: number; docs: unknown[]; count: number | null; durationMs: number; note?: string }

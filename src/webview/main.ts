@@ -45,8 +45,8 @@ import { highlight } from './highlight';
 import { FilterBuilder } from './builder';
 import { CompletionKind, FieldHint, fieldHints } from '../shared/complete';
 import { analyzeSchema } from '../shared/schema';
-import { FormatColor, FormatRule, TableFormat } from '../shared/formatting';
-import { FormatDialog, FormattingPanel } from './formatting';
+import { FormatPaint, FormatRule, TableFormat } from '../shared/formatting';
+import { FormattingPaneUi, applyPaint } from './formatting';
 import { CollectionReferences, ReferenceTarget, referenceKeys, referenceTargets, referencingTargets } from '../shared/references';
 import { paintStripe } from './stripe';
 import { QueryPaneUi } from './queryPane';
@@ -301,8 +301,7 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       layout = m.layout ?? {};
       columnsPanel.update();
       formatRules = m.formatRules ?? [];
-      tableFormat = new TableFormat(formatRules);
-      formattingPanel.update();
+      formattingPane.apply(m.formattingPane);
       queryPane.apply(m.queryPane);
       document.body.classList.toggle('readonly', readOnly);
       el('docEdit').textContent = readOnly ? 'Open in editor' : 'Edit';
@@ -329,6 +328,12 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
     case 'queryPane':
       queryPane.apply(m.pane);
       break;
+    case 'formattingPane': {
+      const recolor = m.pane.hidden !== formattingPane.hidden;
+      formattingPane.apply(m.pane);
+      if (recolor) renderGrid();
+      break;
+    }
     case 'showMode':
       if (state.mode !== m.mode) setMode(m.mode);
       break;
@@ -490,6 +495,8 @@ let layout: ColumnLayout = {};
 let allColumns: ColumnNode[] = [];
 
 function renderGrid(): void {
+  compileFormat(docs);
+  formattingPane.update();
   allColumns = buildColumns(docs, expanded);
   const columns = applyLayout(allColumns, layout);
   const leafList = leaves(columns);
@@ -566,8 +573,7 @@ function renderGrid(): void {
       tr.dataset.row = String(rowIndex);
       return tr;
     });
-    const rowColor = tableFormat.rowColor(doc);
-    if (rowColor) tbody.dataset.fmt = rowColor;
+    applyPaint(tbody, tableFormat.rowPaint(doc), 'row');
     const num = rows[0].insertCell();
     num.className = 'rownum';
     num.rowSpan = height;
@@ -609,8 +615,7 @@ function renderGrid(): void {
         td.draggable = true;
       }
       if (elem !== undefined) td.classList.add('elem');
-      const cellColor = formatCell(doc, node, elem);
-      if (cellColor) td.dataset.fmt = cellColor;
+      applyPaint(td, formatCell(doc, node, elem), 'cell');
       groupClasses(td, first.starts.length > 0, last.ends.length > 0);
       return td;
     };
@@ -636,13 +641,13 @@ function renderGrid(): void {
       if (array.length > shown) {
         const more = addCell(rows[next++], node, MISSING, 1);
         more.classList.replace('missing', 'more');
-        delete more.dataset.fmt;
+        clearPaint(more);
         more.textContent = `… ${array.length - shown} more elements — open the document to see all`;
       }
       if (next < height) {
         const filler = addCell(rows[next], node, MISSING, height - next);
         filler.classList.add('filler');
-        delete filler.dataset.fmt;
+        clearPaint(filler);
       }
     };
 
@@ -709,24 +714,35 @@ const queryPane = new QueryPaneUi(el<HTMLButtonElement>('layoutToggle'), el('pan
 // ---------------------------------------------------------------------------
 // Conditional formatting: rows and cells colored by the collection's formatting rules
 
-/** The collection's formatting rules, in their order, and the colors they give to the table. */
+/** The collection's formatting rules, in their order, and the colors they give to the page shown. */
 let formatRules: FormatRule[] = [];
 let tableFormat = new TableFormat([]);
 
 function saveFormatRules(rules: FormatRule[]): void {
   formatRules = rules;
-  tableFormat = new TableFormat(rules);
   vscode.postMessage({ type: 'saveFormatRules', rules });
-  formattingPanel.update();
   renderGrid();
 }
 
-/** The color a cell rule of its column gives a cell; in an expanded array, matched against that element alone. */
-function formatCell(doc: Record<string, unknown>, node: ColumnNode, elem: number | undefined): FormatColor | undefined {
+/** The rules compiled for the page about to be painted: none while `Hide Formatting` is on. */
+function compileFormat(docs: unknown[]): void {
+  tableFormat = new TableFormat(formattingPane.hidden ? [] : formatRules, docs);
+}
+
+/** The color a cell rule of its column gives a cell; in an expanded array, decided for that element alone. */
+function formatCell(doc: Record<string, unknown>, node: ColumnNode, elem: number | undefined): FormatPaint | undefined {
   if (tableFormat.empty) return undefined;
-  if (elem === undefined) return tableFormat.cellColor(doc, node.key);
+  if (elem === undefined) return tableFormat.cellPaint(doc, node.key);
   const array = node.arrayDepth !== undefined ? node.path.slice(0, node.arrayDepth).join('.') : node.key;
-  return tableFormat.cellColor(doc, node.key, { array, index: elem });
+  return tableFormat.cellPaint(doc, node.key, { array, index: elem });
+}
+
+/** A cell that is not a value (the filler under an array, "… more elements") takes no color of its own. */
+function clearPaint(td: HTMLElement): void {
+  delete td.dataset.fmt;
+  delete td.dataset.fmtOutlined;
+  td.style.removeProperty('--fmt-solid');
+  td.style.removeProperty('--fmt-level');
 }
 
 /** The dotted keys of the page's columns, expanded or not, for a cell rule's field. */
@@ -742,27 +758,38 @@ function columnKeys(): string[] {
   return keys;
 }
 
-const formattingOptions = { rules: () => formatRules, change: saveFormatRules, errors: () => tableFormat.errors, fields: columnKeys };
-const formatDialog = new FormatDialog(formattingOptions);
-const formattingPanel = new FormattingPanel(formattingOptions, formatDialog);
+const formattingPane = new FormattingPaneUi({
+  rules: () => formatRules,
+  change: saveFormatRules,
+  errors: () => new TableFormat(formatRules).errors,
+  fields: columnKeys,
+  docs: () => docs,
+  complete: (field) => completeWith(field, 'filter'),
+  savePane: (pane, recolor) => {
+    vscode.postMessage({ type: 'saveFormattingPane', pane });
+    if (recolor) renderGrid();
+  },
+});
 
 /** `Format Cells…` of a column header: a rule for the column's cells, on the selected cell's value when it is in that column. */
 function formatCells(key: string): void {
   const cell = selectedCell?.dataset.col === key ? cellValue(selectedCell) : null;
   const condition = toShell({ [key]: cell && cell.key === key ? cell.value : { $exists: true } });
-  formattingPanel.edit(undefined, { field: key, condition });
+  formattingPane.addCondition({ field: key, condition });
 }
 
 /** Rename, remove or convert the column's field in the documents matching the filter: in Find, on a collection that can be changed. */
 function fieldItems(key: string): ColumnMenuItem[] {
   // Formatting writes nothing to the database: offered on every column, in every mode.
   const format: ColumnMenuItem = ['Format Cells…', () => formatCells(key), `Color the cells of ${key} when the document matches a condition`];
-  if (readOnly || state.mode !== 'find' || key === '_id' || key.startsWith('_id.')) return [format];
+  const colorBy: ColumnMenuItem = ['Color by This Field', () => formattingPane.addField(key), `Color by the values of ${key}: true and false, a scale for numbers and dates, a color per value`];
+  if (readOnly || state.mode !== 'find' || key === '_id' || key.startsWith('_id.')) return [colorBy, format];
   const node = columnsByKey.get(key);
   // A field of the elements of an expanded array (items[].sku).
   const array = node?.arrayDepth !== undefined ? node.path.slice(0, node.arrayDepth).join('.') : undefined;
   const act = (action: FieldActionRequest['action']) => () => fieldAction(action, key, array);
   return [
+    colorBy,
     format,
     ['Rename field…', act('rename'), '$rename in the documents matching the filter'],
     ['Remove field…', act('remove'), '$unset in the documents matching the filter'],
@@ -1655,10 +1682,9 @@ filterInput.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (explainView.isOpen || bulk.isOpen || codeDialog.isOpen || indexDialog.isOpen || insertDialog.isOpen || searchIndexDialog.isOpen || formatDialog.isOpen) {
+  if (explainView.isOpen || bulk.isOpen || codeDialog.isOpen || indexDialog.isOpen || insertDialog.isOpen || searchIndexDialog.isOpen) {
     if (e.key === 'Escape' && !e.defaultPrevented) {
-      if (formatDialog.isOpen) formatDialog.close();
-      else if (explainView.isOpen) explainView.close();
+      if (explainView.isOpen) explainView.close();
       else if (codeDialog.isOpen) codeDialog.close();
       else if (indexDialog.isOpen) indexDialog.close();
       else if (insertDialog.isOpen) insertDialog.close();
@@ -1803,7 +1829,6 @@ completeWith(el<HTMLTextAreaElement>('bulkUpdate'), 'update');
 completeWith(el<HTMLTextAreaElement>('indexKeys'), 'index');
 completeWith(el<HTMLTextAreaElement>('indexPartialFilter'), 'filter');
 completeWith(el<HTMLTextAreaElement>('insertText'), 'document');
-completeWith(formatDialog.condition, 'filter');
 
 const pipeline = new PipelineEditor({
   run: () => run(true),

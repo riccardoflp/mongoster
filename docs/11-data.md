@@ -29,7 +29,8 @@ being asked for passwords.
 | `mongoster.saved.<connection>/<database>/<collection>` | The queries saved *for me* | **No** |
 | `mongoster.layout.<connection>/<database>/<collection>` | The columns' layout: hidden, order, widths, pinned | Yes |
 | `mongoster.expanded.<connection>/<database>/<collection>` | The expanded nested columns | Yes |
-| `mongoster.formatting.<connection>/<database>/<collection>` | The formatting rules, in their order: an array of `{ id, condition, field?, color, enabled? }` (`FormatRule`), read by `readFormatRules`, which drops the entries it can't use | **No**: the user wrote them |
+| `mongoster.formatting.<connection>/<database>/<collection>` | The formatting rules, in their order (`FormatRule`): condition rules `{ id, condition, field?, color, name?, enabled? }` (0.9.0 wrote them without `kind` and `name`, and with six colors), and since field rules exist `{ id, kind: 'field', field, target, mode, min?, max?, scale?, pinned?, palette?, name?, enabled? }`. Read by `readFormatRules`, which drops the entries and the kinds it can't use. 0.9.0 drops the field rules and the five newer colors, and loses them if it then saves the collection's rules | **No**: the user wrote them |
+| `mongoster.formattingPane` | The Formatting pane of every collection's tab: `{ open, width, hidden }`, read by `readFormattingPane`, which gives closed, 320 px and colors shown for anything else | Yes |
 | `mongoster.queryPane` | The width of the query pane of every collection's tab: `{ width }` (added in 0.9.0), read by `readQueryPane`, which gives the default (380 px) for anything else; where the query goes is the setting `mongoster.queryBar.position`, and a `side` stored by a build before that setting is ignored | Yes |
 | `mongoster.playgroundTargets` | The connection and database of each playground file | Yes |
 | `mongoster.backupFolder` | The last folder used for a backup | Yes |
