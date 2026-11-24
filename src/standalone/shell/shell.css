@@ -117,6 +117,129 @@ select {
   cursor: default;
 }
 
+/* ---- title bar (titleBar.ts): the window has none of the system's. The bar moves the window; what
+   is clicked in it, and what covers it (dialogs, the quick pick), is excluded from that. */
+
+#titlebar {
+  display: flex;
+  align-items: center;
+  flex: none;
+  height: 34px;
+  background: var(--vscode-mongoster-window-background);
+  color: var(--vscode-foreground);
+  border-bottom: 1px solid var(--vscode-sideBar-border, transparent);
+  font-size: 12px;
+  -webkit-app-region: drag;
+}
+
+body.layout-islands #titlebar {
+  border-bottom-color: transparent;
+}
+
+.titlebar-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0 6px 0 12px;
+}
+
+#menubar {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.menubar-item {
+  height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: default;
+  -webkit-app-region: no-drag;
+}
+
+.menubar-item:hover,
+.menubar-item.open {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.menubar-item u {
+  text-decoration: none;
+}
+
+#menubar.mnemonics .menubar-item u {
+  text-decoration: underline;
+}
+
+#window-title {
+  flex: 1;
+  min-width: 0;
+  padding: 0 12px;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.window-inactive .titlebar-icon,
+body.window-inactive #menubar,
+body.window-inactive #window-title {
+  opacity: 0.6;
+}
+
+#window-controls {
+  display: flex;
+  align-self: stretch;
+  flex: none;
+  -webkit-app-region: no-drag;
+}
+
+.window-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.window-control:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.window-control.close:hover {
+  background: #e81123;
+  color: #ffffff;
+}
+
+body.window-fullscreen #window-controls {
+  display: none;
+}
+
+/* macOS: the system's buttons are over the left end of the bar (trafficLightPosition in main.ts), the
+   menus are in the system's menu bar. */
+body[data-platform='darwin'] #titlebar {
+  padding-left: 78px;
+}
+
+body[data-platform='darwin'] .titlebar-icon {
+  display: none;
+}
+
+body[data-platform='darwin'].window-fullscreen #titlebar {
+  padding-left: 0;
+}
+
+#quick-input,
+#modal,
+#notifications {
+  -webkit-app-region: no-drag;
+}
+
 /* ---- layout */
 
 #app {
@@ -181,7 +304,7 @@ body.layout-islands {
 }
 
 body.layout-islands #app {
-  padding: 6px 6px 0;
+  padding: 0 6px;
 }
 
 body.layout-islands #sidebar,
@@ -755,7 +878,7 @@ button.status-item:hover {
 
 .quick-box {
   position: absolute;
-  top: 6px;
+  top: 40px;
   left: 50%;
   width: min(600px, calc(100vw - 40px));
   transform: translateX(-50%);

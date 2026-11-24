@@ -10,6 +10,7 @@ import { closePanel, initPanels, openPanel, postToPanel, revealPanel, themePanel
 import { hideQuickInput, inputValidation, showInputBox, showQuickPick } from './quickInput';
 import { openSettings, settingsValues } from './settings';
 import { chosenTheme, showThemePreviews } from './themePreviews';
+import { initMenuKeys, initTitleBar, menuClosed, windowState } from './titleBar';
 import { collapseAll, focusTree, initTree, setTitleActions, setWelcome, treeChanged } from './tree';
 import { activeTab, closeAll, closeOthers, cycle, find, initWorkbench, move, requestClose, toggleSidebar } from './workbench';
 
@@ -50,8 +51,8 @@ let started = false;
 function receive(m: HostMessage): void {
   switch (m.type) {
     case 'init':
-      document.title = m.title;
       document.body.dataset.platform = m.platform;
+      initTitleBar(m.title, m.menus, m.platform);
       document.getElementById('view-title')!.textContent = m.viewTitle;
       applyTheme(m.theme);
       applyLayout(m.layout);
@@ -61,6 +62,7 @@ function receive(m: HostMessage): void {
         started = true;
         initEditors(m.theme);
         initTree();
+        initMenuKeys();
       }
       break;
     case 'theme':
@@ -70,6 +72,12 @@ function receive(m: HostMessage): void {
       break;
     case 'layout':
       applyLayout(m.layout);
+      break;
+    case 'window':
+      windowState(m);
+      break;
+    case 'menuClosed':
+      menuClosed();
       break;
     case 'viewTitle':
       setTitleActions(m.actions, m.message);

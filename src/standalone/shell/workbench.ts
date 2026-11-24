@@ -2,6 +2,7 @@
 // DOM when its tab moves to the other group (a frame moved in the DOM would load again): only its class changes.
 import type { Column, MenuAction, TabRef } from '../protocol';
 import { drag, h, host, icon, iconButton, recall, remember } from './dom';
+import { setWindowTitle } from './titleBar';
 
 export type GroupId = 1 | 2;
 
@@ -116,6 +117,7 @@ let reported = '';
 /** Tells the host which tabs are shown and which one is active. */
 function report(): void {
   const active = activeTab();
+  setWindowTitle(active?.title);
   const visible = ([1, 2] as GroupId[]).map((g) => selected[g]).filter((t): t is Tab => !!t);
   const state = JSON.stringify([active && key(active), visible.map(key)]);
   if (state === reported) return;
@@ -187,6 +189,7 @@ export function touched(tab: Tab): void {
 export function update(tab: Tab, changes: Partial<Pick<Tab, 'title' | 'tooltip' | 'icon' | 'color' | 'dirty' | 'actions'>>): void {
   Object.assign(tab, changes);
   drawTab(tab);
+  if (changes.title && tab === activeTab()) setWindowTitle(tab.title);
   if (changes.actions) drawActions(tab.group);
 }
 

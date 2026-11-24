@@ -145,6 +145,10 @@ function createWindow(): void {
     title: APP_NAME,
     icon: path.join(appRoot, 'media', 'icon.png'),
     backgroundColor: windowBackground(),
+    // No title bar of the system: the shell draws its own, with the menus and the window's buttons
+    // (shell/titleBar.ts). macOS keeps its buttons, drawn over the shell's title bar.
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 12, y: 10 },
     webPreferences: {
       preload: path.join(shellDir, 'preload.js'),
       contextIsolation: true,
@@ -156,8 +160,19 @@ function createWindow(): void {
   window = win;
   if (state.maximized) win.maximize();
   win.once('ready-to-show', () => win.show());
-  win.on('focus', () => vscode.windowFocusChanged(true));
-  win.on('blur', () => vscode.windowFocusChanged(false));
+  const stateChanged = () => postWindowState(win);
+  win.on('focus', () => {
+    vscode.windowFocusChanged(true);
+    stateChanged();
+  });
+  win.on('blur', () => {
+    vscode.windowFocusChanged(false);
+    stateChanged();
+  });
+  win.on('maximize', stateChanged);
+  win.on('unmaximize', stateChanged);
+  win.on('enter-full-screen', stateChanged);
+  win.on('leave-full-screen', stateChanged);
 
   // The window only shows the app: links open in the browser, nothing else is loaded in it.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -195,6 +210,12 @@ function createWindow(): void {
   });
 
   void win.loadURL(`${APP_PROTOCOL}://shell/shell.html`);
+}
+
+/** The title bar shows the button to maximize or to restore, and is dimmed while the window is not the active one. */
+function postWindowState(win: BrowserWindow): void {
+  if (win.isDestroyed()) return;
+  post({ type: 'window', maximized: win.isMaximized(), fullScreen: win.isFullScreen(), focused: win.isFocused() });
 }
 
 // ---- the tray: with scheduled tasks enabled and the setting on, closing the window keeps the app running
@@ -259,7 +280,9 @@ function shellStarted(): void {
     platform: process.platform,
     themes: THEMES.map(themePreview),
     themeSetting: String(settings.value(THEME_SETTING)),
+    menus: process.platform === 'darwin' ? [] : (Menu.getApplicationMenu()?.items.map((item) => item.label) ?? []),
   });
+  if (window) postWindowState(window);
   post({ type: 'viewTitle', actions: viewTitleActions() });
   announceLanguages();
   refreshStatus();
@@ -294,6 +317,21 @@ function listenToShell(): void {
   });
   onShell('openExternal', (m) => {
     if (/^https?:\/\//.test(m.url)) void shell.openExternal(m.url);
+  });
+  // The title bar's menus are the application menu's, opened under their names: the application menu
+  // itself is not shown without the system's title bar, but its shortcuts still work.
+  onShell('openMenu', (m) => {
+    const menu = Menu.getApplicationMenu()?.items[m.index]?.submenu;
+    if (!window || !menu) return post({ type: 'menuClosed' });
+    const zoom = window.webContents.getZoomFactor();
+    menu.popup({ window, x: Math.round(m.x * zoom), y: Math.round(m.y * zoom), callback: () => post({ type: 'menuClosed' }) });
+  });
+  onShell('windowControl', (m) => {
+    if (!window) return;
+    if (m.action === 'minimize') window.minimize();
+    else if (m.action === 'close') window.close();
+    else if (window.isMaximized()) window.unmaximize();
+    else window.maximize();
   });
 }
 
@@ -354,7 +392,7 @@ function buildMenu(): void {
         ...(mac ? [] : [{ role: 'quit' } as MenuItemConstructorOptions]),
       ],
     },
-    { role: 'editMenu' },
+    { role: 'editMenu', label: '&Edit' },
     {
       label: '&View',
       submenu: [

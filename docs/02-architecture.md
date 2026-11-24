@@ -151,7 +151,7 @@ The MCP server never writes. The playground's writes are published to redis-oplo
 `src/standalone/` runs the extension unchanged in Electron's main process:
 
 - `vscode/` implements the part of VS Code's API that Mongoster uses. It reads commands, menus with their `when` clauses, key bindings and settings from `package.json`'s `contributes` (`contributions.ts`), so a command added there shows up in the app's tree, menus and Command Palette without app-specific code. Storage is files in the app's data folder, secrets are encrypted with Electron's `safeStorage` (`storage.ts`).
-- `main.ts` creates the window, the menu bar (the `Tools` menu lists some commands by hand), the tray, and the `mongoster-app://` protocol that serves the window and the webviews.
+- `main.ts` creates the window, without the system's title bar (the shell draws its own), the application menu (the `Tools` menu lists some commands by hand; `shell/titleBar.ts` opens its menus under their names), the tray, and the `mongoster-app://` protocol that serves the window and the webviews.
 - `shell/` is the window: tree, tabs in two groups, Monaco editors, quick picks, notifications, the Settings tab. It only draws what the host sends, through `protocol.ts` and `preload.ts`.
 - `theme.ts` turns the themes of `themes.ts` into the `--vscode-*` CSS variables given to the shell and the webviews, as VS Code does: each theme is VS Code's default dark or light colors with exact colors or a short palette over them. `vscode/appearance.ts` picks the active theme and the layout (`islands` or `compact`, a class on the shell's `body`).
 
@@ -266,7 +266,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `theme.ts` – the base dark and light colors, a theme's variables from its palette, the preset colors Mongoster contributes (`src/shared/colors.ts`), the color theme file the extension reads the syntax colors from
 - `themes.ts` – the seventeen themes as data: id, name, kind, palette or exact colors, syntax colors, the window's color in the islands layout
 - `vscode/` – the `vscode` module: `index.ts` (exports), `base.ts` (value types), `commands.ts`, `contributions.ts` (reads `package.json`), `documents.ts` (text documents, file systems, providers), `tree.ts`, `ui.ts` (messages, quick picks, dialogs, progress), `webview.ts`, `resources.ts` (the URLs of the app's own files), `storage.ts`, `decorations.ts`, `watcher.ts` (`fs.watch`), `appearance.ts`, `bridge.ts`, `runtime.ts`
-- `shell/` – the window: `main.ts`, `workbench.ts` (tabs), `tree.ts` (the side bar's tree: loading, keys, type-ahead, several rows selected), `editor.ts` (Monaco), `panels.ts` (webview frames), `quickInput.ts`, `notifications.ts`, `settings.ts`, `themePreviews.ts` (the color themes to click in the empty tab area), `dom.ts`, `shell.html`, `shell.css`, `webview-default.css`
+- `shell/` – the window: `main.ts`, `workbench.ts` (tabs), `tree.ts` (the side bar's tree: loading, keys, type-ahead, several rows selected), `editor.ts` (Monaco), `panels.ts` (webview frames), `quickInput.ts`, `notifications.ts`, `settings.ts`, `themePreviews.ts` (the color themes to click in the empty tab area), `titleBar.ts` (the window's own title bar: the menus, opened by the host, the active tab's name, the window's buttons), `dom.ts`, `shell.html`, `shell.css`, `webview-default.css`
 - `electron-builder.yml`, `build/` – the installers
 
 ### Other files
