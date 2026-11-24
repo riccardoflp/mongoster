@@ -271,6 +271,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 ### Desktop app (`src/standalone/`)
 - `main.ts` – entry point: window, menu bar, tray, `mongoster-app://` protocol
 - `appFiles.ts` – which file of the app a URL of that protocol may read: inside the shell's folder, or inside `dist/` and `media/` for the webviews (no `electron`)
+- `keychain.ts` – whether the system keeps a key to encrypt the secrets with: not on Linux without a keyring, where Electron would use a fixed one (no `electron`)
 - `preload.ts`, `protocol.ts` – the messages between the main process and the window
 - `theme.ts` – the base dark and light colors, a theme's variables from its palette, the preset colors Mongoster contributes (`src/shared/colors.ts`), the color theme file the extension reads the syntax colors from
 - `themes.ts` – the seventeen themes as data: id, name, kind, palette or exact colors, syntax colors, the window's color in the islands layout

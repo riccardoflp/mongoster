@@ -6,6 +6,7 @@ import { safeStorage } from 'electron';
 import { ConfigurationTarget, Event, EventEmitter } from './base';
 import { ConfigurationProperty, runtime } from './runtime';
 import { THEMES } from '../themes';
+import { keychainEncrypts } from '../keychain';
 
 const PRIVATE_FILE = 0o600;
 const PRIVATE_FOLDER = 0o700;
@@ -128,8 +129,9 @@ export class SecretStorage {
   }
 
   store(key: string, value: string): Promise<void> {
-    // Without a keychain (some Linux sessions) there is nothing to encrypt with: the secret is kept as it is.
-    const stored = safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(value).toString('base64') : `plain:${value}`;
+    // Without a keychain (some Linux sessions) there is nothing to encrypt with: the secret is kept as it is,
+    // and said to be so (`plain:`) rather than encrypted with the key every machine has (keychain.ts).
+    const stored = keychainEncrypts(safeStorage) ? safeStorage.encryptString(value).toString('base64') : `plain:${value}`;
     this.file.set(key, stored);
     this.changed.fire({ key });
     return Promise.resolve();
