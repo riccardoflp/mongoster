@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { ConnectionInfo, ConnectionManager } from './connections';
 import type { ConnectionEditorHostMessage, ConnectionEditorViewMessage, ConnectionFileField, ConnectionForm } from './shared/messages';
 import type { RedisOplogSettings } from './shared/oplog';
+import { hostOf } from './shared/connectionsFile';
 import { parseRedisUrl, testRedis } from './redisOplog';
 import { ConnectionOptions, tunnelTarget } from './transport';
 import { errorMessage } from './tree';
@@ -27,10 +28,6 @@ class Invalid extends Error {
   ) {
     super(message);
   }
-}
-
-function hostOf(uri: string): string {
-  return /^mongodb(?:\+srv)?:\/\/(?:[^@/]*@)?([^/?]+)/.exec(uri)?.[1] ?? 'MongoDB';
 }
 
 function emptyForm(): ConnectionForm {

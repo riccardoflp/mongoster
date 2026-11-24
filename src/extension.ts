@@ -39,6 +39,7 @@ import { pickCustomColor } from './colorPicker';
 import { Scheduler } from './scheduler';
 import { ScheduledTasksPanel } from './scheduledTasks';
 import type { QueryText } from './shared/messages';
+import { hostOf } from './shared/connectionsFile';
 
 export function activate(context: vscode.ExtensionContext): void {
   ThemeColors.init(context);
@@ -824,7 +825,3 @@ function setTreeFilter(tree: MongoTreeProvider, view: vscode.TreeView<TreeNode>,
   void vscode.commands.executeCommand('setContext', 'mongoster.treeFiltered', !!tree.filter);
 }
 
-/** Host part of a connection string, without credentials. */
-function hostOf(uri: string): string {
-  return /^mongodb(?:\+srv)?:\/\/(?:[^@/]*@)?([^/?]+)/.exec(uri)?.[1] ?? 'MongoDB';
-}

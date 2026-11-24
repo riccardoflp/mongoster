@@ -57,6 +57,26 @@ describe('connection strings', () => {
     expect(hostOf('mongodb://u:p@a:1,b:2/db?x=1')).toBe('a:1,b:2');
     expect(hostOf('mongodb+srv://cluster0.abc.mongodb.net/')).toBe('cluster0.abc.mongodb.net');
     expect(hostOf('nope')).toBe('MongoDB');
+    expect(hostOf('mongodb://[::1]:27017,db.example.com/app')).toBe('[::1]:27017,db.example.com');
+    expect(hostOf('mongodb://%2Ftmp%2Fmongodb-27017.sock/app')).toBe('%2Ftmp%2Fmongodb-27017.sock');
+  });
+
+  // RS31: the name is kept where secrets must not be.
+  it('puts nothing of the user or the password in the name, however they are written', () => {
+    expect(hostOf('mongodb://user:pa/ss@host:27017/')).toBe('host:27017');
+    expect(hostOf('mongodb://user:p@ss@host/db')).toBe('host');
+    expect(hostOf('mongodb://u:s3cret@/db')).toBe('MongoDB');
+    expect(hostOf('mongodb://u:s3cret')).toBe('MongoDB');
+    expect(hostOf('mongodb://u:s3 cret@host')).toBe('host');
+    expect(hostOf('mongodb://u:pa/ss@')).toBe('MongoDB');
+  });
+
+  // RS32: an @ in a password belongs to the password, as the connection reads it.
+  it('takes the password up to the last @ before the path', () => {
+    expect(urlPassword('redis://:p@ss@cache:6379')).toBe('p@ss');
+    expect(withPassword('redis://:p@ss@cache:6379', undefined)).toBe('redis://cache:6379');
+    expect(withPassword('redis://u:p@ss@cache:6379/0', undefined)).toBe('redis://u@cache:6379/0');
+    expect(urlPassword('mongodb://ada:pw@h/db?note=a@b')).toBe('pw');
   });
 
   it('sets and removes options, keeping the others as written', () => {

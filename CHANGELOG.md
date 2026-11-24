@@ -12,6 +12,8 @@
 - An error that quotes a connection string or a Redis URL (the driver's, for a connection string it cannot read) is now shown, logged and given to an AI without its user and password.
 - A window that asks another for the MCP server's port no longer accepts its own request sent back to it: a program holding the port could use it to stop the server of the window that had just taken the port.
 - `watch_changes` of the MCP server now gives up when the server does not open the change stream within its wait and 30 seconds more (an old `since` on a large oplog), saying so; the call stayed open until the server had read it all.
+- The default name of a connection no longer takes part of a password written with a `/` or an `@` in it, or with no host after it: it is the hosts, or `MongoDB`.
+- Exporting connections `Without passwords` or with a passphrase now takes a Redis password with an `@` in it whole; its end stayed in the file in clear text.
 
 ## 0.10.0
 

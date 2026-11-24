@@ -67,14 +67,27 @@ export function isConnectionString(text: string): boolean {
   return /^mongodb(\+srv)?:\/\/[^/?#]/i.test(text.trim());
 }
 
-/** The host part of a connection string, without credentials: the default name of a connection. */
+/** One host of a connection string: a name, an address or a socket's encoded path, with or without a port. */
+const HOST = /^(\[[0-9a-f:.]+\]|[^\s:@/[\]]+)(:\d+)?$/i;
+
+/**
+ * The host part of a connection string, without credentials: the default name of a connection. The name is
+ * kept where secrets must not be (the tree, tab titles, `globalState`), so nothing of the user and the
+ * password may be in it, also when they are written as no parser accepts (a `/` or an `@` in the password, no
+ * host after them): the hosts are what follows the last `@`, and when that is not a list of hosts the name
+ * is `MongoDB`.
+ */
 export function hostOf(uri: string): string {
-  return /^mongodb(?:\+srv)?:\/\/(?:[^@/]*@)?([^/?]+)/.exec(uri)?.[1] ?? 'MongoDB';
+  const rest = /^mongodb(?:\+srv)?:\/\/([^?#]*)/i.exec(uri)?.[1];
+  if (rest === undefined) return 'MongoDB';
+  const hosts = rest.slice(rest.lastIndexOf('@') + 1).split('/')[0];
+  return hosts && hosts.split(',').every((h) => HOST.test(h)) ? hosts : 'MongoDB';
 }
 
 /** User info of a URL of any scheme: the user and the password, as written (percent-encoded). */
 function userInfo(url: string): { scheme: string; user: string; password?: string; rest: string } | undefined {
-  const m = /^([a-z][a-z0-9+.-]*:\/\/)([^@/?#]*)@(.*)$/is.exec(url);
+  // Up to the last @ before the path: a password may have an @ of its own, as the connection reads it.
+  const m = /^([a-z][a-z0-9+.-]*:\/\/)([^/?#]*)@(.*)$/is.exec(url);
   if (!m) return undefined;
   const colon = m[2].indexOf(':');
   return colon < 0
