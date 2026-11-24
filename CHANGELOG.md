@@ -9,6 +9,7 @@
 - The MCP server now refuses the oplog as a collection (`local.oplog.rs`, named or joined in a pipeline): it holds the writes to the system collections, users and their credentials among them.
 - The MCP server now refuses a filter, a projection or a pipeline that runs JavaScript on the server (`$where`, `$function`, `$accumulator`).
 - The search an AI opens through the MCP server (`open_search`) can no longer stop Mongoster: every document is read only of one collection (a database or a connection is searched 10000 documents per collection unless a number is given), and a regular expression that repeats a group which repeats in itself, as `(a+)+`, is refused.
+- An error that quotes a connection string or a Redis URL (the driver's, for a connection string it cannot read) is now shown, logged and given to an AI without its user and password.
 
 ## 0.10.0
 

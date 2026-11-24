@@ -2,6 +2,7 @@
  * A minimal Model Context Protocol server: JSON-RPC 2.0 messages for initialization, ping and tools,
  * answered as plain JSON (the Streamable HTTP transport without server-sent events or sessions).
  */
+import { noCredentials } from './plainText';
 
 export const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 
@@ -105,7 +106,8 @@ export async function handleMessage(
         log?.(tool.name, args, 'ok');
         return ok(toolResult(text));
       } catch (err) {
-        const text = err instanceof Error ? err.message : String(err);
+        // An error may quote the connection string it was made for (the driver's does): never to the model or the log.
+        const text = noCredentials(err instanceof Error ? err.message : String(err));
         log?.(tool.name, args, `error: ${logText(text)}`);
         return ok(toolResult(text, true));
       }

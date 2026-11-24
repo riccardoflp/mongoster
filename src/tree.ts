@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { ConnectionInfo, ConnectionManager } from './connections';
 import { connectionUri, themeColorOf } from './connectionColors';
 import { bucketNames } from './shared/gridfs';
-import { noLinks } from './shared/plainText';
+import { noCredentials, noLinks } from './shared/plainText';
 import { bucketCollection, colorOf } from './shared/collectionColors';
 import { bucketExclusionKey, isExcluded, ownExclusion } from './shared/exclusions';
 
@@ -273,9 +273,10 @@ export class MongoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 /**
  * The text of an error, to show. A server's error can quote what is in the database (the values of a
  * duplicate key, a collection name), and most of these texts end in a notification: the links are broken.
+ * The driver's error for a connection string it cannot read quotes it: its user and password are left out.
  */
 export function errorMessage(err: unknown): string {
-  return noLinks(err instanceof Error ? err.message : String(err));
+  return noLinks(noCredentials(err instanceof Error ? err.message : String(err)));
 }
 
 function formatBytes(n: number): string {
