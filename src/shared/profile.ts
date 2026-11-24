@@ -131,7 +131,17 @@ export function readCommand(command: unknown, op?: string): { kind: string; quer
   }
 }
 
-/** Values replaced by ?: field paths ("$field") and numbers of sort/projection specs stay, they are the shape. */
+/**
+ * A string that has the form of a field path ("$field", "$a.b") or of a variable ("$$ROOT"): the only strings
+ * that are part of a shape. A value may start with $ too (a password hash such as "$2b$10$…", a price), and
+ * is then no path.
+ */
+const FIELD_PATH = /^\$\$?[A-Za-z_][\w.]*$/;
+
+/**
+ * Values replaced by ?: field paths ("$field") stay, they are the shape, and so do what a sort or a
+ * projection says of a field (1, -1, 0, true, false); any other number in them is a value.
+ */
 export function shapeOf(v: unknown, keepNumbers = false): string {
   if (v === null || v === undefined) return '?';
   if (Array.isArray(v)) {
@@ -151,8 +161,8 @@ export function shapeOf(v: unknown, keepNumbers = false): string {
       })
       .join(', ')} }`;
   }
-  if (typeof v === 'string') return v.startsWith('$') ? JSON.stringify(v) : '?';
-  if (typeof v === 'number' && keepNumbers) return String(v);
+  if (typeof v === 'string') return FIELD_PATH.test(v) ? JSON.stringify(v) : '?';
+  if (keepNumbers && (v === 1 || v === -1 || v === 0)) return String(v);
   if (typeof v === 'boolean' && keepNumbers) return String(v);
   return '?';
 }

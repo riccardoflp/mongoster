@@ -187,7 +187,8 @@ export function groupText(g: SlowOpGroup, i: number): string {
 /**
  * The command of an operation on one line, without session noise. Without `values` (readDocuments off)
  * it is the command's shape, as slow_queries gives it: its literal values are replaced by ?, and only
- * the name of the collection it runs on stays.
+ * the name of the collection it runs on stays. A command the server cut short ({ $truncated: "…" }) is text
+ * with its values in it: nothing of it stays.
  */
 export function commandLine(command: unknown, max = 300, values = true): string {
   if (!command || typeof command !== 'object') return '';
@@ -195,7 +196,7 @@ export function commandLine(command: unknown, max = 300, values = true): string 
   let text: string;
   if (values) text = shell(Object.fromEntries(entries));
   else {
-    const parts = entries.map(([k, v], i) => `${k}: ${i === 0 && typeof v === 'string' ? JSON.stringify(v) : shapeOf(relaxed(v), k === 'sort' || k === 'projection')}`);
+    const parts = entries.map(([k, v], i) => `${k}: ${i === 0 && !k.startsWith('$') && typeof v === 'string' ? JSON.stringify(v) : shapeOf(relaxed(v), k === 'sort' || k === 'projection')}`);
     text = parts.length ? `{ ${parts.join(', ')} }` : '{}';
   }
   return text.length > max ? `${text.slice(0, max)}…` : text;

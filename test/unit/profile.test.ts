@@ -29,6 +29,14 @@ describe('shapeOf', () => {
     );
   });
 
+  // RS27: a value is not a field path because it starts with $, nor part of the shape because it is in a projection.
+  it('takes a string that starts with $ for a value unless it has the form of a field path', () => {
+    expect(shapeOf({ $set: { hash: '$2b$10$N9qo8uLOickgx2ZMRZoMye', price: '$19.99', note: '$ 5', copy: '$a.b', all: '$$ROOT' } })).toBe(
+      '{ $set: { hash: ?, price: ?, note: ?, copy: "$a.b", all: "$$ROOT" } }',
+    );
+    expect(shapeOf({ a: 1, b: true, c: { $literal: 4242 }, d: { $cond: ['$x', 7, false] } }, true)).toBe('{ a: 1, b: true, c: { $literal: ? }, d: { $cond: ["$x", ?, false] } }');
+  });
+
   it('shows EJSON values as ? and regexes as /?/', () => {
     expect(shapeOf({ _id: { $oid: '0123456789abcdef01234567' }, n: { $regularExpression: { pattern: 'x', options: 'i' } } })).toBe(
       '{ _id: ?, n: /?/ }',

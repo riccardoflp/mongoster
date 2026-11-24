@@ -171,6 +171,9 @@ describe('readDocuments off', () => {
     expect(shaped).toBe('{ find: "users", filter: { email: ?, age: { $gt: ? } }, sort: { createdAt: -1 }, limit: ? }');
     // An insert carries whole documents.
     expect(commandLine({ insert: 'users', documents: [{ email: SECRET }] }, 300, false)).toBe('{ insert: "users", documents: [{ email: ? }] }');
+    // RS27: a command over the server's limit comes as its text, cut; a hash starts with $ like a field path.
+    expect(commandLine({ $truncated: `{ insert: "users", documents: [ { email: "${SECRET}" } ] }` }, 300, false)).toBe('{ $truncated: ? }');
+    expect(commandLine({ update: 'users', updates: [{ q: { _id: 1 }, u: { $set: { hash: '$2b$10$' + SECRET } } }] }, 300, false)).not.toContain(SECRET);
     const op = { opid: 7, active: true, secs_running: 3, op: 'query', ns: 'shop.users', command };
     expect(operationText(op)).toContain(SECRET);
     expect(operationText(op, false)).not.toContain(SECRET);
