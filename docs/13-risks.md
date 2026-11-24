@@ -2,8 +2,8 @@
 
 What is known to be weak in Mongoster and not fixed yet. *Source: arc42 §11.* A **risk** may go wrong; **debt** is
 already wrong and costs on every change. Most rows were found while writing the cards, in the code, and are not
-reproduced by a test yet: the card or the place in the code says where. RS24 to RS46 were found by the security
-analysis of 0.10.0. [07-roadmap.md](07-roadmap.md) says when each is dealt with; a row is removed in the commit
+reproduced by a test yet: the card or the place in the code says where. RS29, RS36, RS39, RS40 and RS44 to
+RS46 are what is left of the security analysis of 0.10.0. [07-roadmap.md](07-roadmap.md) says when each is dealt with; a row is removed in the commit
 that fixes it, with a test that failed before.
 
 *How likely* is a judgment: *often* (a normal use reaches it), *sometimes* (a less common setup), *rarely* (a damaged
@@ -35,8 +35,8 @@ file, a race).
 | RS17 | risk | Playgrounds run in any workspace, trusted or not (T6, Q8). | Code from someone else's repository runs with the user's connections when the user runs it. | rarely | M5, after Q8 |
 | RS29 | risk | A connection file encrypted with a passphrase encrypts the secrets only: the connection string, the SSH host and the Redis host beside them can be changed by whoever has the file, without the passphrase (T1, T5, `connection.export`, `connection.import`). The import list says the hosts, a way to sign in that sends the password as it is and a key file on another machine, so the change can be seen, not refused. The key derivation is the one of the Compass format (PBKDF2, 100 000 rounds). | The user imports with the right passphrase, does not read the list, and the password goes to someone else's server. | rarely | M3, after a proposal (a file format changes): a new version of Mongoster's file whose encryption covers the hosts, with a slower key derivation |
 | RS36 | risk | CSV export writes a cell that starts with `=`, `+`, `-` or `@` as it is (`csvValue` in `src/shared/csv.ts`, `transfer.export`; scheduled exports too), and the desktop app opens a `.csv` of GridFS with the system's program (`src/shared/openable.ts`, T16). | A value written by someone else is a formula in the user's spreadsheet. | sometimes | M5, after a question in [08-decisions.md](08-decisions.md): an option that prefixes such cells, since it changes what an import reads back |
-| RS39 | risk | The local port of an SSH tunnel accepts any program of the machine (`src/transport.ts`). | On a machine with other users, another account reaches the deployment behind the SSH server. | rarely | M5: a proxy with a user and a password made for each tunnel |
-| RS40 | risk | Backups, exports and files saved from GridFS are created with the system's default permissions, not the 0600 of the undo history ([11-data.md](11-data.md)). | On a machine with other users, copies of the data can be read by them. | sometimes | M5 |
+| RS39 | risk | The local port of an SSH tunnel accepts any program of the machine (`src/transport.ts`). | On a machine with other users, another account reaches the deployment behind the SSH server. | rarely | M5, after a proposal: a proxy with a user and a password made for each tunnel needs the driver's `socks` module, a new dependency |
+| RS40 | risk | Backups, exports and files saved from GridFS are created with the system's default permissions, not the 0600 of the undo history ([11-data.md](11-data.md)). | On a machine with other users, copies of the data can be read by them. | sometimes | M5, after a question: 0600 would also hide a backup from the account of a team that collects it |
 | RS46 | risk | `find_documents`, `describe_collection` and `describe_relations` bound the number of documents they hold, not their size (`src/mcp/data.ts`, `mcp.output-limits`). Not checked against a server. `watch_changes` no longer waits for a stream that does not open, but the server goes on reading the oplog until it has. | A call that takes much memory. | rarely | M4, with RS15 |
 
 ## Things the user sees wrong

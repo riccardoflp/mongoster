@@ -59,12 +59,12 @@ Mongoster keeps for itself ([11-data.md](11-data.md)), so each starts with a pro
 ## M3 — Close the gaps that can lose data
 
 The rows of [13-risks.md](13-risks.md) whose *What we do* says M3, each in its own commit with a test that failed
-before, in this order: the ones through which someone else's data, file or program reaches Mongoster itself (RS24,
-RS25, RS26), the ones that lose data or write where they must not (RS3, RS8, RS38, RS1, RS2, RS9, RS10, RS11,
-RS13), then secrets and privacy (what the MCP server gives away: RS27, RS28, RS30; then RS5 with RS41, RS6 with
-RS32, RS7, RS31, RS33, and RS29 once its proposal is accepted), then what the user sees wrong (RS12). Q10 and Q11
-are answered first, because they decide what some of those cards should say. RS24 to RS46 were found by the
-security analysis of 0.10.0; each fix changes the row of [10-security.md](10-security.md) it names.
+before, in this order: the ones that lose data or write where they must not (RS3, RS8, RS1, RS2, RS9, RS10, RS11,
+RS13), then secrets and privacy (RS5, RS6, RS7, and RS29 once its proposal is accepted), then what the user sees
+wrong (RS12). Q10 and Q11 are answered first, because they decide what some of those cards should say.
+
+The security analysis of 0.10.0 found RS24 to RS46. Most were fixed right after it, each with its test, and are in
+`## Unreleased` of `CHANGELOG.md`; the ones left are RS29 here, RS44 to RS46 in M4, and RS36, RS39 and RS40 in M5.
 
 **Exit**: those cards and rows no longer say *Differs* or *open*; `npm test` and `npm run test:integration` pass.
 
@@ -72,9 +72,8 @@ security analysis of 0.10.0; each fix changes the row of [10-security.md](10-sec
 
 `catalog.py` in the CI (or a Node port, [Q6](08-decisions.md#open-questions)); a linter if [Q4](08-decisions.md#open-questions)
 says so, with the import rules of R1.2 and R1.3 and the size limits of R6.4; tests named after their cards for the
-cards of M3; the MCP tools' output limits (RS15, RS46); the actions pinned to commits, the updates of dependencies
-and `npm audit` of what is shipped (RS44); the private channel for reports and the supported version of
-`SECURITY.md` (RS45, [Q7](08-decisions.md#open-questions)).
+cards of M3; the MCP tools' output limits (RS15, RS46); the updates of what is shipped that are waiting (RS44);
+the private channel for reports of `SECURITY.md` (RS45, [Q7](08-decisions.md#open-questions)).
 
 **Exit**: a pull request that renames a card's identifier without its references, or imports `vscode` in
 `src/shared/`, fails; RS15, RS22, RS23 and RS44 to RS46 are removed from [13-risks.md](13-risks.md).
@@ -85,11 +84,9 @@ Every row of [13-risks.md](13-risks.md) still there after M4, each in its own co
 a dropped collection's state left in `globalState` (RS4: M2's colors of collections go with a drop, the other keys do not), tabs left open
 or not repainted after a connection is removed or recolored (RS18), the comparison's writes without `Undo` in their
 notification (RS19), a size limit on the files read from outside (RS16), playgrounds in untrusted workspaces once
-[Q8](08-decisions.md#open-questions) is answered (RS17), the tests still missing by area (RS20), and the lesser
-findings of the security analysis: a proof of the MCP token accepted by the window that made it (RS34), server-side
-JavaScript through the MCP server (RS42), a `$numberLong` in generated code (RS35), formulas in a CSV export (RS36),
-a saved queries folder behind a symbolic link (RS37), the SSH tunnel's local port (RS39), the permissions of
-backups and exports (RS40), and the frames of the desktop app (RS43).
+[Q8](08-decisions.md#open-questions) is answered (RS17), the tests still missing by area (RS20), and what is left
+of the security analysis, each after its question is answered: formulas in a CSV export (RS36), the SSH tunnel's
+local port (RS39), and the permissions of backups and exports (RS40).
 
 **Exit**: [13-risks.md](13-risks.md) has no row left, or only rows found after M4, each with the milestone that will
 close it.
