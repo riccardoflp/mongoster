@@ -160,7 +160,9 @@ describe('current_operations', () => {
       await rs.db('mcp_perf_ops').collection('txn').insertOne({ x: 0 });
       session.startTransaction();
       await rs.db('mcp_perf_ops').collection('txn').insertOne({ x: 1 }, { session });
-      const res = await callTool(performanceTools(testContext(rs)), 'current_operations', { connection: 'test', includeIdle: true });
+      // The largest limit: the other tests share this replica set, and with the default of 50 their operations
+      // can push the transaction out of the list.
+      const res = await callTool(performanceTools(testContext(rs)), 'current_operations', { connection: 'test', includeIdle: true, limit: 500 });
       expect(res.isError).toBe(false);
       expect(res.text).toMatch(/transaction txnNumber \d+, open /);
     } finally {
