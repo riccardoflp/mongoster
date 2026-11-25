@@ -56,7 +56,7 @@ Mongoster keeps for itself ([11-data.md](11-data.md)), so each starts with a pro
 **Exit**: the three features in `## Unreleased` and in the README; their cards with **Tested by**, and
 `python docs/catalog.py docs` says *no problems*; `npm run typecheck` and `npm test` pass.
 
-## Asked by the user after M2 (done, in `## Unreleased`)
+## Asked by the user after M2 (done, released in 0.11.0)
 
 Changes to the query bar of the collection tab, asked after M2 and built alongside the milestones below; each
 followed the checklist *Every user-visible change* of `AGENTS.md`.
@@ -91,7 +91,7 @@ RS13), then secrets and privacy (RS5, RS6, RS7, and RS29 once its proposal is ac
 wrong (RS12). Q10 and Q11 are answered first, because they decide what some of those cards should say.
 
 The security analysis of 0.10.0 found RS24 to RS46. Most were fixed right after it, each with its test, and are in
-`## Unreleased` of `CHANGELOG.md`; the ones left are RS29 here, RS44 to RS46 in M4, and RS36, RS39 and RS40 in M5.
+`## 0.11.0` of `CHANGELOG.md`; the ones left are RS29 here, RS44 to RS46 in M4, and RS36, RS39 and RS40 in M5.
 
 **Exit**: those cards and rows no longer say *Differs* or *open*; `npm test` and `npm run test:integration` pass.
 

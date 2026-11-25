@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0
 
 - **Cancelling a query**: while a query runs, `Cancel` takes the place of `Find` (and of `Run`, `Analyze` and `Draw`) in a collection's tab. It stops the wait and the operation on the server; the table keeps what it showed.
 - **Time limit of a query**: the setting `mongoster.query.timeout` says how many seconds a `Find` or a pipeline may run (60 by default, as before; `0` for no limit). `Explain` gets the same limit, a pipeline that writes ten times as long. A query stopped by the limit says so, and names the setting.
