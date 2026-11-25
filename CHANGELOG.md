@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The desktop app is built on Electron 45.5.0.
+
 ## 0.11.0
 
 - **Cancelling a query**: while a query runs, `Cancel` takes the place of `Find` (and of `Run`, `Analyze` and `Draw`) in a collection's tab. It stops the wait and the operation on the server; the table keeps what it showed.

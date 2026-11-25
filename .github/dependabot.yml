@@ -13,6 +13,15 @@ updates:
       development:
         dependency-type: development
         exclude-patterns: ['electron', 'monaco-editor', '@vscode/codicons']
+    ignore:
+      # The types of the oldest VS Code Mongoster runs in (`engines.vscode`), which vsce checks, and of the
+      # Node.js of that VS Code: newer ones would let the code use what is not there.
+      - dependency-name: '@types/vscode'
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # Vitest 5 asks for the types of Node.js 22.
+      - dependency-name: 'vitest'
+        versions: ['>=5']
   - package-ecosystem: github-actions
     directory: /
     schedule:
