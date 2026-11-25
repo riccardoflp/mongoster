@@ -1189,17 +1189,17 @@
     "ssh2": "^1.17.0"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
+    "@types/node": "^26.6.6",
     "@types/ssh2": "^1.15.6",
-    "@types/vscode": "^1.90.0",
+    "@types/vscode": "^1.146.0",
     "@vscode/codicons": "^0.0.46-24",
     "@vscode/vsce": "^4.1.1",
     "electron": "^44.11.5",
     "electron-builder": "^26.15.3",
-    "esbuild": "^0.24.0",
+    "esbuild": "^0.28.2",
     "monaco-editor": "^0.57.0",
-    "mongodb-memory-server-core": "^11.3.0",
-    "typescript": "^5.6.0",
-    "vitest": "^3.2.7"
+    "mongodb-memory-server-core": "^11.4.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
   }
 }
