@@ -256,6 +256,30 @@ describe('list_saved_queries', () => {
     );
   });
 
+  it('shows the collation and the hint of a find', async () => {
+    const saved: SavedQuery[] = [
+      { id: '1', name: 'By name', filter: '{ name: "mario" }', sort: '', projection: '', collation: '{\n  locale: "it",\n  strength: 1\n}', hint: 'name_1', at: Date.UTC(2026, 0, 1) },
+    ];
+    const recent: SavedQuery[] = [{ id: '2', filter: '', sort: '', projection: '', hint: '{ name: 1 }', at: Date.UTC(2026, 0, 3) }];
+    const { tools } = setup({ saved, recent });
+    const { text } = await call(tools, 'list_saved_queries', { connection: 'c1', database: 'shop', collection: 'orders' });
+    expect(text).toBe(
+      [
+        'Queries of shop.orders on Local.',
+        '',
+        'Saved (1 for the user):',
+        '- "By name", saved for the user 2026-01-01T00:00:00Z',
+        '  filter: { name: "mario" }',
+        '  collation: { locale: "it", strength: 1 }',
+        '  hint: name_1',
+        '',
+        'Recent (1, newest first):',
+        '- run 2026-01-03T00:00:00Z',
+        '  hint: { name: 1 }',
+      ].join('\n'),
+    );
+  });
+
   it("lists the project's queries first, with their file", async () => {
     const saved: SavedQuery[] = [
       { id: '1', name: 'Mine', filter: '{ a: 1 }', sort: '', projection: '', at: Date.UTC(2026, 0, 1), source: 'user' },

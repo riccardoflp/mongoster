@@ -23,10 +23,10 @@ describe('query.pane: the markup', () => {
   });
 
   it('has the elements the webview looks up', () => {
-    for (const id of ['run', 'reset', 'builderToggle', 'explainFind', 'codeFind', 'updateMany', 'deleteMany', 'historyBtn', 'export', 'watch', 'insert', 'layoutToggle', 'runPipeline', 'addStage', 'pipelineTextToggle', 'clearPipeline', 'explainPipeline', 'codePipeline', 'copyPipeline', 'saveView']) {
+    for (const id of ['run', 'cancel', 'cancelPipeline', 'optionsToggle', 'reset', 'builderToggle', 'explainFind', 'codeFind', 'updateMany', 'deleteMany', 'historyBtn', 'export', 'watch', 'insert', 'layoutToggle', 'runPipeline', 'addStage', 'pipelineTextToggle', 'clearPipeline', 'explainPipeline', 'codePipeline', 'copyPipeline', 'saveView']) {
       expect(byId.has(id), id).toBe(true);
     }
-    for (const id of ['filter', 'sort', 'projection', 'builder', 'stages', 'pipelineText', 'queryPane', 'paneSplitter', 'previewInfo']) {
+    for (const id of ['filter', 'sort', 'projection', 'collation', 'hint', 'hintIndexes', 'moreOptions', 'builder', 'stages', 'pipelineText', 'queryPane', 'paneSplitter', 'previewInfo']) {
       expect(html, id).toContain(`id="${id}"`);
     }
   });
@@ -47,10 +47,31 @@ describe('query.pane: the markup', () => {
   });
 });
 
+describe('query.cancel: the markup', () => {
+  const html = queryBarHtml();
+
+  it('puts Cancel right after the button it takes the place of', () => {
+    expect(html).toMatch(/id="run"[\s\S]*?<\/button>\s*<button id="cancel" class="secondary cancel-run"/);
+    expect(html).toMatch(/id="runPipeline"[\s\S]*?<\/button>\s*<button id="cancelPipeline" class="secondary cancel-run"/);
+  });
+});
+
+describe('query.find-options: the markup', () => {
+  const html = queryBarHtml();
+
+  it('keeps Collation and Hint in a row of their own, closed until asked for', () => {
+    const row = html.slice(html.indexOf('id="moreOptions"'), html.indexOf('class="aggregate-only pipeline"'));
+    expect(html).toMatch(/class="[^"]*\bhidden\b[^"]*" id="moreOptions"/);
+    expect(row).toContain('id="collation"');
+    expect(row).toContain('id="hint"');
+    expect(row).toContain('list="hintIndexes"');
+  });
+});
+
 describe('query.pane: the icons', () => {
   // The codicons package the icons come from: each path must be the codicon's own.
   const sprite = fs.readFileSync('node_modules/@vscode/codicons/dist/codicon.svg', 'utf8');
-  const names: IconName[] = ['add', 'clear-all', 'code', 'copy', 'discard', 'edit', 'export', 'history', 'json', 'layout-sidebar-right', 'list-filter', 'play', 'pulse', 'save-as', 'telescope', 'trash'];
+  const names: IconName[] = ['add', 'clear-all', 'code', 'copy', 'debug-stop', 'discard', 'edit', 'export', 'history', 'json', 'layout-sidebar-right', 'list-filter', 'play', 'pulse', 'save-as', 'settings', 'telescope', 'trash'];
 
   it('are the paths of the codicons of the same name', () => {
     for (const name of names) {

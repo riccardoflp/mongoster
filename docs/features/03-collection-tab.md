@@ -339,7 +339,7 @@ table or in a resizable pane at its right; the choice is a setting and holds for
   CollectionPanel.onMessage` (`case 'saveQueryPane'`).
 - **Implemented in**: `src/shared/queryPane.ts › readQueryPane`, `positionOf`, `queryPaneSave`, `clampPaneWidth`,
   `paneLayout`, `draggedWidth`, `keyedWidth`; `src/queryBarHtml.ts › queryBarHtml` (the markup, with
-  `src/shared/icons.ts › iconSvg`); `src/collectionPanel.ts › QUERY_PANE_KEY`, `queryPane`, `postInit`, `html`, the
+  `src/shared/icons.ts › iconSvg`); `src/collectionPanel.ts › QUERY_PANE_KEY`, `queryPane`, `postInit`, `src/collectionHtml.ts › collectionHtml`, the
   configuration listener; `src/webview/main.ts`; `src/shared/messages.ts` (`saveQueryPane`, `queryPane`,
   `init.queryPane`); `media/webview.css` (`body.query-side`).
 - **Entry points**: the toggle at the right end of the tab's top row, after `Insert` (tooltip `Query at the right
@@ -389,14 +389,18 @@ Acceptance:
 ### `query.drop-options` — Drop a header or a cell on Sort or Project
 
 What a field dragged from the table offers on Sort and Project: a header and a cell alike put their field there.
+A drop on Sort runs the query; one on Project waits for `Find`.
 
 - **Kind**: Derivation
-- **Function**: `src/shared/dropZones.ts › sortZones`, `projectionZones`
-- **Implemented in**: `src/webview/main.ts › showDropzones`, `showOptionZones`, `setOption`;
-  `src/shared/query.ts › mergeSort`, `mergeProjection` (what a zone does to the text).
+- **Function**: `src/shared/dropZones.ts › sortZones`, `projectionZones`, `optionApplied` (whether Project is
+  marked `not applied`)
+- **Implemented in**: `src/webview/queryDrop.ts › QueryDrop` (`showZones`, `showOptionZones`, `setOption`);
+  `src/webview/main.ts › markOptions`; `src/shared/query.ts › mergeSort`, `mergeProjection` (what a zone does to the
+  text); `media/webview.css` (`.option-wrap.pending`).
 - **Uses**: nothing.
-- **Tested by**: `test/unit/dropZones.test.ts › 'query.drop-options: Sort'`, `'query.drop-options: Project'`; the
-  merging: `test/unit/query.test.ts`.
+- **Tested by**: `test/unit/dropZones.test.ts › 'query.drop-options: Sort'`, `'query.drop-options: Project'`,
+  `'query.drop-options: running the query'`; the merging: `test/unit/query.test.ts`. The mark on the box and the
+  DOM wiring: none (checked by hand).
 
 Rules:
 
@@ -404,6 +408,12 @@ Rules:
   the field of a dragged header or cell. A cell of an array element gives the dotted path of its field (`items.qty`).
 - A field already in the box also gets `✕ remove`.
 - In `Aggregate` neither box exists, and nothing is offered.
+- A drop on Sort runs the query at once. A drop on Project, a removal too, only writes the projection: after the
+  first `include` the table would show that field alone, and the next one could no longer be dragged from it. The
+  query runs on `Find`, or on `Enter` in the box.
+- While the text of Project is not the one the table's documents were read with (after a drop, `Project Visible
+  Columns` or typing), the box is marked `not applied`; the mark goes when a query run with that text shows its
+  documents.
 
 Examples:
 
@@ -421,3 +431,158 @@ Acceptance:
 - [ ] A cell of `items.qty` in an element of `items` offers `▼ descending` with the tooltip `items.qty: -1 (after the
   fields already in the sort)`.
 - [ ] In Aggregate, a cell offers nothing on Sort nor on Project.
+- [ ] Every zone of Sort says it runs the query, also `✕ remove`; no zone of Project does.
+- [ ] With the table read with `{ amount: 1 }`, the text `{ amount: 1, name: 1 }` in Project is not applied, and so
+  is an empty one; `  { amount: 1 } ` is applied.
+
+### `query.project-visible` — Put the visible columns into Project
+
+`Project Visible Columns` writes into Project the columns the table shows, so that the query reads only those fields.
+
+- **Kind**: Derivation
+- **Function**: `src/shared/columns.ts › visibleProjection`
+- **Implemented in**: `src/webview/main.ts › projectVisible`; `src/webview/columnsUi.ts › ColumnMenu.open`,
+  `ColumnsPanel` (the entry points); `src/collectionHtml.ts` (`#columnsProject`).
+- **Entry points**: `Project Visible Columns` in a column header's menu; `Project Visible` in the `Columns` panel.
+- **Offered when**: in `Find`; `Aggregate` has no Project box.
+- **Uses**: `query.drop-options` (the `not applied` mark).
+- **Tested by**: `test/unit/columns.test.ts › 'query.project-visible: the projection of the visible columns'`. The
+  menu entry and the button: none (checked by hand).
+
+Rules:
+
+- Each visible column is included (`1`): a column that is not expanded as a whole, an expanded one by the dotted
+  paths of its visible columns (`address.city`, `items.sku`).
+- A hidden column is left out. When the `_id` column is hidden the projection has `_id: 0`, as an inclusion keeps
+  `_id` otherwise.
+- The columns are those of the page shown: a field no document of the page has is not a column, and is left out.
+- Project gets the text and is marked `not applied`; the query is not run. With no visible column nothing is written
+  and the tab says **No column is visible: there is nothing to put into Project.**
+
+Acceptance:
+
+- [ ] Columns `_id`, `name`, `address`, `items`, `tags`, none hidden or expanded: `{ _id: 1, name: 1, address: 1,
+  items: 1, tags: 1 }`.
+- [ ] The same with `_id`, `tags` and `items` hidden: `{ name: 1, address: 1, _id: 0 }`.
+- [ ] `address` and `items` expanded, `address.zip`, `address.geo`, `tags` and `name` hidden: `{ _id: 1,
+  'address.city': 1, 'items.sku': 1, 'items.qty': 1, 'items.price': 1 }`.
+- [ ] Every column hidden: an empty projection.
+
+### `query.timeout` — The time limit of a query
+
+How long a `Find` or a pipeline of the tab may run before MongoDB stops it: a setting, in seconds.
+
+- **Kind**: Derivation
+- **Function**: `src/queryRunner.ts › timeoutSeconds`, `QueryRun.options`, `QueryRun.describe`
+- **Implemented in**: `src/queryRunner.ts › findPage`, `pipelinePage`, `runWritePipeline`; `src/collectionPanel.ts ›
+  begin`, `runQuery`, `runAggregate`, `explain`; `package.json` (`mongoster.query.timeout`).
+- **Settings**: `mongoster.query.timeout` (seconds, default `60`, from `0` to `86400`).
+- **Uses**: `query.cancel` (what stops a query without a limit).
+- **Tested by**: `test/unit/queryRunner.test.ts › 'query.timeout: the setting'`;
+  `test/integration/queryRunner.test.ts › 'query.timeout: against mongod'`.
+
+Rules:
+
+- The setting is the `maxTimeMS` of the find, of the pipeline that fills the table and of `Explain`, which runs the
+  query; it is read when each query starts. `0` is no limit.
+- A value that is not a number of seconds from 0 up gives the default; one over a day gives a day; a fraction is cut.
+- A pipeline that writes (`$out`, `$merge`) gets ten times the limit, as it goes through every document.
+- The count beside the results keeps its 10 seconds (the page shows without a total when it takes longer); `Schema`
+  and `Chart` keep theirs (60 and 120 seconds).
+- A query MongoDB stops for its time says **Stopped after 60 seconds, the time limit of the setting
+  mongoster.query.timeout. Raise it, or narrow the query.**
+
+Acceptance:
+
+- [ ] `300` gives 300 seconds, `12.9` gives 12, `10000000` gives 86400; `"120"`, `-5` and a missing value give 60.
+- [ ] With 90 seconds a find gets `maxTimeMS: 90000` and its count `10000`; with 0 the find gets none.
+- [ ] With 1 second, a find that takes 300 ms for each of 64 documents is stopped, and the message names the setting.
+
+### `query.cancel` — Cancel a running query
+
+`Cancel` stops the query, the schema analysis or the chart the tab is waiting for, in Mongoster and on the server.
+
+- **Kind**: Operation
+- **Function**: `src/queryRunner.ts › QueryRun.cancel`, `killOperations`
+- **Implemented in**: `src/collectionPanel.ts › begin`, `end`, `cancel` (`case 'cancel'`); `src/webview/main.ts ›
+  cancelRun`, `setLoading`; `src/queryBarHtml.ts` (`#cancel`, `#cancelPipeline`); `src/shared/messages.ts`
+  (`cancel`, `RunKind`, `error.cancelled`); `media/webview.css` (`.cancel-run`).
+- **Entry points**: `Cancel`, which takes the place of `Find`, `Analyze`, `Draw` and of the pipeline's `Run` while
+  what they started is running.
+- **Offered when**: a query, a schema analysis or a chart of the tab is running.
+- **Reads**: `$currentOp` with `allUsers: false`, for the operations that carry the run's comment.
+- **Writes**: no document. The driver gives up the wait (it closes the connection the operation is on) and `killOp`
+  is sent for each operation of the run still on the server.
+- **Danger**: None.
+- **Read-only**: Allowed, because it writes nothing to the database.
+- **Undo**: Cannot be undone: nothing was written. Running the query again is how to go back.
+- **redis-oplog**: Not published.
+- **After**: the table keeps what it showed and the status bar says **Query cancelled.**; a schema analysis and a
+  chart say **Analysis cancelled.** and **Chart cancelled.** A cancelled query is not added to the history.
+- **Uses**: `query.timeout`.
+- **Tested by**: `test/unit/queryRunner.test.ts › 'query.cancel: a run'`; `test/unit/queryBar.test.ts ›
+  'query.cancel: the markup'`; `test/integration/queryRunner.test.ts › 'query.cancel: against mongod'`. The button
+  taking the place of `Find` and the host's dispatch: none (checked by hand).
+
+Rules:
+
+- Every operation of a run (the find or the pipeline, and its count) carries a comment of its own,
+  `mongoster:<uuid>`, and an abort signal; cancelling aborts the signal and kills the user's own operations with
+  that comment. Listing and killing one's own operations needs no privilege.
+- A server that refuses either still stops the operation when it sees the connection closed.
+- `Cancel` shows 400 ms after the query started, so that the buttons of a query that answers at once don't flicker.
+- Only the last run started of each kind (table, schema, chart) is cancelled; an earlier one the tab no longer waits
+  for runs to its end, as before.
+- A pipeline that writes (`$out`, `$merge`) can be cancelled too: MongoDB writes its output aside and puts it in
+  place only at the end.
+
+Acceptance:
+
+- [ ] A find that would run 19 seconds, cancelled once it shows among the server's operations, fails within 8
+  seconds as **Query cancelled.**, and no operation with its comment is left on the server.
+- [ ] The next query on the same connection works.
+- [ ] Cancelling a run that already ended kills nothing.
+
+### `query.find-options` — The collation and the hint of a find
+
+Two more boxes of `Find`, in a row `Options` opens: the collation the query compares strings with, and the index it
+must use.
+
+- **Kind**: Derivation
+- **Function**: `src/queries.ts › toCollation`, `toHint`, `findOptions`
+- **Implemented in**: `src/queryRunner.ts › findPage`, `countFind`; `src/collectionPanel.ts › explain`;
+  `src/transfer.ts › exportSource`; `src/shared/codegen.ts` (`CodeQuery`, `hintValue`); `src/queryHistory.ts ›
+  normalize`, `sameQuery`; `src/shared/savedQueries.ts › serializeProjectQuery`, `parseProjectQuery`;
+  `src/mcp/workspace.ts › queryLines`; `src/webview/main.ts › findExtras`, `typedFind`, `validFind`, `showOptions`;
+  `src/webview/history.ts`; `src/queryBarHtml.ts` (`#optionsToggle`, `#moreOptions`); `src/shared/messages.ts ›
+  FindExtras`.
+- **Entry points**: `Options` under the filter, beside `Code`; the boxes Collation and Hint it opens.
+- **Offered when**: in `Find`. The row stays open while one of the two has a value.
+- **Uses**: `transfer.export`, `mcp.read-documents`.
+- **Tested by**: `test/unit/queries.test.ts › 'query.find-options: collation and hint as driver options'`;
+  `test/unit/queryBar.test.ts › 'query.find-options: the markup'`; `test/integration/queryRunner.test.ts ›
+  'query.find-options: against mongod'`; in the code: `test/unit/codegen.test.ts`; kept: `test/unit/queryHistory.test.ts`,
+  `test/unit/savedQueries.test.ts`; for an AI: `test/unit/mcpWorkspace.test.ts`, `test/unit/mcpGate.test.ts`. The row
+  and its toggle: none (checked by hand).
+
+Rules:
+
+- A collation is a document with a `locale` (`{ locale: "it", strength: 1 }`); without one it is refused with
+  **Collation needs a locale, e.g. { locale: "en", strength: 2 }**.
+- A hint is the keys of an index (`{ status: 1 }`) or its name, quoted or not (`status_1`, `"by status"`). The names
+  of the collection's indexes are offered in the box.
+- Both go with the find, its count, `Explain`, `Code` and `Export`, and are kept with the query in the history and
+  in the saved queries; an empty one is left out everywhere, so that what was kept before them reads the same.
+- `Schema`, `Chart`, `Update many` and `Delete many` use the filter alone, without the collation: with a collation
+  that ignores case they can match fewer documents than the table shows. `Update many` and `Delete many` show their
+  own count before they write.
+- `Reset` empties them. With `mongoster.mcp.readDocuments` off an AI gets the collation as its shape and the name of
+  a hinted index as `?`.
+
+Acceptance:
+
+- [ ] Among `mario`, `Mario`, `MARIO` and `luigi`, `{ name: "mario" }` finds 1 document and counts 1; with
+  `{ locale: "en", strength: 2 }` it finds 3 and counts 3.
+- [ ] The hints `by_city`, `"by_city"` and `{ city: 1 }` give the same documents; `no_such_index` is refused by
+  MongoDB.
+- [ ] `{ strength: 2 }` as a collation is refused before anything is sent.

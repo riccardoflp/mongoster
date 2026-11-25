@@ -91,7 +91,7 @@ A change that needs to break a rule changes this page first, in its own commit, 
 - **R6.4** Functions grow no longer than about 80 lines and files no longer than about 1,000; longer ones are split
   when they are next changed. *Source: proposed by this documentation, after Holzmann's Power of Ten rule 4 (60
   lines); to confirm (Q2).* *Target:
-  `src/webview/main.ts` (2,047 lines), `src/webview/monitor.ts` (1,636) and `src/collectionPanel.ts` (1,549) are over.*
+  `src/webview/main.ts` (2,122 lines), `src/webview/monitor.ts` (1,636) and `src/collectionPanel.ts` (1,212) are over.*
 
 ## R7 — Names
 

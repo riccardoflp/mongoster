@@ -844,7 +844,7 @@ saved, and whether a connection publishes to redis-oplog.
   project's query files; whether the connection's Redis URL is stored, and with `check` a `PING` to Redis.
 - **Settings**: `mongoster.mcp.readDocuments` hides `distinct_values`, and turned off makes `count_documents` refuse a
   filter, `collection_options` give the validator and a view's pipeline without their values, and
-  `list_saved_queries` give the queries as shapes.
+  `list_saved_queries` give the queries as shapes (a collation as its shape too, the name of a hinted index as `?`).
 - **Uses**: `mcp.arguments`, `mcp.output-limits`, `mcp.read-documents`, `oplog.publish`.
 - **Tested by**: `test/integration/mcpData.test.ts › 'count_documents' › 'counts all the documents, with the estimate'`,
   `› 'counts the documents that match a filter, without the estimate'`, `› 'counts a view'`,

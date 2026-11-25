@@ -44,8 +44,9 @@ export class HistoryPopover {
   /** Saves the tab's current query, unless it is empty. */
   saveCurrent(place?: SavedQuerySource): void {
     const q = this.cb.current();
-    if (q.pipeline ? !q.pipeline.length : !q.filter.trim() && !q.sort.trim() && !q.projection.trim()) {
-      this.cb.notify(q.pipeline ? 'Nothing to save: the pipeline has no stages.' : 'Nothing to save: filter, sort and projection are empty.');
+    const empty = q.pipeline ? !q.pipeline.length : ![q.filter, q.sort, q.projection, q.collation ?? '', q.hint ?? ''].some((t) => t.trim());
+    if (empty) {
+      this.cb.notify(q.pipeline ? 'Nothing to save: the pipeline has no stages.' : 'Nothing to save: the query is empty.');
     } else this.cb.save(q, place);
   }
 
@@ -71,7 +72,7 @@ export class HistoryPopover {
     const q = this.search.value.trim().toLowerCase();
     const match = (e: SavedQuery) =>
       !q ||
-      [e.name ?? '', e.description ?? '', e.filter, e.sort, e.projection, e.pipeline ? pipelineToText(e.pipeline) : ''].some((t) =>
+      [e.name ?? '', e.description ?? '', e.filter, e.sort, e.projection, e.collation ?? '', e.hint ?? '', e.pipeline ? pipelineToText(e.pipeline) : ''].some((t) =>
         t.toLowerCase().includes(q),
       );
     const saved = this.saved.filter(match);
@@ -201,7 +202,15 @@ function preview(q: QueryText): HTMLElement {
   wrap.append(text('span', oneLine(q.filter) || '{}', 'hi-filter'));
   if (q.sort) wrap.append(text('span', ' sort ', 'hi-label'), text('span', oneLine(q.sort)));
   if (q.projection) wrap.append(text('span', ' project ', 'hi-label'), text('span', oneLine(q.projection)));
-  wrap.title = [q.filter && `filter: ${q.filter}`, q.sort && `sort: ${q.sort}`, q.projection && `project: ${q.projection}`]
+  if (q.collation) wrap.append(text('span', ' collation ', 'hi-label'), text('span', oneLine(q.collation)));
+  if (q.hint) wrap.append(text('span', ' hint ', 'hi-label'), text('span', oneLine(q.hint)));
+  wrap.title = [
+    q.filter && `filter: ${q.filter}`,
+    q.sort && `sort: ${q.sort}`,
+    q.projection && `project: ${q.projection}`,
+    q.collation && `collation: ${q.collation}`,
+    q.hint && `hint: ${q.hint}`,
+  ]
     .filter(Boolean)
     .join('\n');
   return wrap;

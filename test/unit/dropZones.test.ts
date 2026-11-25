@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DragPayload, projectionZones, sortZones } from '../../src/shared/dropZones';
+import { DragPayload, optionApplied, projectionZones, sortZones } from '../../src/shared/dropZones';
 
 const header: DragPayload = { kind: 'column', key: 'amount' };
 const cell: DragPayload = { kind: 'cell', key: 'amount', value: 275 };
@@ -44,5 +44,23 @@ describe('query.drop-options: Project', () => {
 
   it('offers nothing in Aggregate', () => {
     expect(projectionZones(header, 'aggregate', {})).toEqual([]);
+  });
+});
+
+describe('query.drop-options: running the query', () => {
+  it('runs the query for a drop on Sort', () => {
+    expect(sortZones(cell, 'find', { amount: 1 }).map((z) => z.runs)).toEqual([true, true, true]);
+  });
+
+  it('leaves the query to Find for a drop on Project, also for a removal', () => {
+    expect(projectionZones(header, 'find', { amount: 1 }).map((z) => z.runs)).toEqual([false, false, false]);
+  });
+
+  it('says whether the text of a box is the one the table was read with', () => {
+    expect(optionApplied('{ amount: 1 }', '{ amount: 1 }')).toBe(true);
+    expect(optionApplied('  { amount: 1 } ', '{ amount: 1 }')).toBe(true);
+    expect(optionApplied('{ amount: 1, name: 1 }', '{ amount: 1 }')).toBe(false);
+    expect(optionApplied('', '{ amount: 1 }')).toBe(false);
+    expect(optionApplied('', '')).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 // "Code" dialog: the current find query or pipeline as code for mongosh or a driver, to copy or open in an editor.
-import { CODE_LANGUAGES, CodeLanguage, CodeQuery, generateCode } from '../shared/codegen';
+import { CODE_LANGUAGES, CodeLanguage, CodeQuery, generateCode, hintValue } from '../shared/codegen';
 import type { WebviewMessage } from '../shared/messages';
 import { isPlainObject, parseQuery } from '../shared/query';
 import { parseStageBody, PipelineStage } from '../shared/pipeline';
@@ -27,7 +27,14 @@ export function toCodeQuery(source: QuerySource): CodeQuery {
     if (!isPlainObject(v)) throw new Error(`${label} must be an object`);
     return v;
   };
-  return { kind: 'find', filter: value(source.filter, 'Filter') ?? {}, projection: value(source.projection, 'Project'), sort: value(source.sort, 'Sort') };
+  return {
+    kind: 'find',
+    filter: value(source.filter, 'Filter') ?? {},
+    projection: value(source.projection, 'Project'),
+    sort: value(source.sort, 'Sort'),
+    collation: value(source.collation ?? '', 'Collation'),
+    hint: hintValue(source.hint),
+  };
 }
 
 export class CodeDialog {

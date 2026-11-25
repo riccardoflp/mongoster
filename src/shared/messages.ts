@@ -13,7 +13,17 @@ import type { CollectionReferences } from './references';
 import type { FormatScope, FormattingPane, ScopedRules } from './formatting';
 import type { QueryPane } from './queryPane';
 
-export interface QueryRequest {
+/**
+ * The options of a find beyond filter, sort and projection, as typed (mongosh syntax): a collation document
+ * (`{ locale: "it", strength: 1 }`) and a hint, the name of an index or its keys (`{ status: 1 }`). Both are
+ * left out when empty, so that what was stored before they existed reads the same.
+ */
+export interface FindExtras {
+  collation?: string;
+  hint?: string;
+}
+
+export interface QueryRequest extends FindExtras {
   type: 'query';
   requestId: number;
   filter: string;
@@ -46,9 +56,12 @@ export interface AggregateRequest {
   limit: number;
 }
 
+/** What a collection's tab runs that the user can cancel: the table's query or pipeline, the schema analysis, the chart. */
+export type RunKind = 'query' | 'schema' | 'chart';
+
 /** A find query or a pipeline (run up to stage `upto`), as the webview describes it. */
 export type QuerySource =
-  | { kind: 'find'; filter: string; sort: string; projection: string }
+  | ({ kind: 'find'; filter: string; sort: string; projection: string } & FindExtras)
   | { kind: 'aggregate'; stages: PipelineStage[]; upto: number };
 
 export interface IndexInfo {
@@ -93,7 +106,7 @@ export interface IndexTotals {
 }
 
 /** A find query, or an aggregation when `pipeline` is set (filter/sort/projection are then empty). */
-export interface QueryText {
+export interface QueryText extends FindExtras {
   filter: string;
   sort: string;
   projection: string;
@@ -179,6 +192,8 @@ export type WebviewMessage =
   | UpdateFieldRequest
   | { type: 'explain'; requestId: number; source: QuerySource }
   | { type: 'loadIndexes' }
+  /** Stops the running query of the table, schema analysis or chart, also on the server. */
+  | { type: 'cancel'; run: RunKind }
   /** Creates an index or, with `original`, changes that one; keys and options in mongosh syntax. */
   | { type: 'saveIndex'; requestId: number; original?: string; keys: string; options: string }
   | { type: 'dropIndex'; name: string }
@@ -241,7 +256,8 @@ export type HostMessage =
   /** Shows a tab of the panel, e.g. Indexes when opened from the tree. */
   | { type: 'showMode'; mode: 'indexes' }
   | { type: 'result'; requestId: number; docs: unknown[]; count: number | null; durationMs: number; note?: string }
-  | { type: 'error'; requestId: number; message: string; stage?: number }
+  /** `cancelled`: the user stopped the query; the table keeps what it showed. */
+  | { type: 'error'; requestId: number; message: string; stage?: number; cancelled?: boolean }
   | { type: 'refresh' }
   | { type: 'history'; recent: SavedQuery[]; saved: SavedQuery[] }
   /** Saves the tab's current query (the `Save Query in the Project` command). */

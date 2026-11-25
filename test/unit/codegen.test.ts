@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BSON } from 'mongodb';
-import { CODE_LANGUAGES, CodeLanguage, CodeQuery, generateCode } from '../../src/shared/codegen';
+import { CODE_LANGUAGES, CodeLanguage, CodeQuery, generateCode, hintValue } from '../../src/shared/codegen';
 import { isPlainObject, parseQuery } from '../../src/shared/query';
 import { toBson } from '../../src/queries';
 
@@ -246,5 +246,109 @@ describe('a $numberLong that is not a whole number', () => {
     }
     expect(generateCode('python', query, snippet)).toContain(`Int64(${JSON.stringify(EVIL)})`);
     expect(generateCode('java', query, snippet)).toContain(`Long.parseLong(${JSON.stringify(EVIL)})`);
+  });
+});
+
+describe('collation and hint of a find', () => {
+  const simple = (extra: Partial<Extract<CodeQuery, { kind: 'find' }>> = {}): CodeQuery => ({ kind: 'find', filter: { status: 'new' }, ...extra });
+  const collation = { locale: 'it', strength: 1 };
+  const named = simple({ collation, hint: 'status_1' });
+  const keyed = simple({ hint: { status: 1, at: -1 } });
+  const code = (language: CodeLanguage, query: CodeQuery, target = snippet) => generateCode(language, query, target);
+
+  it('mongosh chains collation and hint after the find', () => {
+    expect(code('shell', named)).toBe('db.getCollection("orders").find({ status: "new" }).collation({ locale: "it", strength: 1 }).hint("status_1");\n');
+    expect(code('shell', keyed)).toBe('db.getCollection("orders").find({ status: "new" }).hint({ status: 1, at: -1 });\n');
+  });
+
+  it('Node.js passes them in the options of find', () => {
+    const text = code('javascript', named);
+    expect(text).toContain('const collation = { locale: "it", strength: 1 };');
+    expect(text).toContain('const hint = "status_1";');
+    expect(text).toContain('.find(filter, { collation, hint })');
+    expect(code('javascript', keyed)).toContain('const hint = { status: 1, at: -1 };');
+  });
+
+  it('Python passes a dict and a name, or the keys as pairs', () => {
+    const text = code('python', named);
+    expect(text).toContain('collation = {"locale": "it", "strength": 1}');
+    expect(text).toContain('hint = "status_1"');
+    expect(text).toContain('.find(query, collation=collation, hint=hint)');
+    expect(code('python', keyed)).toContain('hint = [("status", 1), ("at", -1)]');
+  });
+
+  it('Java builds a Collation and hints by name or by keys', () => {
+    const text = code('java', named);
+    expect(text).toContain('Collation collation = Collation.builder().locale("it").collationStrength(CollationStrength.PRIMARY).build();');
+    expect(text).toContain('collection.find(filter).collation(collation).hintString("status_1")');
+    const whole = code('java', named, program);
+    expect(whole).toContain('import com.mongodb.client.model.Collation;');
+    expect(whole).toContain('import com.mongodb.client.model.CollationStrength;');
+    const keys = code('java', keyed);
+    expect(keys).toContain('Document hint = new Document("status", 1).append("at", -1);');
+    expect(keys).toContain('collection.find(filter).hint(hint)');
+  });
+
+  it('C# passes them in FindOptions', () => {
+    const text = code('csharp', named);
+    expect(text).toContain('var options = new FindOptions { Collation = new Collation("it", strength: CollationStrength.Primary), Hint = "status_1" };');
+    expect(text).toContain('collection.Find(filter, options).ToList()');
+    expect(code('csharp', keyed)).toContain('Hint = new BsonDocument { { "status", 1 }, { "at", -1 } }');
+  });
+
+  it('Go sets them on the find options', () => {
+    const text = code('go', named);
+    expect(text).toContain('collation := &options.Collation{Locale: "it", Strength: 1}');
+    expect(text).toContain('hint := "status_1"');
+    expect(text).toContain('opts := options.Find().SetCollation(collation).SetHint(hint)');
+    expect(code('go', keyed)).toContain('hint := bson.D{{Key: "status", Value: 1}, {Key: "at", Value: -1}}');
+  });
+
+  it('writes every named option of a collation in the typed languages', () => {
+    const full = simple({
+      collation: { locale: 'en', caseLevel: true, caseFirst: 'upper', strength: 2, numericOrdering: true, alternate: 'shifted', maxVariable: 'punct', normalization: false, backwards: true },
+    });
+    expect(code('java', full)).toContain(
+      'Collation.builder().locale("en").caseLevel(true).collationCaseFirst(CollationCaseFirst.UPPER).collationStrength(CollationStrength.SECONDARY).numericOrdering(true).collationAlternate(CollationAlternate.SHIFTED).collationMaxVariable(CollationMaxVariable.PUNCT).normalization(false).backwards(true).build()',
+    );
+    expect(code('csharp', full)).toContain(
+      'new Collation("en", caseLevel: true, caseFirst: CollationCaseFirst.Upper, strength: CollationStrength.Secondary, numericOrdering: true, alternate: CollationAlternate.Shifted, maxVariable: CollationMaxVariable.Punctuation, normalization: false, backwards: true)',
+    );
+    expect(code('go', full)).toContain(
+      '&options.Collation{Locale: "en", CaseLevel: true, CaseFirst: "upper", Strength: 2, NumericOrdering: true, Alternate: "shifted", MaxVariable: "punct", Normalization: false, Backwards: true}',
+    );
+  });
+
+  it('leaves out of the typed languages what is not an option of a collation, and a collation without a locale', () => {
+    const odd = simple({ collation: { locale: 'it', strength: 9, caseFirst: 'x"); evil(); ("', other: 1 } });
+    expect(code('java', odd)).toContain('Collation.builder().locale("it").build()');
+    expect(code('csharp', odd)).toContain('new Collation("it")');
+    expect(code('go', odd)).toContain('&options.Collation{Locale: "it"}');
+    for (const language of ['java', 'csharp', 'go'] as const) {
+      expect(code(language, odd)).not.toContain('evil');
+      expect(code(language, simple({ collation: { strength: 1 } }))).toBe(code(language, simple()));
+    }
+  });
+
+  it('quotes a name that would end the string', () => {
+    const name = 'a"); db.dropDatabase(); ("';
+    for (const { id } of CODE_LANGUAGES) expect(code(id, simple({ hint: name }))).toContain(JSON.stringify(name));
+  });
+
+  it('changes nothing without them, also when they are empty', () => {
+    for (const { id } of CODE_LANGUAGES) {
+      for (const target of [snippet, program]) {
+        expect(generateCode(id, simple({ collation: {}, hint: '  ' }), target)).toBe(generateCode(id, simple(), target));
+        expect(generateCode(id, simple({ hint: {} }), target)).toBe(generateCode(id, simple(), target));
+      }
+    }
+  });
+
+  it('reads the hint as typed: keys, or a name quoted or not', () => {
+    expect(hintValue('')).toBeUndefined();
+    expect(hintValue('  status_1 ')).toBe('status_1');
+    expect(hintValue('"status_1"')).toBe('status_1');
+    expect(hintValue('{ status: 1 }')).toEqual({ status: 1 });
+    expect(() => hintValue('""')).toThrow('Hint must be');
   });
 });

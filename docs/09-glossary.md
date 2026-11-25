@@ -48,6 +48,10 @@ these words; `catalog.py` reports the words of the **Avoid** column anywhere in 
 | query | A filter, a sort and a projection, run with `find`. | a pipeline | — | `QueryText`, `ParsedQuery` |
 | query bar | The inputs and buttons of the collection tab where the query or the pipeline is written and run: above the table, or in the query pane. | the toolbar: the top row with the mode tabs, `History`, `Export`, `Watch`, `Insert` | — | `.query-pane` in `src/collectionPanel.ts` |
 | query pane | The query bar put at the right of the table, resizable; one choice for every collection, the setting `mongoster.queryBar.position`. | a VS Code panel or side bar | — | `QueryPane`, `QueryPaneUi` |
+| run | One execution of a query, a schema analysis or a chart of a collection tab, from its start to its result; what `Cancel` stops. Its operations carry a comment of its own on the server. | a scheduled task's run | — | `QueryRun`, `RunKind` |
+| time limit | The seconds a find or a pipeline of a collection tab may run before MongoDB stops it: the setting `mongoster.query.timeout`. | the connection's timeouts | — | `timeoutSeconds`, `TIMEOUT_SETTING` |
+| collation | The rules a find compares and sorts strings with, a document with a `locale`, typed in the Collation box. | an index's own collation | — | `toCollation`, `FindExtras.collation` |
+| hint | The index a find must use: its name or its keys, typed in the Hint box. | a field hint of the autocompletion (`FieldHint`) | — | `toHint`, `FindExtras.hint` |
 | filter | The condition that chooses documents, in mongosh syntax. | the tree filter | where clause | `filter` |
 | pipeline | The stages of an aggregation. | a query | — | `PipelineStage` |
 | stage | One step of a pipeline: `$match`, `$group`… | — | — | `PipelineStage` |

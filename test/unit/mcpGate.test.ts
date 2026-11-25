@@ -55,7 +55,7 @@ function fakeClient(fake: Fake): MongoClient {
 const history: HistoryEntry[] = [
   { id: 'w1', time: 1_700_000_000_000, connectionId: 'c1', connectionName: 'Local', database: 'shop', collection: 'users', label: `Edit email of "${SECRET}"`, inserted: 0, updated: 1, deleted: 0, size: 10 },
 ];
-const savedQuery: SavedQuery = { id: 'q1', name: 'By email', at: 1_700_000_000_000, filter: `{ email: "${SECRET}", age: { $gt: 30 } }`, sort: '{ createdAt: -1 }', projection: '' };
+const savedQuery: SavedQuery = { id: 'q1', name: 'By email', at: 1_700_000_000_000, filter: `{ email: "${SECRET}", age: { $gt: 30 } }`, sort: '{ createdAt: -1 }', projection: '', collation: `{ locale: "${SECRET}", strength: 1 }`, hint: SECRET };
 const recentQuery: SavedQuery = {
   id: 'q2',
   at: 1_700_000_100_000,
@@ -152,6 +152,9 @@ describe('readDocuments off', () => {
     expect(off.text).not.toContain(SECRET);
     expect(off.text).toContain('filter: { email: ?, age: { $gt: ? } }');
     expect(off.text).toContain('sort: { createdAt: -1 }');
+    // A collation and a hint are the user's text too: nothing says they hold only a locale and a name.
+    expect(off.text).toContain('collation: { locale: ?, strength: 1 }');
+    expect(off.text).toContain('hint: ?');
     expect(off.text).toContain('pipeline: [ { $match: { token: ? } }, { $sort: { createdAt: -1 } } ]');
     expect((await call(setup(true).tools, 'list_saved_queries', users)).text).toContain(`{ email: "${SECRET}", age: { $gt: 30 } }`);
   });

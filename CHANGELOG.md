@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Cancelling a query**: while a query runs, `Cancel` takes the place of `Find` (and of `Run`, `Analyze` and `Draw`) in a collection's tab. It stops the wait and the operation on the server; the table keeps what it showed.
+- **Time limit of a query**: the setting `mongoster.query.timeout` says how many seconds a `Find` or a pipeline may run (60 by default, as before; `0` for no limit). `Explain` gets the same limit, a pipeline that writes ten times as long. A query stopped by the limit says so, and names the setting.
+- **Collation and hint**: `Options` under the filter (beside `Code`) opens two more boxes of `Find`. Collation is how strings compare and sort (`{ locale: "it", strength: 1 }` finds `mario`, `Mario` and `MARIO`); Hint is the index the query must use, by its name (offered from the collection's indexes) or its keys. They go with the query to its count, `Explain`, `Code` and `Export`, and are kept in the history and in the saved queries (`collation` and `hint` in the project's files).
+- **Project Visible Columns**: in a column header's menu, and `Project Visible` in the `Columns` panel. It writes the columns the table shows into Project, so that the query reads only those fields; `Find` runs it.
+- A field dropped on Project (`include`, `exclude`, `✕ remove`) no longer runs the query: after the first `include` the table showed that field alone, and no other could be dragged. The box is marked `not applied` until `Find`, or `Enter` in it, runs the query. A drop on the filter or on Sort still runs it.
 - A document's history now keeps a field named `__proto__` or `constructor` inside the document: an update written through such a name by someone else could change every object of the extension, and of the extensions running beside it.
 - Importing a CSV file whose header names a field `__proto__` or `constructor` now gives documents with that field; reading the file could change every object of the extension.
 - Mongoster no longer looks for the optional modules of its MongoDB and SSH libraries in `node_modules` folders outside itself: on a machine with other accounts, one of them could have its code loaded from such a folder (`/tmp` for the AppImage, `C:\` on Windows).

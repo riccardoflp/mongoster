@@ -1,6 +1,6 @@
 import './tokenColors';
-import { isEjsonWrapper, isPlainObject, mergeCondition, mergeProjection, mergeSort, parseQuery, prettyShell, toShell } from '../shared/query';
-import type { FieldActionRequest, HostMessage, QuerySource, QueryText, WebviewMessage } from '../shared/messages';
+import { isEjsonWrapper, isPlainObject, mergeCondition, parseQuery, prettyShell, toShell } from '../shared/query';
+import type { FieldActionRequest, FindExtras, HostMessage, QuerySource, QueryText, WebviewMessage } from '../shared/messages';
 import type { PipelineStage } from '../shared/pipeline';
 import { HistoryPopover } from './history';
 import { PipelineEditor } from './pipeline';
@@ -37,9 +37,10 @@ import {
   leaves,
   rowHeight,
   valueAtPath,
+  visibleProjection,
 } from '../shared/columns';
 import { CellEditor } from './cellEditor';
-import { ColumnMenu, ColumnMenuItem, ColumnsPanel, LayoutActions } from './columnsUi';
+import { ColumnMenu, ColumnMenuItem, ColumnsPanel, ColumnsUiOptions, LayoutActions } from './columnsUi';
 import { Completer } from './autocomplete';
 import { highlight } from './highlight';
 import { FilterBuilder } from './builder';
@@ -50,7 +51,8 @@ import { FormattingPaneUi, applyPaint } from './formatting';
 import { CollectionReferences, ReferenceTarget, referenceKeys, referenceTargets, referencingTargets } from '../shared/references';
 import { paintStripe } from './stripe';
 import { QueryPaneUi } from './queryPane';
-import { DragPayload, projectionZones, sortZones } from '../shared/dropZones';
+import { optionApplied } from '../shared/dropZones';
+import { QueryDrop, flash } from './queryDrop';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: WebviewMessage): void;
@@ -68,6 +70,11 @@ interface QueryState {
   filter: string;
   sort: string;
   projection: string;
+  /** The collation and the hint of the find, as typed; missing in a state saved before they existed. */
+  collation?: string;
+  hint?: string;
+  /** The row of Collation and Hint is open. */
+  options?: boolean;
   limit: number;
   skip: number;
   /** Dotted paths of expanded sub-document columns. */
@@ -81,13 +88,6 @@ interface QueryState {
   chartSource?: 'find' | 'aggregate';
   /** The filter builder is open. */
   builder?: boolean;
-}
-
-/** `within`: the array a dragged element field belongs to; its conditions go into an $elemMatch. */
-interface DropZone {
-  label: string;
-  title: string;
-  condition: (p: DragPayload) => unknown;
 }
 
 const vscode = acquireVsCodeApi();
@@ -108,7 +108,6 @@ let expanded = new Set(state.expanded);
 let docs: Record<string, unknown>[] = [];
 let count: number | null = null;
 let currentRequest = 0;
-let drag: DragPayload | null = null;
 let selectedCell: HTMLTableCellElement | null = null;
 let openDocIndex = -1;
 const columnsByKey = new Map<string, ColumnNode>();
@@ -123,17 +122,18 @@ let requestedUpto = -1;
 /** The query (with its page) of the last request and of the documents shown: the row selection ends when it changes. */
 let requestedQuery = '';
 let shownQuery = '';
+/** The projection of the last request and of the documents shown: Project is marked while its text is another. */
+let requestedProjection = '';
+let shownProjection = '';
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const filterInput = el<HTMLTextAreaElement>('filter');
 const sortInput = el<HTMLInputElement>('sort');
 const projectionInput = el<HTMLInputElement>('projection');
+const collationInput = el<HTMLInputElement>('collation');
+const hintInput = el<HTMLInputElement>('hint');
 const limitSelect = el<HTMLSelectElement>('limit');
 const grid = el<HTMLTableElement>('grid');
-const dropzones = el('dropzones');
-const sortDrop = el('sortDrop');
-const projectionDrop = el('projectionDrop');
-const pipelineDrop = el('pipelineDrop');
 const modal = el('modal');
 
 // ---------------------------------------------------------------------------
@@ -163,22 +163,16 @@ function run(resetSkip = false): void {
   state.filter = filterInput.value;
   state.sort = sortInput.value;
   state.projection = projectionInput.value;
+  state.collation = collationInput.value;
+  state.hint = hintInput.value;
 
-  let invalid = false;
-  for (const input of [filterInput, sortInput, projectionInput]) {
-    const ok = isValidObject(input.value);
-    input.classList.toggle('invalid', !ok);
-    invalid ||= !ok;
-  }
-  if (invalid) {
-    showError('Invalid query syntax — check the highlighted field.');
-    return;
-  }
+  if (!validFind()) return;
 
   vscode.setState(state);
   currentRequest++;
   requestedUpto = -1;
-  requestedQuery = JSON.stringify(['find', state.filter, state.sort, state.projection, state.skip, state.limit]);
+  requestedQuery = JSON.stringify(['find', state.filter, state.sort, state.projection, state.collation, state.hint, state.skip, state.limit]);
+  requestedProjection = state.projection;
   setLoading(true);
   vscode.postMessage({
     type: 'query',
@@ -186,10 +180,64 @@ function run(resetSkip = false): void {
     filter: state.filter,
     sort: state.sort,
     projection: state.projection,
+    ...findExtras(state.collation, state.hint),
     skip: state.skip,
     limit: state.limit,
   });
 }
+
+/** The collation and the hint of a find, left out when empty. */
+function findExtras(collation = '', hint = ''): FindExtras {
+  return { ...(collation.trim() && { collation }), ...(hint.trim() && { hint }) };
+}
+
+/** The find in the boxes, run or not. */
+function typedFind(): QuerySource & { kind: 'find' } {
+  return {
+    kind: 'find',
+    filter: filterInput.value,
+    sort: sortInput.value,
+    projection: projectionInput.value,
+    ...findExtras(collationInput.value, hintInput.value),
+  };
+}
+
+/** Marks the boxes of the find whose text can't be read, and says so; true when all can. */
+function validFind(): boolean {
+  let invalid = false;
+  for (const input of [filterInput, sortInput, projectionInput, collationInput]) {
+    const ok = isValidObject(input.value);
+    input.classList.toggle('invalid', !ok);
+    invalid ||= !ok;
+  }
+  // A hint is the keys of an index or its name: only keys can be written wrong.
+  const hintOk = !hintInput.value.trim().startsWith('{') || isValidObject(hintInput.value);
+  hintInput.classList.toggle('invalid', !hintOk);
+  if (invalid || !hintOk) {
+    // A box of the closed row would be marked where it can't be seen.
+    if (collationInput.classList.contains('invalid') || !hintOk) showOptions(true);
+    showError('Invalid query syntax — check the highlighted field.');
+    return false;
+  }
+  return true;
+}
+
+/** Opens or closes the row of Collation and Hint; it stays open while one of them has a value. */
+function showOptions(open: boolean): void {
+  const shown = open || !!collationInput.value.trim() || !!hintInput.value.trim();
+  el('moreOptions').classList.toggle('hidden', !shown);
+  el('optionsToggle').setAttribute('aria-expanded', String(shown));
+  if (state.options !== open) {
+    state.options = open;
+    vscode.setState(state);
+  }
+  // The names of the indexes are offered in Hint, once the tab knows its collection; a view has none of its own.
+  if (shown && !hintIndexesAsked && collectionName && !el<HTMLButtonElement>('modeIndexes').disabled) {
+    hintIndexesAsked = true;
+    vscode.postMessage({ type: 'loadIndexes' });
+  }
+}
+let hintIndexesAsked = false;
 
 function runSchema(): void {
   const ok = isValidObject(filterInput.value);
@@ -264,8 +312,28 @@ function isValidObject(text: string): boolean {
   }
 }
 
+/**
+ * While something loads, `Cancel` takes the place of the button that ran it (media/webview.css): after a moment,
+ * so that the buttons of a query that answers at once don't flicker.
+ */
 function setLoading(loading: boolean): void {
   document.body.classList.toggle('loading', loading);
+  // "Query cancelled." is said until the next query starts; the status then says again what the table shows.
+  if (loading && statusBeforeCancel !== null) {
+    el('status').textContent = statusBeforeCancel;
+    statusBeforeCancel = null;
+  }
+  clearTimeout(cancellableTimer);
+  if (loading) cancellableTimer = setTimeout(() => document.body.classList.add('cancellable'), CANCEL_AFTER_MS);
+  else document.body.classList.remove('cancellable');
+}
+let statusBeforeCancel: string | null = null;
+const CANCEL_AFTER_MS = 400;
+let cancellableTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Feature: query.cancel. Asks the host to stop what this mode is running; its answer ends the loading. */
+function cancelRun(): void {
+  vscode.postMessage({ type: 'cancel', run: state.mode === 'schema' ? 'schema' : state.mode === 'chart' ? 'chart' : 'query' });
 }
 
 function showError(message: string | null): void {
@@ -313,6 +381,7 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       el<HTMLButtonElement>('modeIndexes').disabled = m.view;
       el('modeIndexes').title = m.view ? 'Views use the indexes of their source collection' : 'Indexes of the collection';
       if (m.view && state.mode === 'indexes') setMode('find', false);
+      showOptions(state.options ?? false);
       run();
       fieldsOfCollection();
       break;
@@ -355,6 +424,13 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       break;
     case 'indexes':
       indexesView.render(m.indexes, m.totals, m.error);
+      el('hintIndexes').replaceChildren(
+        ...m.indexes.map((ix) => {
+          const option = document.createElement('option');
+          option.value = ix.name;
+          return option;
+        }),
+      );
       break;
     case 'schema':
       if (m.requestId !== schemaRequest) break;
@@ -423,6 +499,8 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
         anchorRow = -1;
       }
       shownQuery = requestedQuery;
+      if (docsUpto < 0) shownProjection = requestedProjection;
+      markOptions();
       el('empty').textContent =
         m.note ?? (state.mode === 'aggregate' ? 'The pipeline returned no documents.' : 'No documents match this query.');
       renderGrid();
@@ -447,6 +525,13 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
     case 'error':
       if (m.requestId !== currentRequest) return;
       setLoading(false);
+      // A cancelled query is no error: the table keeps what it showed.
+      if (m.cancelled) {
+        showError(null);
+        statusBeforeCancel ??= el('status').textContent ?? '';
+        el('status').textContent = m.message;
+        break;
+      }
       showError(m.message);
       if (m.stage !== undefined) pipeline.markError(m.stage);
       break;
@@ -708,9 +793,28 @@ function saveLayout(next: ColumnLayout): void {
   renderGrid();
 }
 
-const layoutActions = new LayoutActions({ columns: () => allColumns, layout: () => layout, change: saveLayout });
-const columnsPanel = new ColumnsPanel({ columns: () => allColumns, layout: () => layout, change: saveLayout }, layoutActions);
-const columnMenu = new ColumnMenu({ columns: () => allColumns, layout: () => layout, change: saveLayout }, layoutActions, () => columnsPanel.open(), fieldItems);
+/** Writes the visible columns into Project (Feature: query.project-visible); like a field dropped there, it waits for `Find`. */
+function projectVisible(): void {
+  const projection = visibleProjection(allColumns, layout);
+  if (!Object.keys(projection).length) {
+    showError('No column is visible: there is nothing to put into Project.');
+    return;
+  }
+  projectionInput.value = toShell(projection);
+  projectionInput.classList.remove('invalid');
+  flash(el('projectionWrap'));
+  markOptions();
+}
+
+const columnsUi: ColumnsUiOptions = {
+  columns: () => allColumns,
+  layout: () => layout,
+  change: saveLayout,
+  projectVisible: () => (state.mode === 'find' ? projectVisible : undefined),
+};
+const layoutActions = new LayoutActions(columnsUi);
+const columnsPanel = new ColumnsPanel(columnsUi, layoutActions);
+const columnMenu = new ColumnMenu(columnsUi, layoutActions, () => columnsPanel.open(), fieldItems);
 
 /** The query above the results or beside them: the user's choice for every collection. */
 const queryPane = new QueryPaneUi(el<HTMLButtonElement>('layoutToggle'), el('paneSplitter'), (pane) =>
@@ -1053,7 +1157,7 @@ function exportRows(list: Record<string, unknown>[]): void {
     const stages = [...pipeline.stages.slice(0, pipeline.upto + 1), { op: '$match', body: match, enabled: true }];
     source = { kind: 'aggregate', stages, upto: stages.length - 1 };
   } else {
-    source = { kind: 'find', filter: match, sort: state.sort, projection: state.projection };
+    source = { kind: 'find', filter: match, sort: state.sort, projection: state.projection, ...findExtras(state.collation) };
   }
   vscode.postMessage({ type: 'export', source, expanded: [...expanded], layout, count: list.length });
 }
@@ -1131,6 +1235,7 @@ function duplicate(doc: Record<string, unknown>): void {
 
 // Dragging a header onto another one moves the column there (among its siblings).
 function headerDropSide(e: DragEvent): { th: HTMLElement; after: boolean } | null {
+  const drag = queryDrop.drag;
   if (drag?.kind !== 'column') return null;
   const th = (e.target as HTMLElement).closest<HTMLElement>('th[data-key]');
   if (!th || th.dataset.key === drag.key) return null;
@@ -1152,10 +1257,11 @@ grid.addEventListener('dragleave', clearDropMarks);
 grid.addEventListener('drop', (e) => {
   const side = headerDropSide(e);
   clearDropMarks();
+  const drag = queryDrop.drag;
   if (!side || drag?.kind !== 'column') return;
   e.preventDefault();
   const source = drag.key;
-  endDrag();
+  queryDrop.end();
   if (!layoutActions.move(source, side.th.dataset.key!, side.after)) {
     showError(`${source} can only be moved among the columns at its level.`);
   }
@@ -1251,11 +1357,6 @@ function cellValue(td: HTMLElement): { key: string; value: unknown; within?: str
   const value = path.length === depth ? element : getAt(element, path.slice(depth));
   if (value === MISSING) return null;
   return { key: path.join('.'), value, within: path.length > depth ? path.slice(0, depth).join('.') : undefined };
-}
-
-/** "items[].sku" for a field of an array element, else the dotted key. */
-function displayKey(p: DragPayload): string {
-  return p.kind === 'cell' && p.within ? `${p.within}[].${p.key.slice(p.within.length + 1)}` : p.key;
 }
 
 grid.addEventListener('click', (e) => {
@@ -1379,161 +1480,33 @@ function toggleSort(key: string): void {
 // ---------------------------------------------------------------------------
 // Drag & drop into the filter, sort and projection
 
-const COMPARABLE = new Set(['t-number', 't-date', 't-string']);
-
-function zonesFor(p: DragPayload): DropZone[] {
-  if (p.kind === 'column') {
-    return [
-      { label: 'exists', title: `${p.key}: { $exists: true }`, condition: () => ({ $exists: true }) },
-      { label: 'missing', title: `${p.key}: { $exists: false }`, condition: () => ({ $exists: false }) },
-      { label: 'is null', title: `${p.key}: null`, condition: () => null },
-    ];
-  }
-  const zones: DropZone[] = [
-    { label: '= equals', title: 'Match this exact value', condition: (d) => (d as { value: unknown }).value },
-    { label: '≠ not equal', title: '$ne', condition: (d) => ({ $ne: (d as { value: unknown }).value }) },
-  ];
-  if (COMPARABLE.has(typeClass(p.value))) {
-    zones.push(
-      { label: '≥ from', title: '$gte (combines with ≤ for a range)', condition: (d) => ({ $gte: (d as { value: unknown }).value }) },
-      { label: '≤ to', title: '$lte (combines with ≥ for a range)', condition: (d) => ({ $lte: (d as { value: unknown }).value }) },
-    );
-  }
-  if (Array.isArray(p.value) && p.value.length) {
-    zones.push({ label: '∈ in', title: '$in: any of these values', condition: (d) => ({ $in: (d as { value: unknown }).value }) });
-  }
-  return zones;
-}
-
-function showDropzones(p: DragPayload): void {
-  const aggregate = state.mode === 'aggregate';
-  const container = aggregate ? document.createElement('div') : dropzones;
-  if (aggregate) {
-    container.className = 'dz-row';
-    pipelineDrop.replaceChildren(span('dz-caption', `Drop to add the condition ${pipeline.dropTarget()}`), container);
-  }
-  dropzones.replaceChildren();
-  for (const zone of zonesFor(p)) {
-    const div = dropzone(zone.label, zone.title, displayKey(p), () => {
-      if (drag) addCondition(drag.key, zone.condition(drag), drag.kind === 'cell' ? drag.within : undefined);
-    });
-    if (p.kind === 'cell' && p.within) div.title += ` · same element of ${p.within} ($elemMatch)`;
-    container.append(div);
-  }
-  showOptionZones(p);
-  document.body.classList.add('dragging');
-}
-
-function dropzone(label: string, title: string, key: string, drop: () => void): HTMLDivElement {
-  const div = document.createElement('div');
-  div.className = 'dropzone';
-  div.title = title;
-  div.append(span('dz-label', label), span('dz-key', key));
-  div.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    e.dataTransfer!.dropEffect = 'copy';
-    div.classList.add('over');
-  });
-  div.addEventListener('dragleave', () => div.classList.remove('over'));
-  div.addEventListener('drop', (e) => {
-    e.preventDefault();
-    drop();
-    endDrag();
-  });
-  return div;
-}
-
-/** A column or a cell dropped on Sort sorts by its field, on Project includes or excludes it; a field already there can be removed. */
-function showOptionZones(p: DragPayload): void {
-  const key = p.key;
-  sortDrop.replaceChildren(
-    ...sortZones(p, state.mode, currentSort()).map((z) =>
-      dropzone(z.label, z.title, key, () => setOption(sortInput, el('sortWrap'), (text) => mergeSort(text, key, z.value))),
-    ),
-  );
-  projectionDrop.replaceChildren(
-    ...projectionZones(p, state.mode, currentProjection()).map((z) =>
-      dropzone(z.label, z.title, key, () =>
-        setOption(projectionInput, el('projectionWrap'), (text) => mergeProjection(text, key, z.value)),
-      ),
-    ),
-  );
-}
-
-function currentProjection(): Record<string, unknown> {
-  try {
-    const v = projectionInput.value.trim() ? parseQuery(projectionInput.value) : {};
-    return isPlainObject(v) ? v : {};
-  } catch {
-    return {};
-  }
-}
-
-/** Puts a dropped field into the sort or the projection and runs the query. */
-function setOption(input: HTMLInputElement, wrap: HTMLElement, merge: (text: string) => string): void {
-  try {
-    input.value = merge(input.value);
-  } catch (err) {
-    showError(`Fix the ${input.id} before adding fields by drag & drop: ${(err as Error).message}`);
-    input.classList.add('invalid');
-    return;
-  }
-  input.classList.remove('invalid');
-  flash(wrap);
-  run(true);
-}
-
-function endDrag(): void {
-  drag = null;
-  document.body.classList.remove('dragging');
-  dropzones.replaceChildren();
-  sortDrop.replaceChildren();
-  projectionDrop.replaceChildren();
-  pipelineDrop.replaceChildren();
-}
-
-grid.addEventListener('dragstart', (e) => {
-  const target = e.target as HTMLElement;
-  if (target.tagName === 'TH' && target.dataset.key) {
-    drag = { kind: 'column', key: target.dataset.key };
-  } else if (target.tagName === 'TD') {
-    const cell = cellValue(target);
-    if (!cell) return;
-    drag = { kind: 'cell', ...cell };
-  } else {
-    return;
-  }
-  const label = drag.kind === 'cell' ? `${displayKey(drag)}: ${toShell(drag.value)}` : drag.key;
-  e.dataTransfer!.setData('text/plain', label);
-  // Columns can also be moved onto another header.
-  e.dataTransfer!.effectAllowed = drag.kind === 'column' ? 'copyMove' : 'copy';
-  showDropzones(drag);
+const queryDrop = new QueryDrop({
+  grid,
+  filter: filterInput,
+  sort: sortInput,
+  projection: projectionInput,
+  mode: () => state.mode,
+  cellValue,
+  typeClass,
+  currentSort,
+  pipeline: {
+    addCondition: (key, condition, within) => pipeline.addCondition(key, condition, within),
+    dropTarget: () => pipeline.dropTarget(),
+  },
+  filterChanged: () => {
+    autosize();
+    builder.sync();
+  },
+  optionChanged: markOptions,
+  run: () => run(true),
+  notify: showError,
 });
 
-grid.addEventListener('dragend', endDrag);
-
-function addCondition(key: string, condition: unknown, within?: string): void {
-  if (state.mode === 'aggregate') {
-    pipeline.addCondition(key, condition, within);
-    return;
-  }
-  try {
-    filterInput.value = mergeCondition(filterInput.value, key, condition, within);
-  } catch (err) {
-    showError(`Fix the filter before adding conditions by drag & drop: ${(err as Error).message}`);
-    filterInput.classList.add('invalid');
-    return;
-  }
-  autosize();
-  builder.sync();
-  flash(el('filterWrap'));
-  run(true);
-}
-
-function flash(node: HTMLElement): void {
-  node.classList.remove('flash');
-  void node.offsetWidth;
-  node.classList.add('flash');
+/** Marks Project when its text isn't the one the table was read with: a field dropped there waits for `Find`. */
+function markOptions(): void {
+  const applied = state.mode !== 'find' || optionApplied(projectionInput.value, shownProjection);
+  el('projectionWrap').classList.toggle('pending', !applied);
+  projectionInput.title = applied ? '' : 'Not applied yet: Find (or Enter here) runs the query with this projection';
 }
 
 // ---------------------------------------------------------------------------
@@ -1660,7 +1633,7 @@ el('export').addEventListener('click', () => {
     source:
       state.mode === 'aggregate'
         ? { kind: 'aggregate', stages: pipeline.stages, upto: pipeline.upto }
-        : { kind: 'find', filter: state.filter, sort: state.sort, projection: state.projection },
+        : { kind: 'find', filter: state.filter, sort: state.sort, projection: state.projection, ...findExtras(state.collation, state.hint) },
     expanded: [...expanded],
     layout,
     page: { skip: state.skip, limit: state.limit },
@@ -1668,7 +1641,8 @@ el('export').addEventListener('click', () => {
   });
 });
 el('reset').addEventListener('click', () => {
-  filterInput.value = sortInput.value = projectionInput.value = '';
+  filterInput.value = sortInput.value = projectionInput.value = collationInput.value = hintInput.value = '';
+  showOptions(state.options ?? false);
   autosize();
   builder.sync();
   run(true);
@@ -1687,8 +1661,14 @@ filterInput.addEventListener('input', () => {
   filterInput.classList.remove('invalid');
   builder.sync();
 });
-for (const input of [sortInput, projectionInput]) {
-  input.addEventListener('input', () => input.classList.remove('invalid'));
+el('cancel').addEventListener('click', cancelRun);
+el('cancelPipeline').addEventListener('click', cancelRun);
+el('optionsToggle').addEventListener('click', () => showOptions(el('moreOptions').classList.contains('hidden')));
+for (const input of [sortInput, projectionInput, collationInput, hintInput]) {
+  input.addEventListener('input', () => {
+    input.classList.remove('invalid');
+    markOptions();
+  });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') run(true);
   });
@@ -1766,6 +1746,9 @@ function loadQuery(q: QueryText): void {
   filterInput.value = q.filter;
   sortInput.value = q.sort;
   projectionInput.value = q.projection;
+  collationInput.value = q.collation ?? '';
+  hintInput.value = q.hint ?? '';
+  showOptions(state.options ?? false);
   autosize();
   builder.sync();
   setMode('find');
@@ -1776,7 +1759,7 @@ const history = new HistoryPopover({
   save: (q, place) =>
     vscode.postMessage({
       type: 'saveQuery',
-      query: { filter: q.filter, sort: q.sort, projection: q.projection, ...(q.pipeline && { pipeline: q.pipeline }) },
+      query: { filter: q.filter, sort: q.sort, projection: q.projection, ...findExtras(q.collation, q.hint), ...(q.pipeline && { pipeline: q.pipeline }) },
       ...(place && { place }),
     }),
   remove: (id) => vscode.postMessage({ type: 'removeQuery', id }),
@@ -1787,7 +1770,7 @@ const history = new HistoryPopover({
   current: () =>
     state.mode === 'aggregate'
       ? { filter: '', sort: '', projection: '', pipeline: pipeline.prepare() ? pipeline.stages : [] }
-      : { filter: filterInput.value, sort: sortInput.value, projection: projectionInput.value },
+      : { filter: filterInput.value, sort: sortInput.value, projection: projectionInput.value, ...findExtras(collationInput.value, hintInput.value) },
   notify: showError,
 });
 
@@ -1843,6 +1826,7 @@ const builder = new FilterBuilder(el('builder'), el<HTMLButtonElement>('builderT
 });
 completeWith(sortInput, 'sort');
 completeWith(projectionInput, 'project');
+highlight(collationInput);
 completeWith(el<HTMLTextAreaElement>('pipelineText'), 'pipeline');
 completeWith(el<HTMLTextAreaElement>('bulkUpdate'), 'update');
 completeWith(el<HTMLTextAreaElement>('indexKeys'), 'index');
@@ -1878,7 +1862,7 @@ const schemaSize = el<HTMLSelectElement>('schemaSize');
 if (state.schemaSize) schemaSize.value = String(state.schemaSize);
 schemaSize.addEventListener('change', () => run());
 const schemaView = new SchemaView({
-  filter: (path, condition) => addCondition(path, condition),
+  filter: (path, condition) => queryDrop.addCondition(path, condition),
   generate: (schema, filter) => vscode.postMessage({ type: 'generateDocuments', schema, filter }),
 });
 
@@ -2077,14 +2061,8 @@ function explain(): void {
     source = { kind: 'aggregate', stages: pipeline.stages, upto: pipeline.upto };
   } else {
     // Explain what is in the fields, even if not run yet.
-    for (const input of [filterInput, sortInput, projectionInput]) {
-      if (!isValidObject(input.value)) {
-        input.classList.add('invalid');
-        showError('Invalid query syntax — check the highlighted field.');
-        return;
-      }
-    }
-    source = { kind: 'find', filter: filterInput.value, sort: sortInput.value, projection: projectionInput.value };
+    if (!validFind()) return;
+    source = typedFind();
   }
   explainRequest++;
   explainView.loading(state.mode === 'aggregate' ? 'Explain · pipeline' : 'Explain · find');
@@ -2111,7 +2089,7 @@ function showCode(): void {
     codeDialog.open({ kind: 'aggregate', stages: pipeline.stages, upto: pipeline.upto }, databaseName, collectionName);
     return;
   }
-  codeDialog.open({ kind: 'find', filter: filterInput.value, sort: sortInput.value, projection: projectionInput.value }, databaseName, collectionName);
+  codeDialog.open(typedFind(), databaseName, collectionName);
 }
 el('codeFind').addEventListener('click', showCode);
 el('codePipeline').addEventListener('click', showCode);
@@ -2148,6 +2126,9 @@ el('modeAggregate').addEventListener('click', () => state.mode !== 'aggregate' &
 filterInput.value = state.filter;
 sortInput.value = state.sort;
 projectionInput.value = state.projection;
+collationInput.value = state.collation ?? '';
+hintInput.value = state.hint ?? '';
+showOptions(state.options ?? false);
 limitSelect.value = String(state.limit);
 pipeline.setStages(state.stages, state.previewUpto);
 setChartSource(state.chartSource ?? 'find');

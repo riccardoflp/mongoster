@@ -7,7 +7,7 @@ import { once } from 'events';
 import { BSON, Collection, Document, MongoBulkWriteError, ObjectId } from 'mongodb';
 import { ConnectionManager } from './connections';
 import { CollectionRef } from './documentFs';
-import { QuerySource, buildPipeline, toBson } from './queries';
+import { QuerySource, buildPipeline, findOptions, toBson } from './queries';
 import { errorMessage } from './tree';
 import { UndoHistory } from './history';
 import type { HistoryEntry } from './shared/messages';
@@ -43,9 +43,8 @@ export type OpenExport = (skip?: number, limit?: number) => Promise<ExportCursor
 export function exportSource(coll: Collection, source: QuerySource): OpenExport {
   if (source.kind === 'find') {
     const filter = toBson(source.filter, 'Filter') ?? {};
-    const sort = toBson(source.sort, 'Sort');
-    const projection = toBson(source.projection, 'Projection');
-    return async (skip, limit) => coll.find(filter, { sort, projection, skip, limit, promoteLongs: false, batchSize: 1000 });
+    const options = findOptions(source);
+    return async (skip, limit) => coll.find(filter, { ...options, skip, limit, promoteLongs: false, batchSize: 1000 });
   }
   const { pipeline, write } = buildPipeline(source.stages, source.upto);
   if (write) throw new Error(`A pipeline ending with ${write.op} writes to the database and can't be exported. Select an earlier stage to export its output.`);

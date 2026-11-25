@@ -1,5 +1,5 @@
 // Column customization UI: the "Columns" panel (show/hide, pin, reorder) and the header context menu.
-import { ColumnLayout, ColumnNode, applyLayout, moveColumn } from '../shared/columns';
+import { ColumnLayout, ColumnNode, PROJECT_VISIBLE_TITLE, applyLayout, moveColumn } from '../shared/columns';
 
 export interface ColumnsUiOptions {
   /** All columns of the page, expanded as in the grid. */
@@ -7,6 +7,8 @@ export interface ColumnsUiOptions {
   layout(): ColumnLayout;
   /** Saves the layout and renders the grid again. */
   change(layout: ColumnLayout): void;
+  /** Writes the visible columns into Project; undefined where there is no Project box (not in Find). */
+  projectVisible?(): (() => void) | undefined;
 }
 
 const without = (list: string[] | undefined, key: string) => (list ?? []).filter((k) => k !== key);
@@ -69,6 +71,12 @@ export class ColumnsPanel {
     this.search.addEventListener('input', () => this.render());
     document.getElementById('columnsShowAll')!.addEventListener('click', () => this.actions.showAll());
     document.getElementById('columnsReset')!.addEventListener('click', () => this.actions.reset());
+    document.getElementById('columnsProject')!.addEventListener('click', () => {
+      const project = this.opts.projectVisible?.();
+      if (!project) return;
+      this.close();
+      project();
+    });
     document.addEventListener('mousedown', (e) => {
       if (this.isOpen && !this.panel.contains(e.target as Node) && e.target !== this.button) this.close();
     });
@@ -83,6 +91,7 @@ export class ColumnsPanel {
     this.panel.style.top = `${r.bottom + 4}px`;
     this.panel.style.right = `${Math.max(4, window.innerWidth - r.right)}px`;
     this.panel.classList.remove('hidden');
+    document.getElementById('columnsProject')!.classList.toggle('hidden', !this.opts.projectVisible?.());
     this.button.setAttribute('aria-expanded', 'true');
     this.search.value = '';
     this.render();
@@ -207,6 +216,8 @@ export class ColumnMenu {
     items.push([pinned ? `Unpin ${top}` : `Pin ${top} to the left`, () => this.actions.setPinned(top, !pinned)]);
     if (layout.widths?.[key]) items.push(['Reset width', () => this.actions.resetWidth(key)]);
     items.push(['Columns…', this.openPanel]);
+    const project = this.opts.projectVisible?.();
+    if (project) items.push(['Project Visible Columns', project, PROJECT_VISIBLE_TITLE]);
     if (layout.hidden?.length || layout.order?.length || layout.pinned?.length || Object.keys(layout.widths ?? {}).length) {
       items.push(['Reset all columns', () => this.actions.reset()]);
     }

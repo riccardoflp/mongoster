@@ -126,7 +126,7 @@ function shapeOfText(text: string, keepNumbers = false): string {
 }
 
 /**
- * A saved or recent query as indented lines: filter, sort, projection, or the pipeline. Without `values`
+ * A saved or recent query as indented lines: filter, sort, projection, collation and hint, or the pipeline. Without `values`
  * (readDocuments off) as their shapes: the user's queries carry values of the documents they look for.
  */
 function queryLines(q: SavedQuery, values = true): string[] {
@@ -137,7 +137,15 @@ function queryLines(q: SavedQuery, values = true): string[] {
     return [`  pipeline: [ ${enabled.map(stage).join(', ')} ]`, ...(disabled.length ? [`  disabled stages: ${disabled.map(stage).join(', ')}`] : [])];
   }
   const parts = (['filter', 'sort', 'projection'] as const).filter((k) => q[k].trim()).map((k) => `  ${k}: ${values ? oneLine(q[k]) : shapeOfText(q[k], k !== 'filter')}`);
-  return parts.length ? parts : ['  filter: {}'];
+  // Without `values` a collation and the keys of a hint are shapes too, and the name of an index is left out:
+  // the text is the user's (or a project file's), and nothing says it holds only a locale or a name.
+  const extra = (k: 'collation' | 'hint'): string => {
+    const text = q[k]!;
+    if (values) return oneLine(text);
+    return k === 'hint' && !text.trim().startsWith('{') ? '?' : shapeOfText(text, true);
+  };
+  const extras = (['collation', 'hint'] as const).filter((k) => q[k]?.trim()).map((k) => `  ${k}: ${extra(k)}`);
+  return parts.length || extras.length ? [...parts, ...extras] : ['  filter: {}'];
 }
 
 /** The tools on Mongoster's own state (undo history, redis-oplog, saved queries) and the tabs they open. */

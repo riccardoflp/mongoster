@@ -45,3 +45,4 @@ What gets harder, what breaks, the files that need reading in their old form (11
 | [0001](0001-collection-colors.md) | The color of a collection, more colors and a color picker | accepted (D16, D17) |
 | [0002](0002-conditional-formatting.md) | Conditional formatting in the collection tab | accepted (D18) |
 | [0003](0003-formatting-by-field-scopes-and-pane.md) | Formatting by a field's values, rules beyond one collection, the Formatting pane | accepted (D21) |
+| [0004](0004-collation-and-hint.md) | Collation and hint in Find | accepted (D22) |

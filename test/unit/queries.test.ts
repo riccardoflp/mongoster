@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BSON } from 'mongodb';
-import { StageError, buildPipeline, fromRelaxed, toBson, toUpdate } from '../../src/queries';
+import { StageError, buildPipeline, findOptions, fromRelaxed, toBson, toCollation, toHint, toUpdate } from '../../src/queries';
 import type { PipelineStage } from '../../src/shared/pipeline';
 
 const OID = '65a1b2c3d4e5f60718293a4b';
@@ -140,5 +140,38 @@ describe('buildPipeline', () => {
     expect(buildPipeline([...list.slice(0, 2), stage('$limit', '1', false)], 2).write?.op).toBe('$merge');
     // A disabled $out in the middle doesn't count.
     expect(buildPipeline([stage('$out', '"x"', false), stage('$limit', '1')], 1).write).toBeUndefined();
+  });
+});
+
+/** The numbers of a parsed text are BSON types (Int32…): as plain values, to compare them. */
+const plain = (value: unknown) => BSON.EJSON.serialize(value as object, { relaxed: true });
+
+describe('query.find-options: collation and hint as driver options', () => {
+  it('reads a collation document and asks for its locale', () => {
+    expect(plain(toCollation('{ locale: "it", strength: 1 }'))).toEqual({ locale: 'it', strength: 1 });
+    expect(toCollation('')).toBeUndefined();
+    expect(toCollation(undefined)).toBeUndefined();
+    expect(() => toCollation('{ strength: 1 }')).toThrow('Collation needs a locale');
+    expect(() => toCollation('"it"')).toThrow('Collation must be an object');
+  });
+
+  it('reads a hint as the keys of an index or as its name, quoted or not', () => {
+    expect(plain(toHint('{ status: 1, at: -1 }'))).toEqual({ status: 1, at: -1 });
+    expect(toHint(' status_1 ')).toBe('status_1');
+    expect(toHint('"by status"')).toBe('by status');
+    expect(toHint("'status_1'")).toBe('status_1');
+    expect(toHint('  ')).toBeUndefined();
+    expect(toHint(undefined)).toBeUndefined();
+    expect(() => toHint('{ status: }')).toThrow(/^Hint: /);
+    expect(() => toHint('""')).toThrow('Hint must be the name of an index or its keys');
+  });
+
+  it('leaves out the options not given', () => {
+    expect(findOptions({ sort: '', projection: '' })).toEqual({});
+    expect(plain(findOptions({ sort: '{ name: 1 }', projection: '', collation: '{ locale: "en" }', hint: 'name_1' }))).toEqual({
+      sort: { name: 1 },
+      collation: { locale: 'en' },
+      hint: 'name_1',
+    });
   });
 });

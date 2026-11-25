@@ -126,7 +126,7 @@ Shows one document of the table as an expandable tree, and offers what can be do
 - **Kind**: View
 - **Function**: `src/webview/main.ts › openDocument`
 - **Implemented in**: `src/webview/main.ts › jsonNode`, `closeDocument`, the buttons' listeners; the dialog's HTML in
-  `src/collectionPanel.ts › CollectionPanel.html` (`#modal`); `media/webview.css` (`body.mode-aggregate .doc-write`).
+  `src/collectionHtml.ts › collectionHtml` (`#modal`); `media/webview.css` (`body.mode-aggregate .doc-write`).
 - **Entry points**: click the row number, `Enter` on the selected cell, or **Open document** in a row's right-click
   menu; a double-click on a cell that can't be edited in place.
 - **Offered when**: always, in **Find** and **Aggregate**.

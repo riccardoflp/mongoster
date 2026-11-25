@@ -83,6 +83,41 @@ describe('serializeProjectQuery', () => {
   it('gives an empty find query an empty filter', () => {
     expect(JSON.parse(serializeProjectQuery({ name: 'All', database: 'd', collection: 'c', query: find('') })).filter).toBe('{}');
   });
+
+  it('writes collation and hint after the projection, only when the query has them', () => {
+    const q: ProjectQuery = {
+      name: 'By name',
+      database: 'shop',
+      collection: 'people',
+      query: { ...find('{ name: "mario" }', '{ name: 1 }'), collation: ' { locale: "it", strength: 1 } ', hint: 'name_1' },
+    };
+    expect(serializeProjectQuery(q)).toBe(
+      [
+        '{',
+        '  "name": "By name",',
+        '  "database": "shop",',
+        '  "collection": "people",',
+        '  "filter": "{ name: \\"mario\\" }",',
+        '  "sort": "{ name: 1 }",',
+        '  "collation": "{ locale: \\"it\\", strength: 1 }",',
+        '  "hint": "name_1"',
+        '}',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('writes a query without collation and hint as before they existed, also when they are empty', () => {
+    const base = { name: 'Late', database: 'shop', collection: 'orders' };
+    const before = serializeProjectQuery({ ...base, query: find('{ a: 1 }', '{ b: -1 }') });
+    expect(serializeProjectQuery({ ...base, query: { ...find('{ a: 1 }', '{ b: -1 }'), collation: '  ', hint: '' } })).toBe(before);
+    expect(before).not.toMatch(/collation|hint/);
+  });
+
+  it('gives no empty filter to a query that has only a collation or a hint', () => {
+    const out = JSON.parse(serializeProjectQuery({ name: 'Hinted', database: 'd', collection: 'c', query: { ...find(''), hint: '{ a: 1 }' } }));
+    expect(out).toEqual({ name: 'Hinted', database: 'd', collection: 'c', hint: '{ a: 1 }' });
+  });
 });
 
 describe('parseProjectQuery', () => {
@@ -97,6 +132,31 @@ describe('parseProjectQuery', () => {
       },
     ];
     for (const q of queries) expect(parseProjectQuery(serializeProjectQuery(q))).toEqual(q);
+  });
+
+  it('reads back collation and hint, as a string or as lines, and leaves them out when blank', () => {
+    const q: ProjectQuery = {
+      name: 'A',
+      database: 'shop',
+      collection: 'people',
+      query: { ...find('{ a: 1 }'), collation: '{\n  locale: "it"\n}', hint: '{ a: 1 }' },
+    };
+    expect(parseProjectQuery(serializeProjectQuery(q))).toEqual(q);
+    expect(parseProjectQuery('{"name":"X","database":"d","collection":"c","filter":"{}","collation":"  ","hint":[""]}').query).toEqual({
+      filter: '{}',
+      sort: '',
+      projection: '',
+    });
+    expect(parseProjectQuery('{"name":"X","database":"d","collection":"c","hint":" a_1 "}').query).toEqual({ filter: '', sort: '', projection: '', hint: 'a_1' });
+  });
+
+  it('reads a file written before collation and hint existed as before', () => {
+    expect(parseProjectQuery('{"name":"Late","database":"shop","collection":"orders","filter":"{ a: 1 }","sort":"{ b: -1 }"}')).toEqual({
+      name: 'Late',
+      database: 'shop',
+      collection: 'orders',
+      query: { filter: '{ a: 1 }', sort: '{ b: -1 }', projection: '' },
+    });
   });
 
   it('accepts files written by hand: strings or line arrays, a BOM, unknown keys', () => {
@@ -125,6 +185,10 @@ describe('parseProjectQuery', () => {
     expect(error('{"name":"n","database":"d","collection":"c","filter":1}')).toBe('"filter" must be a string or an array of lines.');
     expect(error('{"name":"n","database":"d","collection":"c","connection":3}')).toBe('"connection" must be a string.');
     expect(error('{"name":"n","database":"d","collection":"c","filter":"{}","pipeline":[]}')).toMatch(/both a "pipeline" and/);
+    expect(error('{"name":"n","database":"d","collection":"c","hint":"a_1","pipeline":[]}')).toBe(
+      'it has both a "pipeline" and "filter", "sort", "projection", "collation" or "hint": keep one or the other.',
+    );
+    expect(error('{"name":"n","database":"d","collection":"c","collation":{"locale":"it"}}')).toBe('"collation" must be a string or an array of lines.');
     expect(error('{"name":"n","database":"d","collection":"c","pipeline":{}}')).toBe('"pipeline" must be an array of stages.');
     expect(error('{"name":"n","database":"d","collection":"c","pipeline":[{"stage":"match","body":"{}"}]}')).toBe('"stage" of stage 1 must be a stage name such as "$match".');
     expect(error('{"name":"n","database":"d","collection":"c","pipeline":[{"stage":"$match","body":"{}","enabled":"no"}]}')).toBe('"enabled" of stage 1 must be true or false.');

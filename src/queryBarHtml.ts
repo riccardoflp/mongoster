@@ -37,6 +37,7 @@ export function queryBarHtml(): string {
         </div>
         <div class="btn-group q-run">
           <button id="run" class="primary" title="Run query (Ctrl+Enter)">${ic('play')}<span class="label">Find</span></button>
+          <button id="cancel" class="secondary cancel-run" title="Stop the running query, also on the server">${ic('debug-stop')}<span class="label">Cancel</span></button>
           <button id="reset" class="secondary" title="Clear filter, sort and projection">${ic('discard')}<span class="label">Reset</span></button>
         </div>
       </div>
@@ -45,6 +46,7 @@ export function queryBarHtml(): string {
           <button id="builderToggle" class="secondary" title="Build the filter from fields, operators and values" aria-expanded="false" aria-controls="builder">${ic('list-filter')}<span class="label">Builder</span></button>
           <button id="explainFind" class="secondary not-schema not-chart" title="Show how MongoDB runs this query: index used, documents examined">${ic('telescope')}<span class="label">Explain</span></button>
           <button id="codeFind" class="secondary not-schema not-chart" title="The query as code for mongosh, Node.js, Python, Java, C# or Go">${ic('code')}<span class="label">Code</span></button>
+          <button id="optionsToggle" class="secondary not-schema not-chart" title="Collation and hint of the query" aria-expanded="false" aria-controls="moreOptions">${ic('settings')}<span class="label">Options</span></button>
         </div>
         <div class="btn-group q-write editable not-schema not-chart">
           <button id="updateMany" class="secondary editable not-schema not-chart" title="Update every document matching the filter">${ic('edit')}<span class="label">Update many…</span></button>
@@ -68,6 +70,21 @@ export function queryBarHtml(): string {
           </div>
         </div>
       </div>
+      <div class="row options more-options not-schema not-chart hidden" id="moreOptions">
+        <div class="q-option">
+          <label for="collation">Collation</label>
+          <div class="option-wrap" id="collationWrap">
+            <input id="collation" spellcheck="false" placeholder="{ locale: &quot;en&quot;, strength: 2 }  —  how strings compare and sort" title="The collation of the query: the language's rules for comparing strings (strength 1 or 2 ignores case; 1 ignores accents too)">
+          </div>
+        </div>
+        <div class="q-option">
+          <label for="hint">Hint</label>
+          <div class="option-wrap" id="hintWrap">
+            <input id="hint" spellcheck="false" list="hintIndexes" placeholder="index name, or { field: 1 }" title="The index MongoDB must use for the query: its name or its keys">
+            <datalist id="hintIndexes"></datalist>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="aggregate-only pipeline">
       <div class="stages-wrap" id="stagesWrap">
@@ -79,6 +96,7 @@ export function queryBarHtml(): string {
       <div class="row pipeline-actions">
         <div class="btn-group">
           <button id="runPipeline" class="primary" title="Run the whole pipeline (Ctrl+Enter in a stage)">${ic('play')}<span class="label">Run</span></button>
+          <button id="cancelPipeline" class="secondary cancel-run" title="Stop the running pipeline, also on the server">${ic('debug-stop')}<span class="label">Cancel</span></button>
           <button id="addStage" class="secondary" title="Add a stage at the end">${ic('add')}<span class="label">Stage</span></button>
           <button id="pipelineTextToggle" class="secondary" title="Edit or paste the whole pipeline as text">${ic('json')}<span class="label">Edit as text</span></button>
           <button id="clearPipeline" class="secondary" title="Remove all stages">${ic('clear-all')}<span class="label">Clear</span></button>

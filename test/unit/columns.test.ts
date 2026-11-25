@@ -12,6 +12,7 @@ import {
   pinnedLeafCount,
   rowHeight,
   valueAtPath,
+  visibleProjection,
 } from '../../src/shared/columns';
 
 const docs: Record<string, unknown>[] = [
@@ -185,5 +186,30 @@ describe('moveColumn', () => {
     expect(moveColumn(cols, {}, 'address.city', 'name', false)).toBeUndefined();
     expect(moveColumn(cols, {}, 'name', 'name', false)).toBeUndefined();
     expect(moveColumn(cols, {}, 'nope', 'name', false)).toBeUndefined();
+  });
+});
+
+describe('query.project-visible: the projection of the visible columns', () => {
+  it('includes every visible column, a collapsed sub-document as a whole', () => {
+    expect(visibleProjection(buildColumns(docs, new Set()), {})).toEqual({ _id: 1, name: 1, address: 1, items: 1, tags: 1 });
+  });
+
+  it('leaves the hidden columns out and excludes a hidden _id', () => {
+    expect(visibleProjection(buildColumns(docs, new Set()), { hidden: ['_id', 'tags', 'items'] })).toEqual({ name: 1, address: 1, _id: 0 });
+  });
+
+  it('gives the dotted paths of the visible columns of an expanded one', () => {
+    const columns = buildColumns(docs, new Set(['address', 'items']));
+    expect(visibleProjection(columns, { hidden: ['address.zip', 'address.geo', 'tags', 'name'] })).toEqual({
+      _id: 1,
+      'address.city': 1,
+      'items.sku': 1,
+      'items.qty': 1,
+      'items.price': 1,
+    });
+  });
+
+  it('is empty when no column is visible', () => {
+    expect(visibleProjection(buildColumns(docs, new Set()), { hidden: ['_id', 'name', 'address', 'items', 'tags'] })).toEqual({});
   });
 });

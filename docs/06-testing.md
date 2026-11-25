@@ -64,6 +64,8 @@ theme:
 - every write of the riskiest areas once, on a read-only connection (refused) and on a writable one (written,
   recorded in the undo history, undone);
 - a connection with TLS, one with an SSH tunnel (first connection: the host key is asked), one with redis-oplog;
+- in a collection tab: a field dropped on Project (marked `not applied`, no query until `Find`), `Project Visible
+  Columns`, `Cancel` on a slow query (the table keeps its documents), a collation and a hint from `Options`;
 - the MCP server from one client (Claude Code or Copilot), with `mongoster.mcp.readDocuments` on and off;
 - a scheduled task that runs, one that is missed and runs at start, and the retention deleting only its own files;
 - the desktop app's installer on each system.

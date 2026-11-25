@@ -131,6 +131,38 @@ body.loading .progress::after {
   min-width: 0;
 }
 
+/* Cancel takes the place of Find, Analyze, Draw and Run while their query runs. The body in the selector
+   makes it win over the display of a button with an icon. */
+body:not(.cancellable) .cancel-run {
+  display: none;
+}
+
+body.cancellable #run,
+body.cancellable #runPipeline {
+  display: none;
+}
+
+/* The text of the box is not the one the table was read with: a field dropped on Project waits for Find. */
+.option-wrap.pending input {
+  border-style: dashed;
+  border-color: var(--vscode-editorWarning-foreground, var(--accent));
+}
+
+.option-wrap.pending::after {
+  content: 'not applied';
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0 5px;
+  border-radius: 8px;
+  font-size: 0.8em;
+  line-height: 1.5;
+  pointer-events: none;
+  color: var(--vscode-editor-background);
+  background: var(--vscode-editorWarning-foreground, var(--accent));
+}
+
 input,
 textarea,
 select {
@@ -1158,7 +1190,9 @@ body.query-side .q-run {
 }
 
 body.query-side .q-run #run,
-body.query-side #runPipeline {
+body.query-side .q-run #cancel,
+body.query-side #runPipeline,
+body.query-side #cancelPipeline {
   flex: 1;
   justify-content: center;
 }

@@ -26,6 +26,9 @@ export interface QueryScope {
   collection: string;
 }
 
+/** The parts of a find query, in the order they are written; collation and hint only when the query has them. */
+const FIND_KEYS = ['filter', 'sort', 'projection', 'collation', 'hint'] as const;
+
 /** Text with line breaks becomes an array of lines, so that git diffs it line by line. */
 function textValue(text: string): string | string[] {
   const normalized = text.replace(/\r\n?/g, '\n');
@@ -42,11 +45,11 @@ export function serializeProjectQuery(q: ProjectQuery): string {
   if (q.query.pipeline) {
     out.pipeline = q.query.pipeline.map((s) => ({ stage: s.op.trim(), body: textValue(s.body.trim()), ...(!s.enabled && { enabled: false }) }));
   } else {
-    for (const key of ['filter', 'sort', 'projection'] as const) {
-      const text = q.query[key].trim();
+    for (const key of FIND_KEYS) {
+      const text = (q.query[key] ?? '').trim();
       if (text) out[key] = textValue(text);
     }
-    if (!('filter' in out) && !('sort' in out) && !('projection' in out)) out.filter = '{}';
+    if (!FIND_KEYS.some((key) => key in out)) out.filter = '{}';
   }
   return `${JSON.stringify(out, null, 2)}\n`;
 }
@@ -84,10 +87,21 @@ export function parseProjectQuery(content: string): ProjectQuery {
   const description = text(o, 'description')?.trim();
   const connection = o.connection === undefined || o.connection === null ? undefined : o.connection;
   if (connection !== undefined && typeof connection !== 'string') throw new QueryFileError('"connection" must be a string.');
-  const find = { filter: text(o, 'filter') ?? '', sort: text(o, 'sort') ?? '', projection: text(o, 'projection') ?? '' };
+  // Collation and hint are left out when empty, as in a file written before they existed.
+  const collation = text(o, 'collation')?.trim();
+  const hint = text(o, 'hint')?.trim();
+  const find: QueryText = {
+    filter: text(o, 'filter') ?? '',
+    sort: text(o, 'sort') ?? '',
+    projection: text(o, 'projection') ?? '',
+    ...(collation && { collation }),
+    ...(hint && { hint }),
+  };
   let query: QueryText = find;
   if (o.pipeline !== undefined) {
-    if (find.filter.trim() || find.sort.trim() || find.projection.trim()) throw new QueryFileError('it has both a "pipeline" and "filter", "sort" or "projection": keep one or the other.');
+    if (find.filter.trim() || find.sort.trim() || find.projection.trim() || collation || hint) {
+      throw new QueryFileError('it has both a "pipeline" and "filter", "sort", "projection", "collation" or "hint": keep one or the other.');
+    }
     if (!Array.isArray(o.pipeline)) throw new QueryFileError('"pipeline" must be an array of stages.');
     const stages = o.pipeline.map((s: unknown, i): PipelineStage => {
       const where = ` of stage ${i + 1}`;

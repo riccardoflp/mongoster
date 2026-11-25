@@ -1,6 +1,7 @@
-// Query → code: a find (filter, projection, sort) or an aggregation pipeline, written for mongosh and
-// for the official drivers of Node.js, Python, Java, C# and Go, either as a snippet or as a whole program.
-import { escapeSlashes, formatKey, isEjsonWrapper, isPlainObject, prettyShell } from './query';
+// Query → code: a find (filter, projection, sort, collation, hint) or an aggregation pipeline, written for
+// mongosh and for the official drivers of Node.js, Python, Java, C# and Go, either as a snippet or as a whole
+// program.
+import { escapeSlashes, formatKey, isEjsonWrapper, isPlainObject, parseQuery, prettyShell } from './query';
 
 export type CodeLanguage = 'shell' | 'javascript' | 'python' | 'java' | 'csharp' | 'go';
 
@@ -15,7 +16,16 @@ export const CODE_LANGUAGES: { id: CodeLanguage; label: string; editorLanguage: 
 
 /** Values are relaxed EJSON, as parseQuery returns them. */
 export type CodeQuery =
-  | { kind: 'find'; filter: unknown; projection?: unknown; sort?: unknown }
+  | {
+      kind: 'find';
+      filter: unknown;
+      projection?: unknown;
+      sort?: unknown;
+      /** A collation document, `{ locale: "it", strength: 1 }`. */
+      collation?: unknown;
+      /** The name of an index, or its keys (`{ status: 1 }`). */
+      hint?: unknown;
+    }
   | { kind: 'aggregate'; pipeline: unknown[] };
 
 export interface CodeTarget {
@@ -39,6 +49,119 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 
 /** True for a projection or sort worth passing (not missing, not {}). */
 const present = (v: unknown) => isPlainObject(v) && Object.keys(v).length > 0;
+
+/**
+ * The hint of a find as the user types it: the keys of an index (`{ status: 1 }`) or its name, quoted or not
+ * (`status_1`). The same reading as `toHint` of the host (src/queries.ts), which the webviews can't import.
+ * Throws on a text that is neither.
+ */
+export function hintValue(text: string | undefined): string | Record<string, unknown> | undefined {
+  const trimmed = (text ?? '').trim();
+  if (!trimmed) return undefined;
+  if (!/^[{"'`]/.test(trimmed)) return trimmed;
+  const value = parseQuery(trimmed);
+  if (trimmed.startsWith('{') ? !isPlainObject(value) : typeof value !== 'string' || !value) {
+    throw new Error('Hint must be the name of an index or its keys, e.g. { status: 1 }');
+  }
+  return value as string | Record<string, unknown>;
+}
+
+/** The hint worth passing: a name, or keys that aren't {}. */
+function hintOf(query: Extract<CodeQuery, { kind: 'find' }>): string | Record<string, unknown> | undefined {
+  if (typeof query.hint === 'string') return query.hint.trim() ? query.hint : undefined;
+  return present(query.hint) ? (query.hint as Record<string, unknown>) : undefined;
+}
+
+/**
+ * The options of a collation that the typed drivers (Java, C#, Go) have a name for, each only with a value of
+ * its type: those languages take a collation as an object of their own, not as a document, so an option they
+ * don't know, or a value that isn't one of the option's, is left out rather than written as code that doesn't
+ * compile. Undefined without a locale, which every collation needs.
+ */
+interface CollationFields {
+  locale: string;
+  caseLevel?: boolean;
+  caseFirst?: 'upper' | 'lower' | 'off';
+  strength?: 1 | 2 | 3 | 4 | 5;
+  numericOrdering?: boolean;
+  alternate?: 'non-ignorable' | 'shifted';
+  maxVariable?: 'punct' | 'space';
+  normalization?: boolean;
+  backwards?: boolean;
+}
+
+function collationFields(collation: unknown): CollationFields | undefined {
+  if (!isPlainObject(collation) || typeof collation.locale !== 'string' || !collation.locale) return undefined;
+  const out: CollationFields = { locale: collation.locale };
+  const oneOf = <T extends string>(v: unknown, values: readonly T[]): T | undefined => values.find((x) => x === v);
+  const number = (v: unknown) => (isEjsonWrapper(v) ? Number(Object.values(v)[0]) : v);
+  for (const key of ['caseLevel', 'numericOrdering', 'normalization', 'backwards'] as const) {
+    if (typeof collation[key] === 'boolean') out[key] = collation[key];
+  }
+  out.caseFirst = oneOf(collation.caseFirst, ['upper', 'lower', 'off'] as const);
+  out.strength = ([1, 2, 3, 4, 5] as const).find((x) => x === number(collation.strength));
+  out.alternate = oneOf(collation.alternate, ['non-ignorable', 'shifted'] as const);
+  out.maxVariable = oneOf(collation.maxVariable, ['punct', 'space'] as const);
+  return out;
+}
+
+const STRENGTHS = ['Primary', 'Secondary', 'Tertiary', 'Quaternary', 'Identical'];
+
+/** `Collation.builder()…build()` of the Java driver. */
+function javaCollation(c: CollationFields, imports: Set<string>): string {
+  const model = (name: string) => imports.add(`com.mongodb.client.model.${name}`);
+  model('Collation');
+  const calls = [`.locale(${q(c.locale)})`];
+  if (c.caseLevel !== undefined) calls.push(`.caseLevel(${c.caseLevel})`);
+  if (c.caseFirst) {
+    model('CollationCaseFirst');
+    calls.push(`.collationCaseFirst(CollationCaseFirst.${c.caseFirst.toUpperCase()})`);
+  }
+  if (c.strength) {
+    model('CollationStrength');
+    calls.push(`.collationStrength(CollationStrength.${STRENGTHS[c.strength - 1].toUpperCase()})`);
+  }
+  if (c.numericOrdering !== undefined) calls.push(`.numericOrdering(${c.numericOrdering})`);
+  if (c.alternate) {
+    model('CollationAlternate');
+    calls.push(`.collationAlternate(CollationAlternate.${c.alternate === 'shifted' ? 'SHIFTED' : 'NON_IGNORABLE'})`);
+  }
+  if (c.maxVariable) {
+    model('CollationMaxVariable');
+    calls.push(`.collationMaxVariable(CollationMaxVariable.${c.maxVariable.toUpperCase()})`);
+  }
+  if (c.normalization !== undefined) calls.push(`.normalization(${c.normalization})`);
+  if (c.backwards !== undefined) calls.push(`.backwards(${c.backwards})`);
+  return `Collation.builder()${calls.join('')}.build()`;
+}
+
+/** `new Collation("it", strength: …)` of the C# driver. */
+function csharpCollation(c: CollationFields): string {
+  const args = [q(c.locale)];
+  if (c.caseLevel !== undefined) args.push(`caseLevel: ${c.caseLevel}`);
+  if (c.caseFirst) args.push(`caseFirst: CollationCaseFirst.${c.caseFirst[0].toUpperCase()}${c.caseFirst.slice(1)}`);
+  if (c.strength) args.push(`strength: CollationStrength.${STRENGTHS[c.strength - 1]}`);
+  if (c.numericOrdering !== undefined) args.push(`numericOrdering: ${c.numericOrdering}`);
+  if (c.alternate) args.push(`alternate: CollationAlternate.${c.alternate === 'shifted' ? 'Shifted' : 'NonIgnorable'}`);
+  if (c.maxVariable) args.push(`maxVariable: CollationMaxVariable.${c.maxVariable === 'punct' ? 'Punctuation' : 'Space'}`);
+  if (c.normalization !== undefined) args.push(`normalization: ${c.normalization}`);
+  if (c.backwards !== undefined) args.push(`backwards: ${c.backwards}`);
+  return `new Collation(${args.join(', ')})`;
+}
+
+/** `&options.Collation{Locale: "it", …}` of the Go driver. */
+function goCollation(c: CollationFields): string {
+  const fields = [`Locale: ${q(c.locale)}`];
+  if (c.caseLevel !== undefined) fields.push(`CaseLevel: ${c.caseLevel}`);
+  if (c.caseFirst) fields.push(`CaseFirst: ${q(c.caseFirst)}`);
+  if (c.strength) fields.push(`Strength: ${c.strength}`);
+  if (c.numericOrdering !== undefined) fields.push(`NumericOrdering: ${c.numericOrdering}`);
+  if (c.alternate) fields.push(`Alternate: ${q(c.alternate)}`);
+  if (c.maxVariable) fields.push(`MaxVariable: ${q(c.maxVariable)}`);
+  if (c.normalization !== undefined) fields.push(`Normalization: ${c.normalization}`);
+  if (c.backwards !== undefined) fields.push(`Backwards: ${c.backwards}`);
+  return `&options.Collation{${fields.join(', ')}}`;
+}
 
 function layout(items: string[], level: number, indent: string, open: string, close: string, opts: { space?: boolean; trailing?: boolean } = {}): string {
   const inner = opts.space && items.length ? ` ${items.join(', ')} ` : items.join(', ');
@@ -512,6 +635,9 @@ function shell(query: CodeQuery, t: CodeTarget): string {
     if (present(query.projection)) args.push(prettyShell(query.projection, 0, WIDTH));
     call = `${coll}.find(${args.join(', ')})`;
     if (present(query.sort)) call += `.sort(${prettyShell(query.sort, 0, WIDTH)})`;
+    if (present(query.collation)) call += `.collation(${prettyShell(query.collation, 0, WIDTH)})`;
+    const hint = hintOf(query);
+    if (hint !== undefined) call += `.hint(${typeof hint === 'string' ? q(hint) : prettyShell(hint, 0, WIDTH)})`;
   }
   return t.program ? `use(${q(t.database)});\n\n${call};\n` : `${call};\n`;
 }
@@ -534,6 +660,15 @@ function javascript(query: CodeQuery, t: CodeTarget): string {
     if (present(query.sort)) {
       decls.push(`const sort = ${p.render(query.sort)};`);
       opts.push('sort');
+    }
+    if (present(query.collation)) {
+      decls.push(`const collation = ${p.render(query.collation)};`);
+      opts.push('collation');
+    }
+    const hint = hintOf(query);
+    if (hint !== undefined) {
+      decls.push(`const hint = ${p.render(hint)};`);
+      opts.push('hint');
     }
     call = `${coll}.find(filter${opts.length ? `, { ${opts.join(', ')} }` : ''})`;
   }
@@ -574,6 +709,16 @@ function python(query: CodeQuery, t: CodeTarget): string {
     if (present(query.sort)) {
       decls.push(`sort = ${p.sortList(query.sort as Record<string, unknown>, 0)}`);
       args.push('sort=sort');
+    }
+    if (present(query.collation)) {
+      decls.push(`collation = ${p.render(query.collation)}`);
+      args.push('collation=collation');
+    }
+    const hint = hintOf(query);
+    if (hint !== undefined) {
+      // PyMongo takes the keys of an index as it takes a sort: a list of (key, direction) pairs.
+      decls.push(`hint = ${typeof hint === 'string' ? q(hint) : p.sortList(hint, 0)}`);
+      args.push('hint=hint');
     }
     call = `${coll}.find(${args.join(', ')})`;
   }
@@ -624,6 +769,17 @@ function java(query: CodeQuery, t: CodeTarget): string {
       decls.push(`Document sort = ${p.render(query.sort, level)};`);
       call += '.sort(sort)';
     }
+    const collation = collationFields(query.collation);
+    if (collation) {
+      decls.push(`Collation collation = ${javaCollation(collation, p.imports)};`);
+      call += '.collation(collation)';
+    }
+    const hint = hintOf(query);
+    if (typeof hint === 'string') call += `.hintString(${q(hint)})`;
+    else if (hint) {
+      decls.push(`Document hint = ${p.render(hint, level)};`);
+      call += '.hint(hint)';
+    }
   }
   if (!t.program) {
     const type = query.kind === 'aggregate' ? 'AggregateIterable<Document>' : 'FindIterable<Document>';
@@ -662,7 +818,14 @@ function csharp(query: CodeQuery, t: CodeTarget): string {
     call = 'collection.Aggregate<BsonDocument>(pipeline).ToList()';
   } else {
     decls.push(`var filter = ${p.render(query.filter ?? {})};`);
-    call = 'collection.Find(filter)';
+    // The fluent find has no collation or hint of its own: they go in the options of Find.
+    const options: string[] = [];
+    const collation = collationFields(query.collation);
+    if (collation) options.push(`Collation = ${csharpCollation(collation)}`);
+    const hint = hintOf(query);
+    if (hint !== undefined) options.push(`Hint = ${p.render(hint)}`);
+    if (options.length) decls.push(`var options = new FindOptions { ${options.join(', ')} };`);
+    call = options.length ? 'collection.Find(filter, options)' : 'collection.Find(filter)';
     if (present(query.sort)) {
       decls.push(`var sort = ${p.render(query.sort)};`);
       call += '.Sort(sort)';
@@ -709,6 +872,16 @@ function go(query: CodeQuery, t: CodeTarget): string {
     if (present(query.sort)) {
       decls.push(`sort := ${p.render(query.sort, level)}`);
       setters.push('.SetSort(sort)');
+    }
+    const collation = collationFields(query.collation);
+    if (collation) {
+      decls.push(`collation := ${goCollation(collation)}`);
+      setters.push('.SetCollation(collation)');
+    }
+    const hint = hintOf(query);
+    if (hint !== undefined) {
+      decls.push(`hint := ${p.render(hint, level)}`);
+      setters.push('.SetHint(hint)');
     }
     if (setters.length) {
       decls.push(`opts := options.Find()${setters.join('')}`);

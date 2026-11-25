@@ -56,47 +56,32 @@ Mongoster keeps for itself ([11-data.md](11-data.md)), so each starts with a pro
 **Exit**: the three features in `## Unreleased` and in the README; their cards with **Tested by**, and
 `python docs/catalog.py docs` says *no problems*; `npm run typecheck` and `npm test` pass.
 
-## Asked by the user, next
+## Asked by the user after M2 (done, in `## Unreleased`)
 
-Changes asked after M2, built when the user says so, alongside the milestones below; each follows the checklist
-*Every user-visible change* of `AGENTS.md`.
+Changes to the query bar of the collection tab, asked after M2 and built alongside the milestones below; each
+followed the checklist *Every user-visible change* of `AGENTS.md`.
 
-1. **A field dropped on Project doesn't run the query**. Today a header or a cell dropped on `include`, `exclude` or
-   `✕ remove` of Project writes the field into the projection and runs the query at once (`setOption` in
-   `src/webview/main.ts`). After the first `include` the table shows that field alone, so the next one can no longer
-   be dragged from it, and each drop costs a query on a slow collection. New rule: the drop only writes the
-   projection, and the box flashes as today; the query runs on `Find`, or on `Enter` in the box, as after typing there. A drop
-   on Sort keeps running the query. Until the query runs, the Project box is marked as not applied yet, so that the
-   table isn't read as the result of the projection shown; the mark goes on the next run and on `Reset`. With it: a
-   test of the drop, the README's *Drag & drop into the filter, sort and projection*, and a fix line in
-   `## Unreleased`.
-2. **Cancelling a query that is running**. A `Find` runs for up to 60 seconds and a pipeline for up to 10 minutes,
-   and the tab has no way to stop them. `Cancel` takes the place of `Find` (and of the pipeline's run button) while
-   the query runs, and stops the operation on the server, not only the wait in the tab; the table keeps what it
-   showed before. The same for the counts, `Schema` and `Chart` if it comes cheap. To decide when it is built: how
-   the operation is stopped (the driver's abort, or `killOp` on an operation found by its comment), and that it stays
-   allowed on a read-only connection, as it writes nothing.
-3. **The time limit of a query as a setting**. The limits are written in `src/collectionPanel.ts` (`maxTimeMS` of
-   20, 60, 120 and 600 seconds, by kind of query). `mongoster.query.timeout`, in seconds, replaces the ones of `Find`
-   and of the pipeline, with today's values as defaults; the message of a query stopped by the limit names the
-   setting. The MCP server keeps its own `MAX_TIME_MS`.
-4. **A condition dropped on the filter, with or without running the query**. A cell or a header dropped on the
-   filter (`= equals`, `≥ from`, `exists`…) runs the query at once too (`addCondition`). That suits a single
-   condition and costs a query per drop when several are put together. To decide with the user before building:
-   leave it as it is, follow rule 1, or a setting for the three boxes together.
-5. **`Project Visible Columns`**. In the columns' menu and panel: writes into Project the columns the layout shows,
-   as inclusions, so that the query fetches only those; like rule 1, it does not run the query. A hidden column
-   stays out, an expanded one gives its dotted paths, and `_id` is excluded when its column is hidden.
-6. **Collation and hint in `Find`**. Two more options of the query, beside Sort and Project: a collation
-   (`{ locale: "it", strength: 1 }`, to sort and match without case and accents) and a hint (an index's name or its
-   keys, offered from the collection's indexes), sent with the query, the counts, `Explain`, `Code` and the export,
-   and kept in the history and in the saved queries. The saved query files get two optional keys
-   ([11-data.md](11-data.md)), so this starts with a proposal in [proposals/](proposals/README.md).
-7. **The collection tab's two largest files split** (R6.4). `src/webview/main.ts` (2,157 lines) and
-   `src/collectionPanel.ts` (1,581) are over the limit and are split when next changed, which the rules above do:
-   the drag & drop into filter, sort and projection moves to its own module of `src/webview/` with rule 1, and the
-   running of queries, with its limits and its cancelling, out of `src/collectionPanel.ts` with rules 2 and 3, in a
-   module without a `vscode` import so that it is tested. No change for the user.
+1. **A field dropped on Project doesn't run the query** (`query.drop-options`). The drop only writes the projection,
+   and the box is marked `not applied` until `Find`, or `Enter` in it, runs the query; a drop on Sort still runs it.
+2. **Cancelling a query that is running** (`query.cancel`). `Cancel` takes the place of `Find`, `Run`, `Analyze` and
+   `Draw`; the driver gives up the wait and the run's operations are killed on the server, found by a comment of
+   their own. Allowed on a read-only connection.
+3. **The time limit of a query as a setting** (`query.timeout`): `mongoster.query.timeout`, 60 seconds by default,
+   `0` for none, for the find, the pipeline and `Explain`. The count, `Schema`, `Chart` and the MCP server keep
+   their own limits.
+4. **A condition dropped on the filter** keeps running the query at once: decided by the user, as filtering with one
+   drag is the point of it.
+5. **`Project Visible Columns`** (`query.project-visible`), in a column header's menu and in the `Columns` panel.
+6. **Collation and hint in `Find`** (`query.find-options`, [proposal 0004](proposals/0004-collation-and-hint.md),
+   D22).
+7. **The collection tab's two largest files, in part** (R6.4). The page's markup moved to `src/collectionHtml.ts`
+   and the running of queries to `src/queryRunner.ts`, tested against mongod: `src/collectionPanel.ts` went from
+   1,581 lines to 1,212. The drag & drop moved to `src/webview/queryDrop.ts`, but `src/webview/main.ts` is still
+   2,122 lines: the table, the selection of rows and the references are the next parts to move out, each with the
+   next change to it.
+
+**Exit**: the entries in `## Unreleased` and in the README; their cards with **Tested by**, and
+`python docs/catalog.py docs` says *no problems*; `npm run typecheck`, `npm test` and `npm run test:integration` pass.
 
 ## M3 — Close the gaps that can lose data
 

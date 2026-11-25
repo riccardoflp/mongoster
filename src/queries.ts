@@ -1,8 +1,9 @@
 // Turning the webview's query texts into driver arguments, shared by the panel and the exporter.
-import { BSON, Document } from 'mongodb';
+import { BSON, CollationOptions, Document } from 'mongodb';
 import { errorMessage } from './tree';
 import { isPlainObject, parseQuery } from './shared/query';
 import { PipelineStage, isWriteStage, misplacedFirstStages, parseStageBody } from './shared/pipeline';
+import type { FindExtras } from './shared/messages';
 export type { QuerySource } from './shared/messages';
 
 const { EJSON } = BSON;
@@ -33,6 +34,40 @@ export function toBson(text: string, label: string): Document | undefined {
   if (!isPlainObject(value)) throw new Error(`${label} must be an object`);
   // Non-relaxed keeps NumberLong/NumberDecimal exact instead of collapsing them to JS numbers.
   return EJSON.deserialize(value, { relaxed: false }) as Document;
+}
+
+/** The collation of a find: a document with at least a `locale`. */
+export function toCollation(text: string | undefined): CollationOptions | undefined {
+  const collation = toBson(text ?? '', 'Collation');
+  if (collation && typeof collation.locale !== 'string') throw new Error('Collation needs a locale, e.g. { locale: "en", strength: 2 }');
+  return collation as CollationOptions | undefined;
+}
+
+/** The hint of a find: the keys of an index (`{ status: 1 }`) or its name, quoted or not (`status_1`). */
+export function toHint(text: string | undefined): string | Document | undefined {
+  const trimmed = (text ?? '').trim();
+  if (!trimmed) return undefined;
+  if (trimmed.startsWith('{')) return toBson(trimmed, 'Hint');
+  if (!/^["'`]/.test(trimmed)) return trimmed;
+  let name: unknown;
+  try {
+    name = parseQuery(trimmed);
+  } catch (err) {
+    throw new Error(`Hint: ${errorMessage(err)}`);
+  }
+  if (typeof name !== 'string' || !name) throw new Error('Hint must be the name of an index or its keys, e.g. { status: 1 }');
+  return name;
+}
+
+/** Sort, projection, collation and hint of a find as driver options; the ones not given are left out. */
+export function findOptions(q: { sort: string; projection: string } & FindExtras): { sort?: Document; projection?: Document; collation?: CollationOptions; hint?: string | Document } {
+  const options = {
+    sort: toBson(q.sort, 'Sort'),
+    projection: toBson(q.projection, 'Projection'),
+    collation: toCollation(q.collation),
+    hint: toHint(q.hint),
+  };
+  return Object.fromEntries(Object.entries(options).filter(([, v]) => v !== undefined));
 }
 
 /** The changes of "Update many": update operators (`{ $set: … }`) or an update pipeline (`[ { $set: … } ]`). */

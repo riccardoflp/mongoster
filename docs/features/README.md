@@ -80,6 +80,10 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | [`query.match`](03-collection-tab.md#querymatch--match-a-document-against-a-filter) | Match a document against a filter | Derivation | Built |
 | [`query.pane`](03-collection-tab.md#querypane--put-the-query-above-or-beside-the-results) | Put the query above or beside the results | Operation | Built |
 | [`query.drop-options`](03-collection-tab.md#querydrop-options--drop-a-header-or-a-cell-on-sort-or-project) | Drop a header or a cell on Sort or Project | Derivation | Built |
+| [`query.project-visible`](03-collection-tab.md#queryproject-visible--put-the-visible-columns-into-project) | Put the visible columns into Project | Derivation | Built |
+| [`query.timeout`](03-collection-tab.md#querytimeout--the-time-limit-of-a-query) | The time limit of a query | Derivation | Built |
+| [`query.cancel`](03-collection-tab.md#querycancel--cancel-a-running-query) | Cancel a running query | Operation | Built |
+| [`query.find-options`](03-collection-tab.md#queryfind-options--the-collation-and-the-hint-of-a-find) | The collation and the hint of a find | Derivation | Built |
 
 ## Writing documents
 

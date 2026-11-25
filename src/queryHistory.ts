@@ -33,7 +33,7 @@ export class QueryHistory {
   /** Adds a successful query on top; an identical older entry is moved instead of duplicated. */
   async record(query: QueryText): Promise<boolean> {
     const q = normalize(query);
-    if (q.pipeline ? !q.pipeline.some((s) => s.enabled) : !q.filter && !q.sort && !q.projection) return false;
+    if (q.pipeline ? !q.pipeline.some((s) => s.enabled) : !q.filter && !q.sort && !q.projection && !q.collation && !q.hint) return false;
     const rest = this.recent.filter((e) => !sameQuery(e, q));
     const entry: SavedQuery = { id: newId(), ...q, at: Date.now() };
     await this.state.update(this.recentKey, [entry, ...rest].slice(0, MAX_RECENT));
@@ -72,15 +72,29 @@ export class QueryHistory {
   }
 }
 
+/**
+ * The query as it is stored: trimmed texts, and a collation and a hint only when there is one, so that the
+ * entries look the same as those stored before these two existed. A pipeline has neither.
+ */
 function normalize(q: QueryText): QueryText {
   const base = { filter: q.filter.trim(), sort: q.sort.trim(), projection: q.projection.trim() };
-  return q.pipeline ? { ...base, pipeline: q.pipeline.map((s) => ({ op: s.op.trim(), body: s.body, enabled: s.enabled })) } : base;
+  if (q.pipeline) return { ...base, pipeline: q.pipeline.map((s) => ({ op: s.op.trim(), body: s.body, enabled: s.enabled })) };
+  const collation = q.collation?.trim();
+  const hint = q.hint?.trim();
+  return { ...base, ...(collation && { collation }), ...(hint && { hint }) };
 }
 
 /** Same query, ignoring formatting (whitespace, quoting style): compares the parsed values. */
 export function sameQuery(a: QueryText, b: QueryText): boolean {
   if (a.pipeline || b.pipeline) return canonicalPipeline(a.pipeline) === canonicalPipeline(b.pipeline);
-  return canonical(a.filter) === canonical(b.filter) && canonical(a.sort) === canonical(b.sort) && canonical(a.projection) === canonical(b.projection);
+  // An entry stored before collation and hint existed has neither key: it is the same as one with them empty.
+  return (
+    canonical(a.filter) === canonical(b.filter) &&
+    canonical(a.sort) === canonical(b.sort) &&
+    canonical(a.projection) === canonical(b.projection) &&
+    canonical(a.collation ?? '') === canonical(b.collation ?? '') &&
+    canonical(a.hint ?? '') === canonical(b.hint ?? '')
+  );
 }
 
 function canonicalPipeline(stages: PipelineStage[] | undefined): string {

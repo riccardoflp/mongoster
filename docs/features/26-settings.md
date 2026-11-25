@@ -99,6 +99,7 @@ Acceptance:
 | `mongoster.mcp.port` | `37017` | The MCP server's port on `127.0.0.1`. | `mcp.server`, `mcp.change-port` |
 | `mongoster.mcp.readDocuments` | `true` | Offers the tools that return documents and values. | `mcp.read-documents` |
 | `mongoster.savedQueries.folder` | `.mongoster/queries` | Where saved queries of the project are, relative to each workspace folder or absolute. A workspace's own value must stay inside the workspace (no absolute path, `~` or `..` that climbs out): otherwise it is ignored with a warning and the user's value or the default applies. | the saved queries area (no cards yet) |
+| `mongoster.query.timeout` | `60` | Seconds a `Find` or a pipeline of a collection's tab may run; `0` is no limit. | `query.timeout`, `query.cancel` |
 | `mongoster.references.detect` | `true` | Finds references in the background when a collection of a database is first opened. | the relations area (no cards yet) |
 | `app.theme` | `system` | Desktop app only: the color theme, or `system` to follow the operating system. | `settings.appearance` |
 | `app.layout` | `islands` | Desktop app only: `islands` or `compact`. | `settings.appearance` |

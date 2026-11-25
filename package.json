@@ -1143,6 +1143,14 @@
           "markdownDescription": "Where a collection's tab puts the query bar (Filter, Builder, Sort and Project, or the stages of `Aggregate`). The toggle at the right end of the tab's top row changes it too, for every collection; drag the line between the pane and the table to make the pane wider or narrower. When the tab is too narrow for both, the query bar goes above the table until it is wider again.",
           "order": 11
         },
+        "mongoster.query.timeout": {
+          "type": "integer",
+          "default": 60,
+          "minimum": 0,
+          "maximum": 86400,
+          "markdownDescription": "Seconds a `Find` or a pipeline of a collection's tab may run before MongoDB stops it (`maxTimeMS`); `Explain` gets the same limit. `0` is no limit: `Cancel`, which takes the place of `Find` while a query runs, stops it. A pipeline that writes (`$out`, `$merge`) gets ten times as long. The count beside the results, `Schema` and `Chart` keep their own limits.",
+          "order": 11
+        },
         "mongoster.scheduledTasks.keepRunningInTray": {
           "type": "boolean",
           "default": false,

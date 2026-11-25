@@ -247,3 +247,20 @@ function siblingsOf(nodes: ColumnNode[], key: string): ColumnNode[] | undefined 
   }
   return undefined;
 }
+
+/** The tooltip of `Project Visible Columns`, in the header menu and in the Columns panel. */
+export const PROJECT_VISIBLE_TITLE = 'Write the visible columns into Project, so that the query reads only those fields; Find runs it';
+
+/**
+ * The projection that fetches what the table shows: an inclusion of each visible column, an expanded one by the
+ * dotted paths of its visible columns, and `_id: 0` when the `_id` column is hidden (an inclusion keeps `_id`
+ * otherwise). Empty when no column is visible.
+ */
+export function visibleProjection(columns: ColumnNode[], layout: ColumnLayout): Record<string, 0 | 1> {
+  const keys = leaves(applyLayout(columns, layout)).map((leaf) => leaf.node.key);
+  const projection: Record<string, 0 | 1> = {};
+  if (!keys.length) return projection;
+  for (const key of keys) projection[key] = 1;
+  if (!keys.some((key) => key === '_id' || key.startsWith('_id.'))) projection._id = 0;
+  return projection;
+}

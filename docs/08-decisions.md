@@ -196,6 +196,17 @@ scopes kept on the connection's entry (the export of connections would carry the
 drops the field rules it reads and loses them if it then saves that collection's rules. *Accepted by the maintainer on
 2026-11-24, [proposal 0003](proposals/0003-formatting-by-field-scopes-and-pane.md), to build in three stages.*
 
+## D22 — A find's collation and hint are optional texts kept with the query
+
+A find has two more options, a **collation** and a **hint**, typed in mongosh syntax in a row of the query bar that
+`Options` opens. They go with the find, its count, `Explain`, `Code` and `Export`, and are kept with the query in the
+history and in the saved queries as two optional texts, left out when empty, so that everything stored before them
+reads the same; a saved query file gets the keys `collation` and `hint`. `Schema`, `Chart`, `Update many` and `Delete
+many` use the filter alone. Rejected: one box for every option of `find` (a second syntax, options that clash with
+the page and the time limit), the boxes always visible (rarely used). The cost: an earlier Mongoster runs a saved
+query that has them without them. *Accepted by the maintainer on 2026-11-25, by asking for the roadmap's entries to
+be built, [proposal 0004](proposals/0004-collation-and-hint.md).*
+
 ## Open questions
 
 - **Q1** — Adopt the target of [04-feature-contract.md](04-feature-contract.md#the-target-for-new-code-and-code-that-is-changed-anyway)
