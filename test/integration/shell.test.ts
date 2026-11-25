@@ -162,6 +162,52 @@ describe('playground runtime', () => {
     expect(await run('const x = 1;')).toMatchObject({ value: undefined, kind: 'none' });
   });
 
+  it('awaits the calls in a callback of forEach, map and filter, one element after the other', async () => {
+    await coll('a').insertMany([{ _id: 1, v: 'a1' }, { _id: 2, v: 'a2' }]);
+    await coll('b').insertMany([{ _id: 1, v: 'b1' }]);
+    const r = await run(`
+      const names = db.getCollectionNames();
+      names.forEach((name) => {
+        db[name].find().sort({ _id: 1 }).toArray().forEach((d) => print(name, d.v));
+      });
+      db.a.find().sort({ _id: 1 }).forEach((d) => db.copy.insertOne({ _id: d._id, v: d.v, n: db.copy.countDocuments() }));
+      const counts = names.map((name) => db[name].countDocuments());
+      const withOne = names.filter((name) => db[name].findOne({ _id: 2 }));
+      ({ counts, withOne, copy: db.copy.find().sort({ _id: 1 }).map((d) => d.v + db.b.findOne().v + d.n).toArray() })
+    `);
+    expect(r.printed).toEqual(['a a1', 'a a2', 'b b1']);
+    expect(r.value).toEqual({ counts: [2, 1], withOne: ['a'], copy: ['a1b10', 'a2b11'] });
+  });
+
+  it('waits in the functions of the script, which need no async', async () => {
+    await coll('a').insertMany([{ _id: 1, v: 'a1' }, { _id: 2, v: 'a2' }]);
+    await coll('b').insertOne({ _id: 1, v: 'b1' });
+    const r = await run(`
+      function ids(name) {
+        return db[name].find().sort({ _id: 1 }).toArray().map((d) => d._id);
+      }
+      const count = (name) => db[name].countDocuments();
+      const copy = (name) => db[name].find().forEach((d) => db.copy.insertOne({ from: name, v: d.v }));
+      const names = db.getCollectionNames();
+      names.forEach(copy);
+      ({
+        ids: ids("a"),
+        counts: names.map(count),
+        byCount: [...names].sort((x, y) => x.length - y.length || (x < y ? -1 : 1)),
+        copied: db.copy.find().sort({ v: 1 }).toArray().map((d) => d.from + d.v),
+      })
+    `);
+    expect(r.value).toEqual({ ids: [1, 2], counts: [2, 1], byCount: ['a', 'b'], copied: ['aa1', 'aa2', 'bb1'] });
+  });
+
+  it('says so where nothing can wait for the database, with the line', async () => {
+    await coll('a').insertOne({ _id: 1 });
+    const err = await run('const o = {\n  get first() { return db.a.findOne()._id }\n};\no.first').catch((e) => e);
+    expect(err).toBeInstanceOf(PlaygroundError);
+    expect(err.message).toBe('db.a.findOne() gives its result later, and a getter cannot wait for it: move the call to a function or a method, which can.');
+    expect(err.line).toBe(2);
+  });
+
   it('refuses every write on a read-only connection, and allows reads', async () => {
     await coll('c').insertOne({ n: 1 });
     const ro = { readOnly: true };

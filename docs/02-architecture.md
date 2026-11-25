@@ -259,7 +259,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `src/redisOplog.ts` – the RESP client and the sink that publishes writes for redis-oplog
 
 ### Playground (`src/playground/`)
-- `rewrite.ts` – rewrites the script with `acorn` so every call is awaited where it is
+- `rewrite.ts` – rewrites the script with Babel so every call is awaited where it is: in the script, in its functions (which wait only when a call gives a promise) and in the callbacks of `forEach`, `map`…; the functions of the runtime this needs (`RUNTIME`)
 - `shell.ts` – mongosh-style runtime (`db`, cursors, sessions, transactions)
 - `context.ts` – cursor context for autocomplete
 - `playground.ts` – commands, CodeLens, completion

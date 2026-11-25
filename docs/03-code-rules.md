@@ -14,7 +14,7 @@ A change that needs to break a rule changes this page first, in its own commit, 
 
 ## R1 — Dependencies and layers
 
-- **R1.1** Runtime dependencies are only those of `package.json` (`acorn`, `chart.js`, `json5`, `mongodb`, `ssh2`).
+- **R1.1** Runtime dependencies are only those of `package.json` (`@babel/generator`, `@babel/parser`, `@babel/types`, `chart.js`, `json5`, `mongodb`, `ssh2`).
   Adding one is a decision in [08-decisions.md](08-decisions.md), and the desktop app's build must still bundle it.
   *Source: project choice.* *Followed.*
 - **R1.2** `src/shared/` imports only other `src/shared/` modules and small pure libraries (`json5`): no `vscode`, no

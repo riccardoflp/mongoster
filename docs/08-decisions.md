@@ -207,6 +207,21 @@ the page and the time limit), the boxes always visible (rarely used). The cost: 
 query that has them without them. *Accepted by the maintainer on 2026-11-25, by asking for the roadmap's entries to
 be built, [proposal 0004](proposals/0004-collation-and-hint.md).*
 
+## D23 — The playground's scripts are rewritten with Babel, and their functions wait by themselves
+
+A playground's script is parsed with Babel, its tree is changed and written back as code with every statement on its
+line (`retainLines`), where `acorn` and text inserted at the offsets of its nodes were used before. With it, a
+function of the script that isn't `async` waits for the database by itself: its body runs in an async function called
+at once and awaits a call only when it gave a promise, so that a function that meets none gives its value at once, as
+the comparator of a `sort` must. `forEach`, `map`, `filter`… work the same way. Where nothing can wait (a getter, a
+setter, a constructor, a generator, a class field, the function given to `sort` or `replace`) an error names the
+call. Rejected: staying on inserted text (each form of function its own case of text surgery), `acorn` with a small
+code generator (no way to keep the lines without a source map), every function `async` (breaks whoever needs a value
+at once). The cost: `@babel/parser`, `@babel/generator` and `@babel/types` with their packages in the bundle, about
+490 KB more in `dist/extension.js`; Node.js 22.18 to develop; a call of a function that makes calls costs more (a
+loop of a million of them, about a tenth of a second more). *Accepted by the maintainer on 2026-11-25,
+[proposal 0005](proposals/0005-playground-rewriter-on-babel.md).*
+
 ## Open questions
 
 - **Q1** — Adopt the target of [04-feature-contract.md](04-feature-contract.md#the-target-for-new-code-and-code-that-is-changed-anyway)

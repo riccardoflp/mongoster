@@ -30,7 +30,7 @@ import {
   UUID,
 } from 'mongodb';
 import { prettyShell, relaxEjson, toShell } from '../shared/query';
-import { RESOLVE_FN, ScriptSyntaxError, rewritePlayground } from './rewrite';
+import { RESOLVE_FN, RUNTIME, ScriptSyntaxError, rewritePlayground } from './rewrite';
 import { publishedWrites } from './oplogWrites';
 import type { OplogSink } from '../redisOplog';
 
@@ -136,25 +136,29 @@ export class ShellCursor {
   pretty(): this {
     return this;
   }
+  /** The function may give a promise (one of a playground does, when it calls the database): its value is waited for. */
   map(fn: (doc: Document) => unknown): this {
     const previous = this.mapper;
-    this.mapper = previous ? (d) => fn(previous(d) as Document) : fn;
+    this.mapper = previous ? async (d) => fn((await previous(d)) as Document) : fn;
     return this;
   }
 
   async toArray(): Promise<unknown[]> {
     const docs = await this.cursor.toArray();
-    return this.mapper ? docs.map(this.mapper) : docs;
+    if (!this.mapper) return docs;
+    const mapped: unknown[] = [];
+    for (const doc of docs) mapped.push(await this.mapper(doc));
+    return mapped;
   }
   async forEach(fn: (doc: unknown) => unknown): Promise<void> {
-    for await (const doc of this.cursor) await fn(this.mapper ? this.mapper(doc) : doc);
+    for await (const doc of this.cursor) await fn(this.mapper ? await this.mapper(doc) : doc);
   }
   async hasNext(): Promise<boolean> {
     return this.cursor.hasNext();
   }
   async next(): Promise<unknown> {
     const doc = await this.cursor.next();
-    return doc && this.mapper ? this.mapper(doc) : doc;
+    return doc && this.mapper ? await this.mapper(doc) : doc;
   }
   async count(): Promise<number> {
     if (!this.countFilter) return (await this.cursor.toArray()).length;
@@ -180,7 +184,7 @@ export class ShellCursor {
         await this.cursor.close();
         return { docs, more: true };
       }
-      docs.push(this.mapper ? this.mapper(doc) : doc);
+      docs.push(this.mapper ? await this.mapper(doc) : doc);
     }
     return { docs, more: false };
   }
@@ -191,7 +195,7 @@ export class ShellCursor {
     return {
       next: async () => {
         const r = await it.next();
-        return r.done || !mapper ? r : { done: false, value: mapper(r.value) };
+        return r.done || !mapper ? r : { done: false, value: await mapper(r.value) };
       },
     };
   }
@@ -587,6 +591,7 @@ function helpers(shell: Shell, print: (line: string) => void): Record<string, un
     Code: (code: string) => new Code(code),
     EJSON,
     [RESOLVE_FN]: async (v: unknown) => (v instanceof ShellCursor ? v : await v),
+    ...RUNTIME,
   };
 }
 

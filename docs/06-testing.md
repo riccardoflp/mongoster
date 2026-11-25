@@ -4,7 +4,7 @@ Building, running, testing and releasing Mongoster. For how the code is organize
 
 ## Setup
 
-Node.js 20 or later (the CI uses 22).
+Node.js 22.18 or later (the CI uses 22): Babel, which rewrites the playground's scripts, asks for it.
 
 ```bash
 npm install
