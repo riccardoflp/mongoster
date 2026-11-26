@@ -119,4 +119,4 @@ It can be run again by hand from the Actions tab, with the tag chosen in `Use wo
 5. Approve the job `Publish on the Marketplace` in the run (it waits in the environment `marketplace`).
 6. Read the draft release on GitHub and publish it: the README sends users there for the installers.
 
-Versions are `0.x.0` for now: a minor version per batch of features.
+Versions are `0.x.0` for a batch of features and `0.x.y` for a release with none, such as updated packages.

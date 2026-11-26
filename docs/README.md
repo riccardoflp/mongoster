@@ -5,7 +5,7 @@ are for whoever changes its code, person or agent: how it is built, the rules it
 and why. What Mongoster does for its users is in the [README](../README.md), which is the user manual; the two are
 kept apart.
 
-The state of the work: version 0.11.0 is released, with cancelling a query, its time limit as a setting, collation
+The state of the work: version 0.11.1 is released (0.11.0 on Electron 45 and updated build tools), with cancelling a query, its time limit as a setting, collation
 and hint in `Find` ([proposal 0004](proposals/0004-collation-and-hint.md)), `Project Visible Columns`, and the fixes
 of the security analysis of 0.10.0; the catalog has cards for the riskiest areas (writes, undo,
 connections and secrets, the MCP server, backups, scheduled tasks), and the other areas get theirs when they are next

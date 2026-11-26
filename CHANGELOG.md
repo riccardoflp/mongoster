@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.1
 
 - The desktop app is built on Electron 45.5.0.
 
