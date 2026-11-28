@@ -1,6 +1,7 @@
 // Copying a collection (its documents, optionally filtered, its indexes and options) to another
 // database or connection, e.g. production → local. Documents are streamed in batches with their
 // exact BSON types; the copy shows its progress and can be cancelled between batches.
+// `pasteCollections` copies several whole collections and views at once, for `Paste` (`src/paste.ts`).
 import * as vscode from 'vscode';
 import { Document, MongoBulkWriteError, MongoClient, ObjectId } from 'mongodb';
 import type { ConnectionInfo, ConnectionManager } from './connections';
@@ -9,6 +10,8 @@ import { collectionNameError, databaseNameError } from './manage';
 import { toBson } from './queries';
 import { errorMessage } from './tree';
 import { Recorder, UndoHistory } from './history';
+import type { HistoryEntry } from './shared/messages';
+import { ExistingKind, ExistingMode, PasteAction, PasteItem, PasteSource, pasteAction } from './shared/paste';
 
 export const COPY_BATCH = 1000;
 
@@ -380,4 +383,104 @@ export class Copier {
     if (next === 'Open') this.opened(ref);
     if (next === 'Undo' && entry) void UndoHistory.get()?.undoAndReport(entry.id);
   }
+}
+
+// ---- pasting collections: several at once, whole, under their own names
+
+export interface PasteHooks {
+  /** A collection or view is being copied. */
+  starting(item: PasteItem): void;
+  /** Documents of the item written so far. */
+  progress(item: PasteItem, done: number): void;
+  cancelled(): boolean;
+  /** Records the documents written to the item's target, for the undo history. */
+  recorder?(item: PasteItem): Recorder | undefined;
+}
+
+export interface PasteOutcome {
+  item: PasteItem;
+  action: PasteAction['do'];
+  /** Why it was skipped. */
+  why?: string;
+  /** The copy of a collection; a view has none. */
+  result?: CopyResult;
+  error?: string;
+  entry?: HistoryEntry;
+  recorderOverflow?: string;
+}
+
+/** The collections and views of a database that a paste of the database copies: all but the `system.` ones. */
+export async function pasteSources(client: MongoClient, database: string): Promise<PasteSource[]> {
+  const list = await client.db(database).listCollections({}, { nameOnly: true }).toArray();
+  return list
+    .filter((c) => !c.name.startsWith('system.'))
+    .map((c) => ({ name: c.name, isView: c.type === 'view' }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** What has each name in a database. */
+export async function existingNames(client: MongoClient, database: string): Promise<Map<string, ExistingKind>> {
+  const list = await client.db(database).listCollections({}, { nameOnly: true }).toArray();
+  return new Map(list.map((c) => [c.name, c.type === 'view' ? 'view' : 'collection']));
+}
+
+/**
+ * Copies the items from the database `from` of `src` to the database `to` of `dst`: a collection with all its
+ * documents, its indexes and its options, a view as a view with the same definition. The collections go first, so
+ * the views find them. An item that fails is reported and the others go on; cancelling stops after the current batch.
+ */
+export async function pasteCollections(
+  src: MongoClient,
+  from: string,
+  dst: MongoClient,
+  to: string,
+  items: PasteItem[],
+  mode: ExistingMode,
+  hooks: PasteHooks,
+  batchSize = COPY_BATCH,
+): Promise<{ outcomes: PasteOutcome[]; cancelled: boolean }> {
+  const outcomes: PasteOutcome[] = [];
+  const targetDb = dst.db(to);
+  for (const item of [...items.filter((i) => !i.isView), ...items.filter((i) => i.isView)]) {
+    if (hooks.cancelled()) return { outcomes, cancelled: true };
+    const action = pasteAction(item, mode);
+    if (action.do === 'skip') {
+      outcomes.push({ item, action: 'skip', why: action.why });
+      continue;
+    }
+    hooks.starting(item);
+    const outcome: PasteOutcome = { item, action: action.do };
+    outcomes.push(outcome);
+    try {
+      if (item.isView) {
+        const info = (await src.db(from).listCollections({ name: item.source }, { nameOnly: false }).toArray())[0];
+        const { viewOn, pipeline, collation } = (info?.options ?? {}) as Document;
+        if (info?.type !== 'view' || !viewOn) throw new Error(`${item.source} is not a view any more`);
+        if (action.do === 'drop') await targetDb.collection(item.target).drop();
+        await targetDb.createCollection(item.target, { viewOn, pipeline: pipeline ?? [], ...(collation && { collation }) });
+        continue;
+      }
+      // A dropped destination can't be put back: nothing is recorded for it.
+      const recorder = action.do === 'drop' ? undefined : hooks.recorder?.(item);
+      const plan: CopyPlan = {
+        source: { database: from, collection: item.source, isView: false },
+        target: { database: to, collection: item.target },
+        filter: {},
+        mode: action.do === 'create' ? 'new' : action.do,
+        indexes: true,
+        options: true,
+      };
+      try {
+        outcome.result = await copyCollection(plan, src, dst, { progress: (done) => hooks.progress(item, done), cancelled: hooks.cancelled, recorder }, batchSize);
+      } finally {
+        // What was written before a failure can be undone too.
+        outcome.entry = await recorder?.commit(targetDb.collection(item.target)).catch(() => undefined);
+        outcome.recorderOverflow = recorder?.overflow;
+      }
+      if (outcome.result.cancelled) return { outcomes, cancelled: true };
+    } catch (err) {
+      outcome.error = errorMessage(err);
+    }
+  }
+  return { outcomes, cancelled: false };
 }

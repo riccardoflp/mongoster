@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Copy and Paste in the connections view**: `Copy` and `Paste` in the context menu of a connection, a database, a collection or a view, and `Ctrl+C` / `Ctrl+V` (`Cmd` on macOS) on the selected nodes. A connection pasted on a folder or a connection is a second connection with the same settings (`Production copy`); a database pasted on a connection is copied there, under a name you choose; collections and views pasted on a database (or on a connection, which asks for the database) are copied there whole, with their indexes and options, several at once. In their own database they become `orders_copy`; where they exist, you choose `Skip`, `Append`, `Replace matching` or `Drop and recreate`. `Copy` also puts the names on the system's clipboard.
+
 ## 0.11.1
 
 - The desktop app is built on Electron 45.5.0.

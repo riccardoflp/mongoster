@@ -1,7 +1,7 @@
 # Transfer
 
 Moving documents in and out of a collection: exporting them to a JSON, JSON Lines or CSV file, importing such a file,
-copying a collection to another database or connection, and generating test documents that look like a collection's.
+copying a collection to another database or connection, pasting databases and collections copied in the tree, and generating test documents that look like a collection's.
 The user's side is in the [README › Features](../../README.md#features), items **Export**, **Import**, **Generating
 test documents** and **Copying collections**. Backups in mongodump's formats are in [10-backup.md](10-backup.md).
 
@@ -310,6 +310,95 @@ Acceptance:
 - [ ] A view is copied as a collection with its documents, without indexes or options being offered.
 - [ ] The copied documents are published to redis-oplog on a destination that publishes (differs).
 - [ ] An open tab of the destination collection shows the copied documents (differs).
+
+### `transfer.paste` — Paste a database, collections or views
+
+Copies what the tree clipboard holds to where it is pasted: a database to a connection, collections and views to a
+database, whole and several at once ([README › Copy and Paste in the tree](../../README.md#features)).
+
+- **Kind**: Operation
+- **Function**: `src/paste.ts › TreeClipboard.paste`, which asks and confirms (`pasteInto`), then `src/copy.ts ›
+  pasteCollections` copies, each collection with `copyCollection`.
+- **Implemented in**: `src/extension.ts` (`mongoster.pasteNode`, the tab opened by `Open`, `CollectionPanel.refresh`);
+  `src/copy.ts` (`pasteSources`, `existingNames`); `src/shared/paste.ts` (`tree.paste-plan`); `src/manage.ts ›
+  databaseNameError`; `src/history.ts`
+- **Entry points**: `mongoster.pasteNode` (**Paste**) in the context menu, group `0_clipboard`; `Ctrl+V` (`Cmd+V` on
+  macOS) with the focus in the connections view, on the first selected node. Hidden from the Command Palette (`when:
+  false`).
+- **Offered when**: with databases copied, `viewItem =~ /^(connection|database)(?!.*readonly)/`; with collections
+  copied, `viewItem =~ /^(connection|database|collection|view)(?!.*readonly)/`.
+- **Asks**:
+  1. for each copied database, an input box `Paste the database <database> on <connection>`, `Name of the copy (an
+     existing database receives the collections)`: `<database>` when the connection has none of that name, otherwise
+     the free `_copy` name; refused: an invalid name (`manage.name-rules`), `That is the database being copied`;
+  2. for collections pasted on a connection, `Paste on <connection>: database`: the copied collections' database first
+     if it exists there, the others except `admin`, `local` and `config`, and `$(add) New database…` (an input box,
+     `This database already exists` when it does). Pasted on a database, a collection, a view or a bucket, the
+     database is that node's;
+  3. when names exist in the destination, `<name> exists in <connection> › <database>` or `<k> of the <n> collections
+     exist in …`, with the names as placeholder: **Skip**, **Append**, **Replace matching**, **Drop and recreate**;
+  4. the modal confirmation `Paste <the database <database> | <database>.<collection> | <n> collections of <database>>
+     from <source connection> into <connection> › <database>?`, with the names pasted (`<source> → <target>` when
+     renamed, the first 8 `and <k> more`), `<n> collection[s] with <d> document[s], the indexes and the collection
+     options.`, `<n> view[s], created with <its definition | their definitions>.`, `<k> existing one[s] skipped.`,
+     the line of the mode, `Dropped first: <names>. That can't be undone.` and the line of `UndoHistory.note` for the
+     largest collection; button `Paste`.
+- **Reads**: `listDatabases` of the destination; `listCollections` of the copied database (for a database: all but
+  the `system.` ones) and of the destination database; `estimatedDocumentCount()` of each collection pasted; then
+  what `transfer.copy-collection` reads, with no filter, and `listCollections({ name })` for a view's definition.
+- **Writes**: the collections first, then the views. A collection as `transfer.copy-collection` with indexes and
+  options checked and the mode `tree.paste-plan` gives it. A view: `drop()` when it is dropped, then
+  `createCollection(name, { viewOn, pipeline, collation })`.
+- **Danger**: Confirm: the modal above. Destructive with Drop and recreate: the documents and indexes of what exists
+  under the pasted names are lost.
+- **Read-only**: Refused when the destination connection is read-only: `The connection <name> is read-only: nothing
+  can be pasted on it.` A read-only connection can be copied from.
+- **Undo**: Recorded in the undo history (`undo.record`), one operation per collection, `Paste <source connection> ›
+  <database>.<collection>` on the destination, as `transfer.copy-collection` records Append and Replace matching; a new
+  collection is emptied by its undo, not dropped. Not recorded for a dropped collection, which the confirmation says,
+  nor for a view.
+- **redis-oplog**: Not published (differs).
+- **After**: `mongoster.refresh` refreshes the tree and the open tabs of the destination collections are refreshed.
+  `Pasted <n> collection[s] (<d> document[s])[ and <k> view[s]] into <connection> › <database> in <s> s.`, followed by
+  `<name> failed: <error>`, `<k> documents skipped (their _id already existed)`, `<f> documents failed: <first
+  error>`, `Index of <name> not created — <index>: <error>`, `<name> can't be undone: <reason>, too many for the undo
+  history` when they apply (then as a warning), and `Each collection can be undone from the Undo History` when several
+  were recorded; buttons `Open` when one collection or view was pasted and `Undo` when one operation was recorded.
+  The next copied database is asked for without waiting for the notification.
+- **Refuses**: nothing copied: `Nothing to paste: copy a connection, a database or collections in the connections view
+  first.`; the copied nodes' connection removed: `The connection of what was copied has been removed.`; a folder or
+  nothing selected: `Select the connection[ or the database] to paste on.`; a connection that cannot be reached:
+  `Could not connect to <name>: <error>`; a database without collections: `The database <database> has no collections
+  to copy.`; everything skipped: `Nothing to paste: everything exists in <connection> › <database>.`; an error outside
+  a collection's copy: `Paste failed: <error>`.
+- **Settings**: `mongoster.history.enabled`, `mongoster.history.maxDocumentsPerOperation`,
+  `mongoster.history.maxOperationSizeMB`.
+- **Uses**: `tree.copy`, `tree.paste-plan`, `transfer.copy-collection`, `manage.name-rules`, `undo.record`,
+  `undo.limits`, `connection.read-only`.
+- **Tested by**: `test/integration/paste.test.ts › 'pasting a database' › 'lists its collections and views, without
+  the system ones'`, `› 'copies the collections with documents, indexes and options, then the views as views'`; `›
+  'pasting collections' › 'gives _copy names in the same database, views included'`, `› 'when the destination has
+  them' › 'skips them and pastes the others'`, `› 'appends the documents whose _id is missing, leaving an existing
+  view'`, `› 'replaces the documents with the same _id'`, `› 'drops and recreates collections and views'`, `› 'goes on
+  after a collection that fails, and reports it'`, `› 'stops after the batch being written when it is cancelled'`.
+  The questions, the confirmation and the undo history: *none*.
+- **Differs**: no `RedisOplog.sink(…)` is called, as in `transfer.copy-collection`: Meteor apps don't see the pasted
+  documents (the README says so).
+
+Acceptance:
+
+- [ ] `shop` copied and pasted on its own connection proposes `shop_copy`; confirmed, `shop_copy` has every collection
+  of `shop` with its documents, indexes and validation rules, and every view as a view with the same pipeline.
+- [ ] `orders` and the view `paid` of `shop`, copied and pasted on the database `crm`, say `Pasted 1 collection (2,500
+  documents) and 1 view into <connection> › crm in <s> s.`
+- [ ] Pasted on `shop` itself, `orders` becomes `orders_copy` and nothing is asked but the confirmation.
+- [ ] Where `orders`, `paid` and `people` exist, **Append** adds to `orders` and `people` the documents whose `_id`
+  they lack, leaves the view `paid` and says `1 existing one skipped.` in the confirmation.
+- [ ] `Int32`, `Int64` and the other BSON types are identical in the pasted collections.
+- [ ] A collection that fails is named with its error and the ones after it are pasted.
+- [ ] `Cancel` stops after the current batch; the collections already pasted stay, and the views are not created.
+- [ ] `Paste` is not offered on a read-only connection, and `Ctrl+V` on one says it is read-only.
+- [ ] The pasted documents are published to redis-oplog on a destination that publishes (differs).
 
 ### `transfer.generate` — Generate test documents
 

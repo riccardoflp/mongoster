@@ -60,9 +60,9 @@ planned.
 
 | Secret | Kept in | Who reads it | Never in |
 | --- | --- | --- | --- |
-| Connection string | `mongoster.uri.<id>` | `ConnectionManager` to connect; `Copy Connection String`; exports with passwords | `globalState`, logs, the form (shown only as typed), the MCP server's answers |
-| TLS and SSH options, passwords and passphrases | `mongoster.options.<id>` | `src/transport.ts` | the form (an empty field keeps the saved one), logs |
-| Redis URL | `mongoster.redis.<id>` | `src/redisOplog.ts` | `ConnectionInfo`, the MCP server's answers |
+| Connection string | `mongoster.uri.<id>` | `ConnectionManager` to connect; `Copy Connection String`; exports with passwords; `Paste` of a connection, which stores it again for the copy | `globalState`, logs, the form (shown only as typed), the MCP server's answers |
+| TLS and SSH options, passwords and passphrases | `mongoster.options.<id>` | `src/transport.ts`; `Paste` of a connection (stored again for the copy) | the form (an empty field keeps the saved one), logs |
+| Redis URL | `mongoster.redis.<id>` | `src/redisOplog.ts`; `Paste` of a connection (stored again for the copy) | `ConnectionInfo`, the MCP server's answers |
 | MCP access token | `mongoster.mcp.token` | `src/mcpServer.ts`; the setup command copies it into the client's configuration | logs, a request to another window (which gets a proof of it) |
 | Passwords of new MongoDB users | not kept | shown once with `Copy Password` | anywhere after the tab is closed |
 | Marketplace credential of a release | nobody: the Marketplace makes it from GitHub's OIDC token, for 15 minutes | `vsce publish --oidc` in the job `marketplace` of `release.yml` (D20) | the repository, GitHub's secrets, the log |

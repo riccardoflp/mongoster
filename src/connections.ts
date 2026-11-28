@@ -3,7 +3,7 @@ import { MongoClient } from 'mongodb';
 import { ConnectionOptions, HostKeyCheck, openClient, SshTunnel } from './transport';
 import type { RedisOplogSettings } from './shared/oplog';
 import type { Color } from './shared/colors';
-import { removeConnectionFormatting } from './formattingStore';
+import { copyConnectionFormatting, removeConnectionFormatting } from './formattingStore';
 
 /** A connection's color: one of the presets or a custom `#rrggbb` (`src/shared/colors.ts`, D17). */
 export type ConnectionColor = Color;
@@ -69,13 +69,34 @@ export class ConnectionManager implements vscode.Disposable {
 
   async add(name: string, uri: string, folder?: string, options?: ConnectionOptions): Promise<ConnectionInfo> {
     const info: ConnectionInfo = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      id: newId(),
       name,
       ...(folder && { folder }),
       ...describe(options),
     };
     await this.context.secrets.store(secretKey(info.id), uri);
     if (options?.ssh || options?.tls) await this.context.secrets.store(optionsKey(info.id), JSON.stringify(options));
+    await this.context.globalState.update(STATE_KEY, [...this.list(), info]);
+    this.changeEmitter.fire();
+    return info;
+  }
+
+  /**
+   * A copy of the connection under another name: its connection string, TLS and SSH options, Redis URL, colors,
+   * exclusions and formatting rules, in `folder`. The copy starts disconnected.
+   */
+  async duplicate(id: string, name: string, folder?: string): Promise<ConnectionInfo | undefined> {
+    const source = this.get(id);
+    const uri = source && (await this.uri(id));
+    if (!source || !uri) return undefined;
+    const { folder: _, ...settings } = source;
+    const info: ConnectionInfo = { ...settings, id: newId(), name, ...(folder && { folder }) };
+    await this.context.secrets.store(secretKey(info.id), uri);
+    const options = await this.context.secrets.get(optionsKey(id));
+    if (options) await this.context.secrets.store(optionsKey(info.id), options);
+    const redis = await this.context.secrets.get(redisKey(id));
+    if (redis) await this.context.secrets.store(redisKey(info.id), redis);
+    await copyConnectionFormatting(this.context.globalState, id, info.id);
     await this.context.globalState.update(STATE_KEY, [...this.list(), info]);
     this.changeEmitter.fire();
     return info;
@@ -241,6 +262,10 @@ export class ConnectionManager implements vscode.Disposable {
     for (const id of [...this.clients.keys()]) void this.disconnect(id);
     this.changeEmitter.dispose();
   }
+}
+
+function newId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
 /** The non-secret summary of the options, kept on the connection for the tree. */

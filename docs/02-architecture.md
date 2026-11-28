@@ -198,7 +198,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `src/webview/main.ts` – the table and the tab's wiring; with `history.ts`, `pipeline.ts`, `builder.ts`, `indexes.ts`, `indexDialog.ts`, `searchIndexes.ts`, `searchIndexDialog.ts`, `explainView.ts`, `bulk.ts`, `schemaView.ts`, `chartView.ts`, `columnsUi.ts`, `queryPane.ts` (the query above or beside the results), `queryDrop.ts` (drag & drop from the table into the filter, Sort, Project and the pipeline), `autocomplete.ts`, `insertDialog.ts`, `cellEditor.ts`, `popupMenu.ts`, `highlight.ts`, `codeDialog.ts` of `src/webview/`, and `media/webview.css`
 - `src/queryBarHtml.ts` – the markup of the collection tab's top row and query bar, with the buttons' icons (no `vscode`)
 - `src/shared/formatting.ts`, `src/shared/formatField.ts`, `src/shared/match.ts`, `src/webview/formatting.ts` – conditional formatting: the formatting rules (condition rules and field rules) and how they are stored, the colors of rows and cells, what a field rule gives a value (true and false, a scale, a color per value, pinned values, palettes) and its legend, the matcher of query operators over relaxed EJSON, the Formatting pane at the right of the table
-- `src/formattingStore.ts` – where the formatting rules of each scope (collection, database, connection, everywhere) are kept in `globalState`, which open tabs a changed scope reaches, forgetting a removed connection's rules
+- `src/formattingStore.ts` – where the formatting rules of each scope (collection, database, connection, everywhere) are kept in `globalState`, which open tabs a changed scope reaches, forgetting a removed connection's rules, giving them to the copy of a connection
 - `src/shared/formattingFile.ts`, `src/formattingTransfer.ts` – the file formatting rules are exported to and imported from (its form, reading it, adding imported rules to the ones there) and `Export Formatting…` / `Import Formatting…` with their questions and file dialogs
 - `src/webview/chartjs.ts` – Chart.js, a bundle of its own loaded only when the `Chart` tab is opened
 
@@ -233,6 +233,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `collectionColors.ts` – the colors of single databases and collections: which color something of a database or a collection takes (collection over database over connection), and the maps of colors through a rename or a drop (D16)
 - `exclusions.ts` – what is excluded from searches: whether a database or collection is, what a search leaves out, the list through a rename or a drop (D19)
 - `typeAhead.ts` – the desktop app's tree moving to the next name starting with the letters typed
+- `paste.ts` – `Copy` and `Paste` of the connections view: what can be copied together, the name of a copy, where each pasted collection goes and what happens to the ones that exist
 - `gridfs.ts`, `advisor.ts`, `mcp.ts`, `connectionsFile.ts`, `savedQueries.ts`, `tokenColors.ts` – see their features
 
 ### Other tabs (host, webview, CSS)
@@ -252,7 +253,8 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 
 ### Data operations without a tab
 - `src/transfer.ts` – export (JSON, JSON Lines, CSV) and import
-- `src/copy.ts` – copying a collection to another database or connection
+- `src/copy.ts` – copying a collection to another database or connection; `pasteCollections` copies several whole collections and views into a database
+- `src/paste.ts` – `Copy` and `Paste` in the connections view (`TreeClipboard`): a connection again with its settings, a database to a connection, collections and views to a database
 - `src/backup.ts`, `src/archive.ts` – backup and restore in mongodump's formats (folders, gzip, `--archive` / `.agz`)
 - `src/backupNames.ts` – the names of a folder backup's files and folders: collection and database names percent-encoded as mongodump does, and read back (also the plain names of earlier backups); no `vscode`
 - `src/generate.ts` – the test documents dialog, target and batches
@@ -278,7 +280,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `theme.ts` – the base dark and light colors, a theme's variables from its palette, the preset colors Mongoster contributes (`src/shared/colors.ts`), the color theme file the extension reads the syntax colors from
 - `themes.ts` – the seventeen themes as data: id, name, kind, palette or exact colors, syntax colors, the window's color in the islands layout
 - `vscode/` – the `vscode` module: `index.ts` (exports), `base.ts` (value types), `commands.ts`, `contributions.ts` (reads `package.json`), `documents.ts` (text documents, file systems, providers), `tree.ts`, `ui.ts` (messages, quick picks, dialogs, progress), `webview.ts`, `resources.ts` (the URLs of the app's own files), `storage.ts`, `decorations.ts`, `watcher.ts` (`fs.watch`), `appearance.ts`, `bridge.ts`, `runtime.ts`
-- `shell/` – the window: `main.ts`, `workbench.ts` (tabs), `tree.ts` (the side bar's tree: loading, keys, type-ahead, several rows selected), `editor.ts` (Monaco), `panels.ts` (webview frames), `quickInput.ts`, `notifications.ts`, `settings.ts`, `themePreviews.ts` (the color themes to click in the empty tab area), `titleBar.ts` (the window's own title bar: the menus, opened by the host, the active tab's name, the window's buttons), `dom.ts`, `shell.html`, `shell.css`, `webview-default.css`
+- `shell/` – the window: `main.ts`, `workbench.ts` (tabs), `tree.ts` (the side bar's tree: loading, keys, type-ahead, several rows selected, the key bindings of the tree), `editor.ts` (Monaco), `panels.ts` (webview frames), `quickInput.ts`, `notifications.ts`, `settings.ts`, `themePreviews.ts` (the color themes to click in the empty tab area), `titleBar.ts` (the window's own title bar: the menus, opened by the host, the active tab's name, the window's buttons), `dom.ts`, `shell.html`, `shell.css`, `webview-default.css`
 - `electron-builder.yml`, `build/` – the installers
 
 ### Other files

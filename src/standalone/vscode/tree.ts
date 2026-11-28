@@ -5,7 +5,7 @@ import type { MenuAction, TreeItemData } from '../protocol';
 import { Disposable, ThemeIcon, TreeDataProvider, TreeItem, TreeItemCollapsibleState, Uri } from './base';
 import { onRequest, onShell, post } from './bridge';
 import { runCommand } from './commands';
-import { action, commandInfo, menu } from './contributions';
+import { action, commandInfo, keybindings, menu } from './contributions';
 import { runtime } from './runtime';
 import { cssColor, decorationColor } from './decorations';
 
@@ -16,15 +16,24 @@ interface View {
   elements: Map<string, { element: unknown; item: TreeItem }>;
   /** Shown above the tree, under the title. */
   message?: string;
+  /** The handles of the selected rows, as the shell last told. */
+  selection: string[];
 }
 
-/** What createTreeView gives back: the message above the view's tree can be set. `T` is there for the types VS Code has. */
+/** What createTreeView gives back: the message above the view's tree can be set, the selected elements read. */
 export class TreeView<T = unknown> extends Disposable {
   constructor(
     private readonly current: View,
     callOnDispose: () => unknown,
   ) {
     super(callOnDispose);
+  }
+
+  get selection(): readonly T[] {
+    return this.current.selection.flatMap((handle) => {
+      const known = this.current.elements.get(handle);
+      return known ? [known.element as T] : [];
+    });
   }
 
   get message(): string | undefined {
@@ -71,8 +80,8 @@ export function postViewTitle(): void {
   post({ type: 'viewTitle', actions: viewTitleActions(), message: view?.message });
 }
 
-export function createTreeView<T>(viewId: string, options: { treeDataProvider: TreeDataProvider<T>; showCollapseAll?: boolean; canSelectMany?: boolean }): TreeView {
-  const current: View = { id: viewId, provider: options.treeDataProvider as TreeDataProvider<unknown>, elements: new Map() };
+export function createTreeView<T>(viewId: string, options: { treeDataProvider: TreeDataProvider<T>; showCollapseAll?: boolean; canSelectMany?: boolean }): TreeView<T> {
+  const current: View = { id: viewId, provider: options.treeDataProvider as TreeDataProvider<unknown>, elements: new Map(), selection: [] };
   view = current;
   const subscription = current.provider.onDidChangeTreeData?.((element) => {
     if (element === undefined || element === null) return post({ type: 'treeChanged' });
@@ -82,7 +91,7 @@ export function createTreeView<T>(viewId: string, options: { treeDataProvider: T
     post({ type: 'treeChanged', handle });
   });
   postViewTitle();
-  return new TreeView(current, () => {
+  return new TreeView<T>(current, () => {
     subscription?.dispose();
     if (view === current) view = undefined;
   });
@@ -141,6 +150,17 @@ onShell('treeContext', (m) => {
   if (!view || !known || !args) return;
   const entries = menu('view/item/context', { view: view.id, viewItem: known.item.contextValue }).filter((e) => e.group !== 'inline');
   popupMenu(entries, (command) => runCommand(command, ...args));
+});
+
+onShell('treeSelection', (m) => {
+  if (view) view.selection = m.handles;
+});
+
+/** A key of the tree runs the command bound to it for the focused view, without arguments as in VS Code. */
+onShell('treeKey', (m) => {
+  if (!view) return;
+  const bound = keybindings({ focusedView: view.id }).find((k) => k.key === m.key);
+  if (bound) runCommand(bound.command);
 });
 
 onShell('viewTitleMore', () => {

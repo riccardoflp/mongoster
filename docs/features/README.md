@@ -1,21 +1,21 @@
 # The catalog of features
 
-Every feature, one card each, 160 in all. The template and the rules of the cards are in the
+Every feature, one card each, 171 in all. The template and the rules of the cards are in the
 feature contract. This index is written by `catalog.py --index`: change a status here in the commit that
 earns it, and run the script again after adding or renaming a card; the statuses are kept. A card with a
 **Differs** line is *Differs*; when the line goes, it becomes *Documented*.
 
 | File | Area | Cards |
 | --- | --- | --- |
-| [01-connections.md](01-connections.md) | Connections | 29 |
-| [02-tree.md](02-tree.md) | The connections view | 7 |
-| [03-collection-tab.md](03-collection-tab.md) | The collection tab | 5 |
+| [01-connections.md](01-connections.md) | Connections | 30 |
+| [02-tree.md](02-tree.md) | The connections view | 10 |
+| [03-collection-tab.md](03-collection-tab.md) | The collection tab | 11 |
 | [04-documents.md](04-documents.md) | Writing documents | 15 |
 | [05-field-actions.md](05-field-actions.md) | Actions on a column | 10 |
 | [06-databases.md](06-databases.md) | Databases and collections | 9 |
 | [07-undo.md](07-undo.md) | Undo history | 16 |
 | [08-redis-oplog.md](08-redis-oplog.md) | redis-oplog | 7 |
-| [09-transfer.md](09-transfer.md) | Transfer | 8 |
+| [09-transfer.md](09-transfer.md) | Transfer | 9 |
 | [10-backup.md](10-backup.md) | Backup | 5 |
 | [11-scheduled-tasks.md](11-scheduled-tasks.md) | Scheduled tasks | 13 |
 | [12-mcp.md](12-mcp.md) | The MCP server | 16 |
@@ -34,6 +34,7 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | [`connection.test`](01-connections.md#connectiontest--test-the-connection) | Test the connection | Read | Documented |
 | [`connection.save`](01-connections.md#connectionsave--save-the-connection-form) | Save the connection form | Operation | Documented |
 | [`connection.copy-string`](01-connections.md#connectioncopy-string--copy-the-connection-string) | Copy the connection string | Read | Documented |
+| [`connection.paste`](01-connections.md#connectionpaste--paste-a-connection-as-a-second-connection) | Paste a connection as a second connection | Operation | Specified |
 | [`connection.connect`](01-connections.md#connectionconnect--connect-a-connection) | Connect a connection | Operation | Documented |
 | [`connection.disconnect`](01-connections.md#connectiondisconnect--disconnect) | Disconnect | Operation | Documented |
 | [`connection.remove`](01-connections.md#connectionremove--remove-a-connection) | Remove a connection | Operation | Differs |
@@ -70,13 +71,17 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | [`tree.excluded`](02-tree.md#treeexcluded--what-searches-leave-out) | What searches leave out | Derivation | Specified |
 | [`tree.exclusion-follows`](02-tree.md#treeexclusion-follows--an-exclusion-follows-a-rename-and-goes-with-a-drop) | An exclusion follows a rename and goes with a drop | Operation | Specified |
 | [`tree.type-ahead`](02-tree.md#treetype-ahead--move-to-a-node-by-typing-its-first-letters) | Move to a node by typing its first letters | Derivation | Specified |
+| [`tree.copy`](02-tree.md#treecopy--copy-connections-databases-or-collections) | Copy connections, databases or collections | Operation | Specified |
+| [`tree.paste-plan`](02-tree.md#treepaste-plan--what-a-paste-does-with-each-collection) | What a paste does with each collection | Derivation | Specified |
 
 ## The collection tab
 
 | Feature | Title | Kind | Status |
 | --- | --- | --- | --- |
-| [`query.format-rules`](03-collection-tab.md#queryformat-rules--add-edit-reorder-and-turn-off-formatting-rules) | Add, edit, reorder and turn off formatting rules | Operation | Built |
+| [`query.format-rules`](03-collection-tab.md#queryformat-rules--add-edit-name-reorder-move-between-scopes-and-turn-off-formatting-rules) | Add, edit, name, reorder, move between scopes and turn off formatting rules | Operation | Built |
+| [`query.format-transfer`](03-collection-tab.md#queryformat-transfer--export-formatting-rules-to-a-file-and-import-them) | Export formatting rules to a file and import them | Operation | Specified |
 | [`query.format-table`](03-collection-tab.md#queryformat-table--color-the-table-by-the-formatting-rules) | Color the table by the formatting rules | View | Built |
+| [`query.format-field`](03-collection-tab.md#queryformat-field--the-color-a-field-rule-gives-a-value) | The color a field rule gives a value | Derivation | Specified |
 | [`query.match`](03-collection-tab.md#querymatch--match-a-document-against-a-filter) | Match a document against a filter | Derivation | Built |
 | [`query.pane`](03-collection-tab.md#querypane--put-the-query-above-or-beside-the-results) | Put the query above or beside the results | Operation | Built |
 | [`query.drop-options`](03-collection-tab.md#querydrop-options--drop-a-header-or-a-cell-on-sort-or-project) | Drop a header or a cell on Sort or Project | Derivation | Built |
@@ -177,6 +182,7 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | [`transfer.import-files`](09-transfer.md#transferimport-files--what-an-import-file-holds) | What an import file holds | Derivation | Documented |
 | [`transfer.csv-read`](09-transfer.md#transfercsv-read--csv-rows-as-documents) | CSV rows as documents | Derivation | Documented |
 | [`transfer.copy-collection`](09-transfer.md#transfercopy-collection--copy-a-collection-to-another-database-or-connection) | Copy a collection to another database or connection | Operation | Differs |
+| [`transfer.paste`](09-transfer.md#transferpaste--paste-a-database-collections-or-views) | Paste a database, collections or views | Operation | Differs |
 | [`transfer.generate`](09-transfer.md#transfergenerate--generate-test-documents) | Generate test documents | Operation | Differs |
 | [`transfer.generate-values`](09-transfer.md#transfergenerate-values--fake-documents-from-a-schema-analysis) | Fake documents from a schema analysis | Derivation | Documented |
 

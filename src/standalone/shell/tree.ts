@@ -26,6 +26,8 @@ const collapsed = new Set<string>();
 let focused: string | undefined;
 /** The rows selected: the focused one, or several with Ctrl and Shift. Commands from a menu act on all of them. */
 const selection = new Set<string>();
+/** The selection the host was last told. */
+let selectionSent: string[] = [];
 /** Where Shift+click and Shift+arrow select from. */
 let anchor: string | undefined;
 /** The letters of the type-ahead, and when the last one was typed. */
@@ -184,6 +186,9 @@ function render(): void {
   if (focused !== undefined && !shown.has(focused)) focused = undefined;
   for (const handle of selection) if (!shown.has(handle)) selection.delete(handle);
   list.replaceChildren(...nodes.map(row));
+  // The host knows the selection, for the commands run from a key.
+  const selected = nodes.map((n) => n.data.handle).filter((h) => selection.has(h));
+  if (selected.join('\n') !== selectionSent.join('\n')) host.send({ type: 'treeSelection', handles: (selectionSent = selected) });
 }
 
 /**
@@ -329,6 +334,11 @@ export function initTree(): void {
         break;
       default:
         // A letter or a digit moves to the next row whose name starts with it; with Ctrl, Alt or Cmd it's a shortcut.
+        if (e.key.length === 1 && e.key !== ' ' && (e.ctrlKey || e.metaKey) && !e.altKey) {
+          // A key binding of the tree, if there is one (Ctrl+C, Ctrl+V); the key stays the browser's too.
+          host.send({ type: 'treeKey', key: `${e.ctrlKey ? 'ctrl+' : ''}${e.metaKey ? 'cmd+' : ''}${e.shiftKey ? 'shift+' : ''}${e.key.toLowerCase()}` });
+          return;
+        }
         if (e.key.length !== 1 || e.key === ' ' || e.ctrlKey || e.metaKey || e.altKey) return;
         typeAhead(e.key);
     }

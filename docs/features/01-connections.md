@@ -226,6 +226,50 @@ Acceptance:
 - [ ] The TLS and SSH settings are not part of what is copied.
 - [ ] A connection without a saved connection string copies nothing and says nothing.
 
+### `connection.paste` — Paste a connection as a second connection
+
+Makes a second connection with the settings of a copied one, for a deployment that differs by little: another host,
+another user, the same TLS and SSH settings ([README › Copy and Paste in the tree](../../README.md#features)).
+
+- **Kind**: Operation
+- **Function**: `src/paste.ts › TreeClipboard.paste` (`pasteConnections`), `src/connections.ts ›
+  ConnectionManager.duplicate`
+- **Implemented in**: `src/extension.ts` (`mongoster.pasteNode`); `src/shared/paste.ts › copyName`;
+  `src/formattingStore.ts › copyConnectionFormatting`
+- **Entry points**: `mongoster.pasteNode` (**Paste**) in the context menu of a folder or a connection, group
+  `0_clipboard`; `Ctrl+V` (`Cmd+V` on macOS) with the focus in the connections view. Hidden from the Command Palette
+  (`when: false`).
+- **Offered when**: `mongoster.clipboard == connection && viewItem =~ /^(folder|connection)/`; the key when
+  `focusedView == mongoster.connections`.
+- **Asks**: nothing.
+- **Reads**: the copied connection's entry of `mongoster.connections`; `mongoster.uri.<id>`, `mongoster.options.<id>`
+  and `mongoster.redis.<id>` in the secret storage.
+- **Writes**: a new entry of `mongoster.connections` with a new id, the name `<name> copy` (`tree.paste-plan`) and
+  every other field of the copied one (color, colors of databases and collections, exclusions, read-only, no history,
+  the SSH and TLS summaries, the redis-oplog settings); its folder is the folder pasted on, the folder of the
+  connection (or of the database or collection) pasted on, or the copied one's own when nothing is selected. The three
+  secrets under the new id, when the copied connection has them. The formatting rules of the connection and of its
+  databases (`mongoster.formattingConnection.<id>`, `mongoster.formattingDatabase.<id>/<database>`) under the new id.
+- **Danger**: None.
+- **Read-only**: Allowed, because it writes nothing to the database; the copy of a read-only connection is read-only.
+- **Undo**: Cannot be undone from the undo history; `Remove Connection` removes the copy.
+- **After**: the tree shows the copy, disconnected; the status bar says `Mongoster: pasted the connection <name>` (`<n>
+  connections` for several) for 5 seconds.
+- **Refuses**: every copied connection removed since: `The copied connection has been removed.`
+- **Uses**: `tree.copy`, `tree.paste-plan`, `connection.secrets`.
+- **Tested by**: `test/unit/paste.test.ts › 'the copy of a connection' › 'has the settings, the secrets and the
+  formatting rules of the connection, under a new id'`, `› 'goes to the top level without a folder, and is nothing for
+  a removed connection'`. The command: *none*.
+
+Acceptance:
+
+- [ ] `Production` in the folder `Work`, copied and pasted on the folder `Local`, gives `Production copy` in `Local`
+  with the same connection string, TLS and SSH settings and Redis URL; pasted again, `Production copy 2`.
+- [ ] The copy has its own id: editing or removing it leaves `Production` and its secrets as they were.
+- [ ] Not copied: the collections' own formatting rules, column layouts, recent and saved queries, the undo history
+  and the scheduled tasks of the copied connection.
+- [ ] Pasting connects to nothing.
+
 ### `connection.connect` — Connect a connection
 
 Opens the client of a connection the first time something needs it, with its TLS options and through its SSH

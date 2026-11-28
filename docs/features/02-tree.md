@@ -4,7 +4,7 @@ The tree of the connections view: folders, connections, databases, collections, 
 filter. The colors of single databases and collections ([D16](../08-decisions.md#d16--a-collections-color-is-kept-on-its-connection),
 [proposal 0001](../proposals/0001-collection-colors.md)), what is excluded from searches
 ([D19](../08-decisions.md#d19--what-is-excluded-from-searches-stays-in-the-tree-and-answers-when-asked-for-by-name)) and
-the desktop app's type-ahead have cards for now; the nodes, refreshing, disconnecting and the filter itself are
+the desktop app's type-ahead and Copy have cards for now; the nodes, refreshing, disconnecting and the filter itself are
 written when the area is next changed. The connection's own color is `connection.set-color`. The user's side is in
 the README's [Features](../../README.md#features), under **Connections › Color**.
 
@@ -308,3 +308,80 @@ Rules:
 - Keys with Ctrl, Alt or Cmd, the space and keys longer than one character (arrows, `Enter`) are not typed.
 - Examples, with `local`, `Orders`, `orders_2019`, `products`, `Shop`, `sessions`: from `local`, `o` → `Orders`; again `o`
   → `orders_2019`; again → `Orders`; from `Orders`, `orders_` → `orders_2019`; from `Shop`, `ss` → `sessions`.
+
+### `tree.copy` — Copy connections, databases or collections
+
+Takes the selected connections, databases, collections or views to the tree clipboard, to paste them elsewhere in the
+tree ([README › Copy and Paste in the tree](../../README.md#features)).
+
+- **Kind**: Operation
+- **Function**: `src/paste.ts › TreeClipboard.copy`
+- **Implemented in**: `src/extension.ts` (`mongoster.copyNode`, which takes the tree's selection when it gets no
+  node); `src/shared/paste.ts › clipboardOf` (`tree.paste-plan`); in the desktop app `src/standalone/shell/tree.ts`
+  (the `treeSelection` and `treeKey` messages) and `src/standalone/vscode/tree.ts` (`TreeView.selection`, the key
+  binding found with `focusedView`)
+- **Entry points**: `mongoster.copyNode` (**Copy**), first in the context menu of a connection, a database, a
+  collection or a view (group `0_clipboard`); `Ctrl+C` (`Cmd+C` on macOS) with the focus in the connections view.
+  Hidden from the Command Palette (`when: false`). With several nodes selected it takes all of them.
+- **Offered when**: `viewItem =~ /^(connection|database|collection|view)/`, read-only connections included; the key
+  when `focusedView == mongoster.connections`.
+- **Writes**: the tree clipboard, in memory; the context key `mongoster.clipboard` (`connection`, `database` or
+  `collection`); the names, one per line, on the system's clipboard.
+- **Danger**: None.
+- **Read-only**: Allowed, because it writes nothing to the database.
+- **Undo**: Cannot be undone, and needs none: the next Copy replaces it.
+- **After**: the status bar says for 5 seconds `Mongoster: <n> connection[s] copied: paste on a folder or a
+  connection`, `<n> database[s] copied: paste on a connection` or `<n> collection[s] copied: paste on a database or a
+  connection`.
+- **Refuses**, with a warning and keeping what was copied before: no node (`Select a connection, a database or a
+  collection to copy it.`); a folder or a GridFS bucket among them (`Only connections, databases, collections and
+  views can be copied.`); nodes of different kinds (`Copy only connections, only databases or only collections at a
+  time.`); databases of several connections (`Copy the databases of one connection at a time.`); collections of
+  several databases (`Copy the collections of one database at a time.`).
+- **Uses**: `tree.paste-plan`.
+- **Tested by**: `test/unit/paste.test.ts › 'what Copy takes from the tree' › 'takes connections, the databases of one
+  connection, or the collections and views of one database'`, `› 'refuses nothing, mixed kinds, other nodes, and
+  databases or collections from different places'`. The command, the key and the clipboards: *none*.
+
+Acceptance:
+
+- [ ] `Ctrl+C` on the selected collections `orders` and `people` of `shop` puts `orders` and `people`, one per line,
+  on the system's clipboard and says `Mongoster: 2 collections copied: paste on a database or a connection`.
+- [ ] Before the first Copy the context menus have no `Paste`; after copying a collection, databases, collections,
+  views and connections that are not read-only have it.
+- [ ] Copying a database and a collection together warns `Copy only connections, only databases or only collections at
+  a time.` and a later Paste pastes what was copied before.
+- [ ] In the desktop app `Ctrl+C` in the tree copies the selected rows, as in VS Code.
+
+### `tree.paste-plan` — What a paste does with each collection
+
+The rules of Copy and Paste that touch nothing: what can be copied together, the name a copy takes, where each
+collection goes and what happens to the ones that exist in the destination.
+
+- **Kind**: Derivation
+- **Function**: `src/shared/paste.ts › clipboardOf`, `› copyName`, `› planPaste`, `› pasteAction`
+- **Implemented in**: `src/paste.ts` (the confirmation), `src/copy.ts › pasteCollections`
+- **Tested by**: `test/unit/paste.test.ts › 'what Copy takes from the tree'` (both tests), `› 'the name of a copy' ›
+  'adds "copy" to a connection and "_copy" to a database or collection, then a number'`, `› 'where pasted collections
+  go' › 'keeps the names in another database, noting what exists there'`, `› 'gives free _copy names in the same
+  database'`, `› 'creates what is new, and treats what exists by the mode chosen'`, `› 'never appends to a view or
+  from one: those stay, unless they are dropped'`.
+
+Rules:
+
+- The tree clipboard holds nodes of one kind: connections; databases of one connection; collections and views of one
+  database. A node selected twice counts once.
+- The name of a copy: a connection `Production` → `Production copy`, then `Production copy 2`, `Production copy 3`; a
+  database or a collection `orders` → `orders_copy`, then `orders_copy2`. The first one that is free.
+- Pasted into another database, a collection keeps its name. Pasted into its own database, it gets a free `_copy`
+  name, so nothing there is ever in the way.
+- What exists in the destination under a pasted name is treated by the mode chosen once for all: **Skip** leaves it;
+  **Drop and recreate** drops it, a view too; **Append** and **Replace matching** write the documents of a collection
+  into an existing collection. A view has no documents of its own: with those two modes an existing view stays (`the
+  view exists`), a collection stays when a view would take its name (`a collection has this name`), and a view stays
+  when a collection would (`a view has this name`).
+- What doesn't exist is created, whatever the mode.
+- Examples: `orders`, `recent` (a view) and `people` pasted into another database where `orders` is a collection and
+  `recent` a view → with Skip only `people` is created; with Append `orders` is appended to, `recent` stays, `people`
+  is created; with Drop and recreate all three are made new. The same three pasted into their own database, which
+  also has `orders_copy` → `orders_copy2`, `recent_copy`, `people_copy`.

@@ -15,6 +15,7 @@ import { DocumentHistoryPanel } from './docHistory';
 import { UsersPanel } from './users';
 import { GridFSPanel, dropBucket, uploadFiles } from './gridfs';
 import { Copier } from './copy';
+import { TreeClipboard } from './paste';
 import { GenerateSource, Generator } from './generate';
 import { HistoryPanel, UndoHistory, historyLimits } from './history';
 import { Backups } from './backup';
@@ -67,6 +68,19 @@ export function activate(context: vscode.ExtensionContext): void {
     view: node.isView,
     locked: !!node.connection.readOnly,
   });
+  /** Opens the tab of a collection that was just copied or pasted. */
+  const openCopied = (ref: CollectionRef, view = false) => {
+    const info = connections.get(ref.connectionId);
+    if (!info) return;
+    CollectionPanel.show(context, connections, documents, {
+      ...ref,
+      connectionName: info.name,
+      readOnly: view || !!info.readOnly,
+      view,
+      locked: !!info.readOnly,
+    });
+  };
+  const clipboard = new TreeClipboard(connections, openCopied, (ref) => CollectionPanel.refresh(ref));
   /** Saves the connection form: options first (they reconnect), then name and connection string. */
   const saveConnection: SaveConnection = async (id, name, uri, options, redis) => {
     await connections.setOptions(id, options);
@@ -585,19 +599,16 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('mongoster.copyCollection', (node?: CollectionNode) => {
       if (!node) return;
-      const copier = new Copier(connections, (ref) => {
-        const info = connections.get(ref.connectionId);
-        if (!info) return;
-        CollectionPanel.show(context, connections, documents, {
-          ...ref,
-          connectionName: info.name,
-          readOnly: !!info.readOnly,
-          view: false,
-          locked: !!info.readOnly,
-        });
-      });
+      const copier = new Copier(connections, (ref) => openCopied(ref));
       return copier.start({ connection: node.connection, database: node.database, collection: node.collection, isView: node.isView });
     }),
+
+    // From their key bindings the commands get no node: they act on the tree's selection.
+    vscode.commands.registerCommand('mongoster.copyNode', (node?: TreeNode, nodes?: TreeNode[]) =>
+      clipboard.copy(nodes?.length ? nodes : node ? [node] : treeView.selection),
+    ),
+
+    vscode.commands.registerCommand('mongoster.pasteNode', (node?: TreeNode) => clipboard.paste(node ?? treeView.selection[0])),
 
     vscode.commands.registerCommand('mongoster.dropCollection', async (node?: CollectionNode) => {
       if (!node) return;

@@ -1,6 +1,6 @@
 // Where the formatting rules are kept in globalState, by scope: a collection's, a database's, a connection's and the
 // global ones, with the scopes a collection has turned off. Reading what reaches a collection, writing a scope, which
-// collections a scope reaches, and forgetting a removed connection's rules.
+// collections a scope reaches, forgetting a removed connection's rules and giving them to a copy of a connection.
 // No vscode dependency beyond the Memento's type.
 import type { Memento } from 'vscode';
 import { FORMAT_SCOPES, FormatRule, FormatScope, ScopedRules, readFormatRules, readScopesOff } from './shared/formatting';
@@ -60,5 +60,18 @@ export async function removeConnectionFormatting(state: Pick<Memento, 'keys' | '
   const database = `mongoster.formattingDatabase.${connectionId}/`;
   for (const key of state.keys()) {
     if (key === `mongoster.formattingConnection.${connectionId}` || key.startsWith(database)) await state.update(key, undefined);
+  }
+}
+
+/**
+ * Gives the copy of a connection the rules of the connection and of its databases. Its collections' own rules
+ * aren't copied, like their layouts and saved queries.
+ */
+export async function copyConnectionFormatting(state: Pick<Memento, 'keys' | 'get' | 'update'>, from: string, to: string): Promise<void> {
+  const connection = `mongoster.formattingConnection.${from}`;
+  const database = `mongoster.formattingDatabase.${from}/`;
+  for (const key of state.keys()) {
+    if (key === connection) await state.update(`mongoster.formattingConnection.${to}`, state.get(key));
+    else if (key.startsWith(database)) await state.update(`mongoster.formattingDatabase.${to}/${key.slice(database.length)}`, state.get(key));
   }
 }

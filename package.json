@@ -348,6 +348,18 @@
         "icon": "$(copy)"
       },
       {
+        "command": "mongoster.copyNode",
+        "title": "Copy",
+        "category": "Mongoster",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "mongoster.pasteNode",
+        "title": "Paste",
+        "category": "Mongoster",
+        "icon": "$(clippy)"
+      },
+      {
         "command": "mongoster.watchChanges",
         "title": "Watch Changes",
         "category": "Mongoster",
@@ -761,6 +773,26 @@
           "group": "2_transfer@3"
         },
         {
+          "command": "mongoster.copyNode",
+          "when": "view == mongoster.connections && viewItem =~ /^(connection|database|collection|view)/",
+          "group": "0_clipboard@1"
+        },
+        {
+          "command": "mongoster.pasteNode",
+          "when": "view == mongoster.connections && mongoster.clipboard == connection && viewItem =~ /^(folder|connection)/",
+          "group": "0_clipboard@2"
+        },
+        {
+          "command": "mongoster.pasteNode",
+          "when": "view == mongoster.connections && mongoster.clipboard == database && viewItem =~ /^(connection|database)(?!.*readonly)/",
+          "group": "0_clipboard@2"
+        },
+        {
+          "command": "mongoster.pasteNode",
+          "when": "view == mongoster.connections && mongoster.clipboard == collection && viewItem =~ /^(connection|database|collection|view)(?!.*readonly)/",
+          "group": "0_clipboard@2"
+        },
+        {
           "command": "mongoster.compareCollection",
           "when": "view == mongoster.connections && viewItem =~ /^(collection|view)/",
           "group": "2_transfer@4"
@@ -981,6 +1013,14 @@
           "when": "false"
         },
         {
+          "command": "mongoster.copyNode",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.pasteNode",
+          "when": "false"
+        },
+        {
           "command": "mongoster.compareCollection",
           "when": "false"
         },
@@ -1048,6 +1088,18 @@
         "key": "ctrl+enter",
         "mac": "cmd+enter",
         "when": "editorTextFocus && resourceFilename =~ /\\.mongodb\\.js$/"
+      },
+      {
+        "command": "mongoster.copyNode",
+        "key": "ctrl+c",
+        "mac": "cmd+c",
+        "when": "focusedView == mongoster.connections"
+      },
+      {
+        "command": "mongoster.pasteNode",
+        "key": "ctrl+v",
+        "mac": "cmd+v",
+        "when": "focusedView == mongoster.connections"
       }
     ],
     "configuration": {

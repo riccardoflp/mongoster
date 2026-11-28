@@ -220,6 +220,10 @@ export type ShellMessage =
   | { type: 'treeCommand'; handle: string }
   /** `handles`: the selected rows, when the one right-clicked is one of several selected. */
   | { type: 'treeContext'; handle: string; handles?: string[] }
+  /** The selected rows, in the tree's order, each time they change. */
+  | { type: 'treeSelection'; handles: string[] }
+  /** A key with Ctrl or Cmd pressed in the tree (`ctrl+c`): a key binding of package.json may answer it. */
+  | { type: 'treeKey'; key: string }
   | { type: 'viewTitleMore' }
   | { type: 'execute'; command: string; handle?: string; handles?: string[] }
   | { type: 'panelClosed'; id: number }
