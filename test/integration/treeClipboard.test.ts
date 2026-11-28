@@ -5,7 +5,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { GridFSBucket, MongoClient } from 'mongodb';
-import { afterAll, beforeAll, beforeEach, describe, expect, inject, it, vi } from 'vitest';
+import { type Mock, afterAll, beforeAll, beforeEach, describe, expect, inject, it, vi } from 'vitest';
 import type { ExtensionContext } from 'vscode';
 import { ConnectionInfo, ConnectionManager } from '../../src/connections';
 import { UndoHistory } from '../../src/history';
@@ -99,7 +99,7 @@ let clipboard: TreeClipboard;
 let a: ConnectionInfo;
 let b: ConnectionInfo;
 let readOnly: ConnectionInfo;
-let events: { [K in keyof PasteEvents]: ReturnType<typeof vi.fn> };
+let events: { [K in keyof PasteEvents]: Mock<PasteEvents[K]> };
 
 const answer = (...answers: Answer[]) => ui.answers.push(...answers);
 const asked = (index: number) => ui.asked[index] as Asked;
@@ -162,7 +162,12 @@ beforeEach(async () => {
   a = await connections.add('A', inject('mongoUri'));
   b = await connections.add('B', inject('mongoUri'), 'Work');
   readOnly = (await connections.update((await connections.add('Locked', inject('mongoUri'))).id, { readOnly: true }))!;
-  events = { opened: vi.fn(), changed: vi.fn(), moved: vi.fn(async () => undefined), databaseGone: vi.fn(async () => undefined) };
+  events = {
+    opened: vi.fn<PasteEvents['opened']>(),
+    changed: vi.fn<PasteEvents['changed']>(),
+    moved: vi.fn<PasteEvents['moved']>(async () => undefined),
+    databaseGone: vi.fn<PasteEvents['databaseGone']>(async () => undefined),
+  };
   clipboard = new TreeClipboard(connections, events);
 });
 
