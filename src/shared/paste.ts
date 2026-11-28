@@ -1,6 +1,8 @@
 // What `Copy` and `Paste` of the connections view work out before touching anything: the name a copy takes, which
 // collection goes where when collections are pasted into a database, and what happens to the ones that exist there.
 // No vscode, mongodb or Node dependency.
+import { CollectionColors, dropCollectionColors, namespaceOf, renameCollectionColor } from './collectionColors';
+import { dropExclusions, renameExclusion } from './exclusions';
 
 /** What `Copy` took from the tree: connections, databases, or collections and views of one database. */
 export type Clipboard =
@@ -132,4 +134,28 @@ export function pasteAction(item: PasteItem, mode: ExistingMode): PasteAction {
   if (item.isView) return { do: 'skip', why: item.exists === 'view' ? 'the view exists' : 'a collection has this name' };
   if (item.exists === 'view') return { do: 'skip', why: 'a view has this name' };
   return { do: mode };
+}
+
+/** A collection, where it was or where it went. */
+export interface MovedPlace {
+  connectionId: string;
+  database: string;
+  collection: string;
+}
+
+/**
+ * The colors of the collections of the connection a collection moved from: its own follows it to another database of
+ * the same connection, and is forgotten when it went to another connection. The same map when it had none.
+ */
+export function colorsAfterMove(colors: CollectionColors | undefined, from: MovedPlace, to: MovedPlace): CollectionColors | undefined {
+  return from.connectionId === to.connectionId
+    ? renameCollectionColor(colors, namespaceOf(from.database, from.collection), namespaceOf(to.database, to.collection))
+    : dropCollectionColors(colors, from.database, from.collection);
+}
+
+/** What the connection a collection moved from excludes from searches, as `colorsAfterMove` for its colors. */
+export function exclusionsAfterMove(exclusions: string[] | undefined, from: MovedPlace, to: MovedPlace): string[] | undefined {
+  return from.connectionId === to.connectionId
+    ? renameExclusion(exclusions, namespaceOf(from.database, from.collection), namespaceOf(to.database, to.collection))
+    : dropExclusions(exclusions, from.database, from.collection);
 }

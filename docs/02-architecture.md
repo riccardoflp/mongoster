@@ -233,7 +233,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `collectionColors.ts` – the colors of single databases and collections: which color something of a database or a collection takes (collection over database over connection), and the maps of colors through a rename or a drop (D16)
 - `exclusions.ts` – what is excluded from searches: whether a database or collection is, what a search leaves out, the list through a rename or a drop (D19)
 - `typeAhead.ts` – the desktop app's tree moving to the next name starting with the letters typed
-- `paste.ts` – `Copy` and `Paste` of the connections view: what can be copied together, the name of a copy, where each pasted collection goes and what happens to the ones that exist
+- `paste.ts` – `Copy` and `Paste` of the connections view: what can be copied together, the name of a copy, where each pasted collection goes and what happens to the ones that exist, the color and exclusion of a moved collection
 - `gridfs.ts`, `advisor.ts`, `mcp.ts`, `connectionsFile.ts`, `savedQueries.ts`, `tokenColors.ts` – see their features
 
 ### Other tabs (host, webview, CSS)

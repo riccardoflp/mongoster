@@ -259,7 +259,8 @@ another user, the same TLS and SSH settings ([README › Copy and Paste in the t
 - **Uses**: `tree.copy`, `tree.paste-plan`, `connection.secrets`.
 - **Tested by**: `test/unit/paste.test.ts › 'the copy of a connection' › 'has the settings, the secrets and the
   formatting rules of the connection, under a new id'`, `› 'goes to the top level without a folder, and is nothing for
-  a removed connection'`. The command: *none*.
+  a removed connection'`; `test/integration/treeClipboard.test.ts` › `'Paste of connections' › 'makes a second connection in the folder pasted
+  on, of the connection pasted on, or of the copied one'`. The command: *none*.
 
 Acceptance:
 

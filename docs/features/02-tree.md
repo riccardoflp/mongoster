@@ -342,7 +342,8 @@ tree ([README › Copy and Paste in the tree](../../README.md#features)).
 - **Tested by**: `test/unit/paste.test.ts › 'what Copy takes from the tree' › 'takes connections, the databases of one
   connection, or the collections and views of one database'`, `› 'takes a bucket as its two collections, once, also
   when one of them is selected with it'`, `› 'refuses nothing, mixed kinds, other nodes, and databases or collections
-  from different places'`. The command, the key and the clipboards: *none*.
+  from different places'`; `test/integration/treeClipboard.test.ts` › 'Copy' (the three tests: the status bar, the system's clipboard, the
+  context key, what is kept after a refusal). The command and the key: *none*.
 
 Acceptance:
 
@@ -410,7 +411,10 @@ copying them ([README › Copy, Cut and Paste in the tree](../../README.md#featu
   Paste that was given up or cancelled keeps it.
 - **Refuses**: what `tree.copy` refuses, with the same messages.
 - **Uses**: `tree.copy`, `tree.paste-plan`, `transfer.move`, `tree.drag`.
-- **Tested by**: *none*.
+- **Tested by**: `test/integration/treeClipboard.test.ts` › `'Paste of connections' › 'moves a cut connection to the folder, once'`; `›
+  'Cut and Paste' › 'refuses to cut from a read-only connection, keeping the clipboard'`, `› 'moves collections and
+  views to another database, says it cannot be undone, and tells what moved'`, `› 'keeps the clipboard when the move
+  is given up, and leaves what is already there'`. The command and the key: *none*.
 
 Acceptance:
 
@@ -445,7 +449,11 @@ database or a connection copies them there ([README › Dragging in the tree](..
 - **Refuses**: what `tree.copy` refuses, saying `Drag` for `Copy`: nodes of different kinds, a folder among them,
   databases of several connections, collections of several databases.
 - **Uses**: `tree.copy`, `transfer.paste`, `connection.move-to-folder`.
-- **Tested by**: *none*.
+- **Tested by**: `test/integration/treeClipboard.test.ts` › `'dragging' › 'moves connections to the folder dropped on, to that of a
+  connection, and out of their folder'`, `› 'says nothing when the connection is already there'`, `› 'copies
+  collections onto a database after the confirmation of Paste, without touching the clipboard'`, `› 'refuses nodes
+  that do not go together, and a read-only connection'`. The controller of the tree view and the rows' drag events in
+  the desktop app: *none*.
 
 Acceptance:
 

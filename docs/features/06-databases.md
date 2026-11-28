@@ -159,8 +159,8 @@ and the old one is dropped ([README › Managing databases and collections](../.
   connection that cannot be reached: `Could not connect to <name>: <error>`.
 - **Uses**: `transfer.move`, `tree.paste-plan`, `manage.name-rules`, `connection.read-only`.
 - **Tested by**: `test/integration/paste.test.ts › 'moving instead of copying' › 'renames the collections into the
-  other database on the same deployment, and moves the views'` (the move); the command and the drop of the old
-  database: *none*.
+  other database on the same deployment, and moves the views'` (the move); `test/integration/treeClipboard.test.ts` › `'Rename Database'` (its three tests: the questions, the old
+  database dropped, what is refused). The command: *none*.
 - **Differs**: the database's own color, its exclusion from searches and its formatting rules are forgotten with the
   old name instead of following the new one, unlike a renamed collection's.
 

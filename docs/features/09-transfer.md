@@ -386,7 +386,8 @@ GridFS buckets to a database, whole and several at once; `transfer.move` is the 
   view'`, `› 'replaces the documents with the same _id'`, `› 'drops and recreates collections and views'`, `› 'goes on
   after a collection that fails, and reports it'`, `› 'stops after the batch being written when it is cancelled'`; `› 'the events for redis-oplog' › 'are an insert for
   each document pasted, and none for a view'`.
-  The questions, the confirmation and the undo history: *none*.
+  The questions, the confirmation and the undo history: `test/integration/treeClipboard.test.ts` › `'Paste of collections'` (its eleven
+  tests), `› 'the undo of a paste'` (its three), `› 'Paste of a database'` (its two), with VS Code's windows scripted.
 
 Acceptance:
 
@@ -413,8 +414,8 @@ or name, leaving nothing where they were ([README › Copy, Cut and Paste in the
 - **Function**: `src/paste.ts › TreeClipboard.paste` (`put` and `pasteInto` with a move), then `src/copy.ts ›
   pasteCollections` with `MoveOptions`.
 - **Implemented in**: `src/extension.ts` (`mongoster.pasteNode`; the `moved` and `databaseGone` events of
-  `PasteEvents`); `src/collectionPanel.ts › moveCollectionState`; `src/shared/collectionColors.ts`,
-  `src/shared/exclusions.ts`; `src/paste.ts › dropMoved`
+  `PasteEvents`); `src/collectionPanel.ts › moveCollectionState`; `src/shared/paste.ts › colorsAfterMove`,
+  `› exclusionsAfterMove`; `src/paste.ts › dropMoved`
 - **Entry points**: `mongoster.pasteNode` (**Paste**) and `Ctrl+V` after `tree.cut`.
 - **Offered when**: as `transfer.paste`.
 - **Asks**: what `transfer.paste` asks, saying `Move` for `Paste`; the confirmation `Move <what> from <source
@@ -451,7 +452,10 @@ or name, leaving nothing where they were ([README › Copy, Cut and Paste in the
   other database on the same deployment, and moves the views'`, `› 'copies and drops between deployments, with the
   documents, the indexes and the options'`, `› 'replaces what exists with Drop and recreate, and leaves source and
   destination with Skip'`, `› 'appends to what exists by copying, then drops the source'`, `› 'keeps the source when
-  its copy is cancelled'`. The questions and what follows a move in Mongoster's own state: *none*.
+  its copy is cancelled'`. The questions: `test/integration/treeClipboard.test.ts` ›
+  `'Cut and Paste'` (its seven tests). What follows a move: `test/unit/moved.test.ts › 'the state of a moved
+  collection'`, `› 'the color and the exclusion of a moved collection'`; that `src/extension.ts` closes the tab and
+  calls them: *none*.
 
 Acceptance:
 

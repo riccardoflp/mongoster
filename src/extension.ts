@@ -16,6 +16,7 @@ import { UsersPanel } from './users';
 import { GridFSPanel, dropBucket, uploadFiles } from './gridfs';
 import { Copier } from './copy';
 import { TreeClipboard } from './paste';
+import { colorsAfterMove, exclusionsAfterMove } from './shared/paste';
 import { GenerateSource, Generator } from './generate';
 import { HistoryPanel, UndoHistory, historyLimits } from './history';
 import { Backups } from './backup';
@@ -100,20 +101,11 @@ export function activate(context: vscode.ExtensionContext): void {
     // As after a rename: the columns, queries, color and exclusion follow the collection, and its tab closes.
     moved: async (from, to) => {
       await moveCollectionState(context.globalState, from, to);
-      const [was, is] = [namespaceOf(from.database, from.collection), namespaceOf(to.database, to.collection)];
-      if (from.connectionId === to.connectionId) {
-        await changeCollectionColors(
-          from.connectionId,
-          (colors) => renameCollectionColor(colors, was, is),
-          (exclusions) => renameExclusion(exclusions, was, is),
-        );
-      } else {
-        await changeCollectionColors(
-          from.connectionId,
-          (colors) => dropCollectionColors(colors, from.database, from.collection),
-          (exclusions) => dropExclusions(exclusions, from.database, from.collection),
-        );
-      }
+      await changeCollectionColors(
+        from.connectionId,
+        (colors) => colorsAfterMove(colors, from, to),
+        (exclusions) => exclusionsAfterMove(exclusions, from, to),
+      );
       RelationsCache.invalidate(from.connectionId, from.database);
       RelationsCache.invalidate(to.connectionId, to.database);
       CollectionPanel.close((t) => sameCollection(t, from));
