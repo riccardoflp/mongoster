@@ -394,6 +394,10 @@ body.layout-islands #statusbar {
 }
 
 /* The row the keys move from: with several selected, only it has the outline. */
+.row.drop-target {
+  background: var(--vscode-list-dropBackground, var(--vscode-list-hoverBackground));
+}
+
 #tree:focus .row.focused {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;

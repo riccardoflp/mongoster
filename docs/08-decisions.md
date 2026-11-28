@@ -241,10 +241,11 @@ loop of a million of them, about a tenth of a second more). *Accepted by the mai
   [10-security.md](10-security.md).
 - **Q9** — Why the desktop app does not share connections with the extension (D13): separation on purpose, or not
   done yet?
-- **Q10** — Import, generated documents, copy, restore and the comparison's writes are not published to redis-oplog.
+- **Q10** — Import, generated documents, restore and the comparison's writes are not published to redis-oplog
+  (copying a collection and pasting in the tree are, since they were asked for).
   The README lists them as not published, but AGENTS.md's write steps and the promise of 01-product say every write
   to documents is. Is the README's list a choice (then R4.1 and AGENTS.md name the exceptions, and the **Differs**
-  of `oplog.publish`, `transfer.import`, `transfer.copy-collection`, `transfer.generate`, `backup.restore`,
+  of `oplog.publish`, `transfer.import`, `transfer.generate`, `backup.restore`,
   `compare.copy-document` and `compare.make-like` lose their redis-oplog part) or a gap to close?
 - **Q11** — `structure.apply` drops a collection with its documents after a modal with a button, while
   `manage.drop-collection` asks for the name to be typed. Should dropping through a structure comparison ask the same?

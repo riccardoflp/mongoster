@@ -224,6 +224,8 @@ export type ShellMessage =
   | { type: 'treeSelection'; handles: string[] }
   /** A key with Ctrl or Cmd pressed in the tree (`ctrl+c`): a key binding of package.json may answer it. */
   | { type: 'treeKey'; key: string }
+  /** Rows dragged onto another row, or (`target` undefined) onto the empty part of the tree. */
+  | { type: 'treeDrop'; handles: string[]; target?: string }
   | { type: 'viewTitleMore' }
   | { type: 'execute'; command: string; handle?: string; handles?: string[] }
   | { type: 'panelClosed'; id: number }

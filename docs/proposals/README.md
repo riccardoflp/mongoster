@@ -47,3 +47,4 @@ What gets harder, what breaks, the files that need reading in their old form (11
 | [0003](0003-formatting-by-field-scopes-and-pane.md) | Formatting by a field's values, rules beyond one collection, the Formatting pane | accepted (D21) |
 | [0004](0004-collation-and-hint.md) | Collation and hint in Find | accepted (D22) |
 | [0005](0005-playground-rewriter-on-babel.md) | The playground's rewriter on Babel, and functions that wait by themselves | accepted (D23) |
+| [0006](0006-masking-copied-data.md) | Masking personal data in a copy | draft |

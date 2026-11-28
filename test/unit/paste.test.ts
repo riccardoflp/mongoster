@@ -24,10 +24,26 @@ describe('what Copy takes from the tree', () => {
     });
   });
 
+  it('takes a bucket as its two collections, once, also when one of them is selected with it', () => {
+    const bucket: CopiedNode = { kind: 'bucket', connectionId: 'a', database: 'shop', bucket: 'photos' };
+    expect(clipboardOf([collection('a', 'shop', 'photos.files'), bucket, collection('a', 'shop', 'orders')])).toEqual({
+      kind: 'collection',
+      connectionId: 'a',
+      database: 'shop',
+      collections: [
+        { name: 'photos.files', isView: false, bucket: 'photos' },
+        { name: 'photos.chunks', isView: false, bucket: 'photos' },
+        { name: 'orders', isView: false },
+      ],
+    });
+    // Alone, a bucket's collection is a collection like any other.
+    expect(clipboardOf([collection('a', 'shop', 'photos.files')])).toMatchObject({ collections: [{ name: 'photos.files', isView: false }] });
+  });
+
   it('refuses nothing, mixed kinds, other nodes, and databases or collections from different places', () => {
     expect(clipboardOf([])).toBe('Select a connection, a database or a collection to copy it.');
     expect(clipboardOf([connection('a'), database('a', 'shop')])).toBe('Copy only connections, only databases or only collections at a time.');
-    expect(clipboardOf([connection('a'), { kind: 'other' }])).toBe('Only connections, databases, collections and views can be copied.');
+    expect(clipboardOf([connection('a'), { kind: 'other' }])).toBe('Only connections, databases, collections, views and buckets can be copied.');
     expect(clipboardOf([database('a', 'shop'), database('b', 'shop')])).toBe('Copy the databases of one connection at a time.');
     expect(clipboardOf([collection('a', 'shop', 'orders'), collection('a', 'crm', 'people')])).toBe('Copy the collections of one database at a time.');
   });
@@ -73,6 +89,18 @@ describe('where pasted collections go', () => {
       ['recent_copy', undefined],
       ['people_copy', undefined],
     ]);
+  });
+
+  it('copies a bucket in the same database as another bucket, its two collections together', () => {
+    const bucket = [
+      { name: 'photos.files', isView: false, bucket: 'photos' },
+      { name: 'photos.chunks', isView: false, bucket: 'photos' },
+    ];
+    const names = (existing: string[]) => planPaste(bucket, new Map(existing.map((n) => [n, 'collection' as ExistingKind])), true).map((i) => i.target);
+    expect(names(['photos.files', 'photos.chunks'])).toEqual(['photos_copy.files', 'photos_copy.chunks']);
+    // A name is taken when either collection of that bucket is there.
+    expect(names(['photos.files', 'photos.chunks', 'photos_copy.chunks'])).toEqual(['photos_copy2.files', 'photos_copy2.chunks']);
+    expect(planPaste(bucket, new Map(), false).map((i) => i.target)).toEqual(['photos.files', 'photos.chunks']);
   });
 
   it('creates what is new, and treats what exists by the mode chosen', () => {

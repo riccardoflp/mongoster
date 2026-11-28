@@ -1,6 +1,6 @@
 # The catalog of features
 
-Every feature, one card each, 171 in all. The template and the rules of the cards are in the
+Every feature, one card each, 175 in all. The template and the rules of the cards are in the
 feature contract. This index is written by `catalog.py --index`: change a status here in the commit that
 earns it, and run the script again after adding or renaming a card; the statuses are kept. A card with a
 **Differs** line is *Differs*; when the line goes, it becomes *Documented*.
@@ -8,14 +8,14 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | File | Area | Cards |
 | --- | --- | --- |
 | [01-connections.md](01-connections.md) | Connections | 30 |
-| [02-tree.md](02-tree.md) | The connections view | 10 |
+| [02-tree.md](02-tree.md) | The connections view | 12 |
 | [03-collection-tab.md](03-collection-tab.md) | The collection tab | 11 |
 | [04-documents.md](04-documents.md) | Writing documents | 15 |
 | [05-field-actions.md](05-field-actions.md) | Actions on a column | 10 |
-| [06-databases.md](06-databases.md) | Databases and collections | 9 |
+| [06-databases.md](06-databases.md) | Databases and collections | 10 |
 | [07-undo.md](07-undo.md) | Undo history | 16 |
 | [08-redis-oplog.md](08-redis-oplog.md) | redis-oplog | 7 |
-| [09-transfer.md](09-transfer.md) | Transfer | 9 |
+| [09-transfer.md](09-transfer.md) | Transfer | 10 |
 | [10-backup.md](10-backup.md) | Backup | 5 |
 | [11-scheduled-tasks.md](11-scheduled-tasks.md) | Scheduled tasks | 13 |
 | [12-mcp.md](12-mcp.md) | The MCP server | 16 |
@@ -73,6 +73,8 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | [`tree.type-ahead`](02-tree.md#treetype-ahead--move-to-a-node-by-typing-its-first-letters) | Move to a node by typing its first letters | Derivation | Specified |
 | [`tree.copy`](02-tree.md#treecopy--copy-connections-databases-or-collections) | Copy connections, databases or collections | Operation | Specified |
 | [`tree.paste-plan`](02-tree.md#treepaste-plan--what-a-paste-does-with-each-collection) | What a paste does with each collection | Derivation | Specified |
+| [`tree.cut`](02-tree.md#treecut--cut-connections-databases-or-collections) | Cut connections, databases or collections | Operation | Specified |
+| [`tree.drag`](02-tree.md#treedrag--drag-nodes-of-the-tree-onto-another) | Drag nodes of the tree onto another | Operation | Specified |
 
 ## The collection tab
 
@@ -132,6 +134,7 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | [`manage.create-database`](06-databases.md#managecreate-database--create-a-database) | Create a database | Operation | Documented |
 | [`manage.create-collection`](06-databases.md#managecreate-collection--create-a-collection) | Create a collection | Operation | Documented |
 | [`manage.rename-collection`](06-databases.md#managerename-collection--rename-a-collection) | Rename a collection | Operation | Documented |
+| [`manage.rename-database`](06-databases.md#managerename-database--rename-a-database) | Rename a database | Operation | Differs |
 | [`manage.drop-collection`](06-databases.md#managedrop-collection--drop-a-collection-or-a-view) | Drop a collection or a view | Operation | Documented |
 | [`manage.drop-database`](06-databases.md#managedrop-database--drop-a-database) | Drop a database | Operation | Documented |
 | [`manage.name-rules`](06-databases.md#managename-rules--valid-names-of-databases-and-collections) | Valid names of databases and collections | Derivation | Documented |
@@ -182,7 +185,8 @@ earns it, and run the script again after adding or renaming a card; the statuses
 | [`transfer.import-files`](09-transfer.md#transferimport-files--what-an-import-file-holds) | What an import file holds | Derivation | Documented |
 | [`transfer.csv-read`](09-transfer.md#transfercsv-read--csv-rows-as-documents) | CSV rows as documents | Derivation | Documented |
 | [`transfer.copy-collection`](09-transfer.md#transfercopy-collection--copy-a-collection-to-another-database-or-connection) | Copy a collection to another database or connection | Operation | Differs |
-| [`transfer.paste`](09-transfer.md#transferpaste--paste-a-database-collections-or-views) | Paste a database, collections or views | Operation | Differs |
+| [`transfer.paste`](09-transfer.md#transferpaste--paste-a-database-collections-or-views) | Paste a database, collections or views | Operation | Documented |
+| [`transfer.move`](09-transfer.md#transfermove--move-a-database-collections-or-views) | Move a database, collections or views | Operation | Specified |
 | [`transfer.generate`](09-transfer.md#transfergenerate--generate-test-documents) | Generate test documents | Operation | Differs |
 | [`transfer.generate-values`](09-transfer.md#transfergenerate-values--fake-documents-from-a-schema-analysis) | Fake documents from a schema analysis | Derivation | Documented |
 

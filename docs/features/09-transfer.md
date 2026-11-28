@@ -277,7 +277,9 @@ any database on any connection, for example from production to a local server
   `Dropping the destination can't be undone.` Not recorded beyond `mongoster.history.maxDocumentsPerOperation`
   documents, which the confirmation says, or beyond the operation's size, which the result says: `It can't be undone:
   <reason>, too many for the undo history`.
-- **redis-oplog**: Not published (differs).
+- **redis-oplog**: Published (`oplog.publish`) on the destination, batch by batch: an insert for each document
+  written, and for Replace matching an update of the fields of each document replaced. Dropping the destination
+  publishes nothing.
 - **After**: `mongoster.refresh` refreshes the tree. `Copied <n> documents[ and <k> indexes] to <destination> in <s>
   s.`, followed by `<k> skipped (their _id already existed)`, `<f> failed: <first error>`, `Index not created —
   <name>: <error>` when they apply (then as a warning); buttons `Open` (the copy's tab) and `Undo` when recorded.
@@ -285,11 +287,11 @@ any database on any connection, for example from production to a local server
   error; an error while copying: `Copy failed: <error>`.
 - **Settings**: `mongoster.history.enabled`, `mongoster.history.maxDocumentsPerOperation`,
   `mongoster.history.maxOperationSizeMB`.
-- **Uses**: `undo.record`, `undo.limits`, `connection.read-only`.
-- **Tested by**: *none*.
-- **Differs**: no `RedisOplog.sink(…)` is called in `src/copy.ts`, so Meteor apps don't see the copied documents (the
-  README lists copy among the writes not published). An open tab of the destination collection is not refreshed: only
-  the tree is (`src/copy.ts:364`), against step 5 of the write pipeline.
+- **Uses**: `undo.record`, `undo.limits`, `oplog.publish`, `connection.read-only`.
+- **Tested by**: `test/integration/paste.test.ts › 'the events for redis-oplog' › 'leave out the documents skipped by
+  Append, and say which fields Replace matching wrote'` (the events of `copyCollection`). The wizard: *none*.
+- **Differs**: an open tab of the destination collection is not refreshed: only the tree is (`Copier.start` in
+  `src/copy.ts`), against step 5 of the write pipeline.
 
 Acceptance:
 
@@ -308,13 +310,14 @@ Acceptance:
 - [ ] Choosing a read-only destination connection shows `The connection <name> is read-only: it can't receive a copy.`
   and asks nothing more.
 - [ ] A view is copied as a collection with its documents, without indexes or options being offered.
-- [ ] The copied documents are published to redis-oplog on a destination that publishes (differs).
+- [ ] The copied documents are published to redis-oplog on a destination that publishes: `{ e: 'i' }` for each one
+  inserted, `{ e: 'u' }` with its fields for each one replaced, nothing for those skipped or failed.
 - [ ] An open tab of the destination collection shows the copied documents (differs).
 
 ### `transfer.paste` — Paste a database, collections or views
 
-Copies what the tree clipboard holds to where it is pasted: a database to a connection, collections and views to a
-database, whole and several at once ([README › Copy and Paste in the tree](../../README.md#features)).
+Copies what the tree clipboard holds to where it is pasted: a database to a connection, collections, views and
+GridFS buckets to a database, whole and several at once; `transfer.move` is the Paste of what was cut ([README › Copy and Paste in the tree](../../README.md#features)).
 
 - **Kind**: Operation
 - **Function**: `src/paste.ts › TreeClipboard.paste`, which asks and confirms (`pasteInto`), then `src/copy.ts ›
@@ -326,7 +329,7 @@ database, whole and several at once ([README › Copy and Paste in the tree](../
   macOS) with the focus in the connections view, on the first selected node. Hidden from the Command Palette (`when:
   false`).
 - **Offered when**: with databases copied, `viewItem =~ /^(connection|database)(?!.*readonly)/`; with collections
-  copied, `viewItem =~ /^(connection|database|collection|view)(?!.*readonly)/`.
+  copied, `viewItem =~ /^(connection|database|collection|view|bucket)(?!.*readonly)/`.
 - **Asks**:
   1. for each copied database, an input box `Paste the database <database> on <connection>`, `Name of the copy (an
      existing database receives the collections)`: `<database>` when the connection has none of that name, otherwise
@@ -357,7 +360,8 @@ database, whole and several at once ([README › Copy and Paste in the tree](../
   <database>.<collection>` on the destination, as `transfer.copy-collection` records Append and Replace matching; a new
   collection is emptied by its undo, not dropped. Not recorded for a dropped collection, which the confirmation says,
   nor for a view.
-- **redis-oplog**: Not published (differs).
+- **redis-oplog**: Published (`oplog.publish`) on each destination collection, as `transfer.copy-collection`. A view
+  and a dropped collection publish nothing.
 - **After**: `mongoster.refresh` refreshes the tree and the open tabs of the destination collections are refreshed.
   `Pasted <n> collection[s] (<d> document[s])[ and <k> view[s]] into <connection> › <database> in <s> s.`, followed by
   `<name> failed: <error>`, `<k> documents skipped (their _id already existed)`, `<f> documents failed: <first
@@ -374,16 +378,15 @@ database, whole and several at once ([README › Copy and Paste in the tree](../
 - **Settings**: `mongoster.history.enabled`, `mongoster.history.maxDocumentsPerOperation`,
   `mongoster.history.maxOperationSizeMB`.
 - **Uses**: `tree.copy`, `tree.paste-plan`, `transfer.copy-collection`, `manage.name-rules`, `undo.record`,
-  `undo.limits`, `connection.read-only`.
+  `undo.limits`, `oplog.publish`, `connection.read-only`.
 - **Tested by**: `test/integration/paste.test.ts › 'pasting a database' › 'lists its collections and views, without
   the system ones'`, `› 'copies the collections with documents, indexes and options, then the views as views'`; `›
   'pasting collections' › 'gives _copy names in the same database, views included'`, `› 'when the destination has
   them' › 'skips them and pastes the others'`, `› 'appends the documents whose _id is missing, leaving an existing
   view'`, `› 'replaces the documents with the same _id'`, `› 'drops and recreates collections and views'`, `› 'goes on
-  after a collection that fails, and reports it'`, `› 'stops after the batch being written when it is cancelled'`.
+  after a collection that fails, and reports it'`, `› 'stops after the batch being written when it is cancelled'`; `› 'the events for redis-oplog' › 'are an insert for
+  each document pasted, and none for a view'`.
   The questions, the confirmation and the undo history: *none*.
-- **Differs**: no `RedisOplog.sink(…)` is called, as in `transfer.copy-collection`: Meteor apps don't see the pasted
-  documents (the README says so).
 
 Acceptance:
 
@@ -398,7 +401,68 @@ Acceptance:
 - [ ] A collection that fails is named with its error and the ones after it are pasted.
 - [ ] `Cancel` stops after the current batch; the collections already pasted stay, and the views are not created.
 - [ ] `Paste` is not offered on a read-only connection, and `Ctrl+V` on one says it is read-only.
-- [ ] The pasted documents are published to redis-oplog on a destination that publishes (differs).
+- [ ] The pasted documents are published to redis-oplog on a destination that publishes, one insert each.
+- [ ] A bucket `photos` pasted in its own database is the bucket `photos_copy`, whose files open and download.
+
+### `transfer.move` — Move a database, collections or views
+
+Pasting what was cut moves it: collections, views and buckets to another database, a database to another connection
+or name, leaving nothing where they were ([README › Copy, Cut and Paste in the tree](../../README.md#features)).
+
+- **Kind**: Operation
+- **Function**: `src/paste.ts › TreeClipboard.paste` (`put` and `pasteInto` with a move), then `src/copy.ts ›
+  pasteCollections` with `MoveOptions`.
+- **Implemented in**: `src/extension.ts` (`mongoster.pasteNode`; the `moved` and `databaseGone` events of
+  `PasteEvents`); `src/collectionPanel.ts › moveCollectionState`; `src/shared/collectionColors.ts`,
+  `src/shared/exclusions.ts`; `src/paste.ts › dropMoved`
+- **Entry points**: `mongoster.pasteNode` (**Paste**) and `Ctrl+V` after `tree.cut`.
+- **Offered when**: as `transfer.paste`.
+- **Asks**: what `transfer.paste` asks, saying `Move` for `Paste`; the confirmation `Move <what> from <source
+  connection> into <connection> › <database>?` adds `The server moves each collection whole; one it cannot move is
+  copied, then dropped.` on the same connection or `Each one is copied, then dropped from <connection> › <database>.`
+  on another, and `Open tabs of what is moved are closed. A move can't be undone from the Undo History.`; button
+  `Move`.
+- **Reads**: what `transfer.paste` reads.
+- **Writes**: on the same connection, for a collection that is new in the destination or replaces a dropped one:
+  `renameCollection: '<from>.<name>', to: '<to>.<name>', dropTarget` on `admin`, which takes the indexes and options
+  along. A collection the server refuses to rename (a time series, a lack of rights), one appended or replaced into
+  an existing collection, and every collection moved to another connection: what `transfer.paste` writes, then
+  `drop()` of the source. A view: created in the destination, then dropped from the source. A moved database that is
+  left without collections: `dropDatabase()`.
+- **Danger**: Confirm: the modal above. Destructive: the sources are dropped, and with Drop and recreate what exists
+  under their names too.
+- **Read-only**: Refused when either connection is read-only: `… is read-only: nothing can be moved to it.`, `… is
+  read-only: nothing can be moved from it.`
+- **Undo**: Cannot be undone, and the confirmation says so: undoing the copy of a move would delete the only
+  documents left. Moving it back undoes it.
+- **redis-oplog**: Published (`oplog.publish`) for a collection that is copied; not published for one the server
+  renames, as `manage.rename-collection`.
+- **After**: for each one moved, its column layout, expanded fields, recent and saved queries and its own formatting
+  rules go under the new place; its color and its exclusion follow on the same connection and are forgotten on the
+  old one otherwise; its open tab is closed. A dropped database loses its color, its exclusions and its GridFS tabs.
+  The tree is refreshed. `Moved <n> collection[s] (<d> document[s])[ and <k> view[s]] into <connection> › <database>
+  in <s> s.`, with the lines of `transfer.paste` and `<name> stays in <connection> › <database>: <why>` for a source
+  that was kept; button `Open` for a single one.
+- **Refuses**: what `transfer.paste` refuses; the same database on the same connection: `<name> is already in
+  <connection> › <database>.`; a database of the server: `The database <admin|local|config> is the server's own: it
+  can't be moved.`
+- **Uses**: `tree.cut`, `tree.paste-plan`, `transfer.paste`, `oplog.publish`, `connection.read-only`.
+- **Tested by**: `test/integration/paste.test.ts › 'moving instead of copying' › 'renames the collections into the
+  other database on the same deployment, and moves the views'`, `› 'copies and drops between deployments, with the
+  documents, the indexes and the options'`, `› 'replaces what exists with Drop and recreate, and leaves source and
+  destination with Skip'`, `› 'appends to what exists by copying, then drops the source'`, `› 'keeps the source when
+  its copy is cancelled'`. The questions and what follows a move in Mongoster's own state: *none*.
+
+Acceptance:
+
+- [ ] `people` of `shop` cut and pasted on `crm` of the same connection is in `crm` with its indexes, and no longer in
+  `shop`; its documents are not copied (`renameCollection`), so no progress of documents is shown.
+- [ ] Moved to another connection, a collection is copied whole, then dropped; if the copy is cancelled or a document
+  fails, it stays where it was and the result says why.
+- [ ] With **Skip**, a collection that exists in the destination stays in both places.
+- [ ] A moved view reads from the collection of the same name in the destination database.
+- [ ] The saved queries and the column layout of a moved collection are there when its new tab opens.
+- [ ] A database moved whole is no longer listed on its old connection.
 
 ### `transfer.generate` — Generate test documents
 

@@ -51,8 +51,8 @@ Meteor app reads those documents again.
   events of an `OplogSink`, with its queue replaced). The sending, the Redis connection and the order: *none*.
 - **Differs**: some writes to documents made from the UI are not published (no `RedisOplog.sink`), which the README
   lists as not published but `AGENTS.md` and the product's promise ("Writes to documents reach redis-oplog") don't
-  allow: importing documents (`transfer.import`), generated documents (`transfer.generate`), copying a collection
-  (`transfer.copy-collection`), restoring a backup (`backup.restore`), and the writes of the compare tab
+  allow: importing documents (`transfer.import`), generated documents (`transfer.generate`), restoring a backup
+  (`backup.restore`), and the writes of the compare tab
   (`compare.copy-document`, `compare.make-like`). A Meteor app doesn't see them until it reads the documents again.
 
 Acceptance:
@@ -60,7 +60,8 @@ Acceptance:
 - [ ] These writes are published, on a connection that publishes and a collection in its scope: `document.inline-edit`,
   `document.edit-in-editor`, `document.insert`, `document.insert-in-editor`, `document.delete`,
   `document.delete-selected`, `document.update-many`, `document.delete-many`, `document.restore-version`,
-  `field.rename`, `field.remove`, `field.convert-type`, `undo.revert`, and the playground's writes
+  `field.rename`, `field.remove`, `field.convert-type`, `undo.revert`, `transfer.copy-collection`, `transfer.paste`,
+  and the playground's writes
   (`oplog.playground-writes`).
 - [ ] An edit of `qty` in the document `"abc"` of `shop.orders`, with the prefix `app:` and the namespace `tenant1`,
   publishes `{"e":"u","d":{"_id":"abc"},"f":["qty"]}` on `app:orders`, `app:tenant1::orders` and `app:orders::abc`.

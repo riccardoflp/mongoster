@@ -360,6 +360,17 @@
         "icon": "$(clippy)"
       },
       {
+        "command": "mongoster.cutNode",
+        "title": "Cut",
+        "category": "Mongoster"
+      },
+      {
+        "command": "mongoster.renameDatabase",
+        "title": "Rename Database…",
+        "category": "Mongoster",
+        "icon": "$(edit)"
+      },
+      {
         "command": "mongoster.watchChanges",
         "title": "Watch Changes",
         "category": "Mongoster",
@@ -773,8 +784,18 @@
           "group": "2_transfer@3"
         },
         {
+          "command": "mongoster.cutNode",
+          "when": "view == mongoster.connections && viewItem =~ /^connection/",
+          "group": "0_clipboard@0"
+        },
+        {
+          "command": "mongoster.cutNode",
+          "when": "view == mongoster.connections && viewItem =~ /^(database|collection|view|bucket)(?!.*readonly)/",
+          "group": "0_clipboard@0"
+        },
+        {
           "command": "mongoster.copyNode",
-          "when": "view == mongoster.connections && viewItem =~ /^(connection|database|collection|view)/",
+          "when": "view == mongoster.connections && viewItem =~ /^(connection|database|collection|view|bucket)/",
           "group": "0_clipboard@1"
         },
         {
@@ -789,8 +810,13 @@
         },
         {
           "command": "mongoster.pasteNode",
-          "when": "view == mongoster.connections && mongoster.clipboard == collection && viewItem =~ /^(connection|database|collection|view)(?!.*readonly)/",
+          "when": "view == mongoster.connections && mongoster.clipboard == collection && viewItem =~ /^(connection|database|collection|view|bucket)(?!.*readonly)/",
           "group": "0_clipboard@2"
+        },
+        {
+          "command": "mongoster.renameDatabase",
+          "when": "view == mongoster.connections && viewItem =~ /^database(\\.excluded)?$/",
+          "group": "3_manage@1"
         },
         {
           "command": "mongoster.compareCollection",
@@ -1021,6 +1047,14 @@
           "when": "false"
         },
         {
+          "command": "mongoster.cutNode",
+          "when": "false"
+        },
+        {
+          "command": "mongoster.renameDatabase",
+          "when": "false"
+        },
+        {
           "command": "mongoster.compareCollection",
           "when": "false"
         },
@@ -1093,6 +1127,12 @@
         "command": "mongoster.copyNode",
         "key": "ctrl+c",
         "mac": "cmd+c",
+        "when": "focusedView == mongoster.connections"
+      },
+      {
+        "command": "mongoster.cutNode",
+        "key": "ctrl+x",
+        "mac": "cmd+x",
         "when": "focusedView == mongoster.connections"
       },
       {

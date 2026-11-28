@@ -123,6 +123,57 @@ Acceptance:
   the other tabs on the collection (watch, compare, document history).
 - [ ] A view can't be renamed: the entry isn't in its menu.
 
+### `manage.rename-database` — Rename a database
+
+Gives a database another name. MongoDB has no such command: its collections and views are moved to a new database
+and the old one is dropped ([README › Managing databases and collections](../../README.md#features)).
+
+- **Kind**: Operation
+- **Function**: `src/paste.ts › TreeClipboard.renameDatabase`, which asks, then moves as `transfer.move` on the same
+  connection and drops the emptied database (`dropMoved`).
+- **Implemented in**: `src/extension.ts` (`mongoster.renameDatabase`); `src/copy.ts` (`pasteSources`,
+  `pasteCollections`); `src/manage.ts › databaseNameError`
+- **Entry points**: `mongoster.renameDatabase` **Rename Database…** in a database's context menu, group `3_manage`.
+  Hidden from the Command Palette (`when: false`); without a tree node it does nothing.
+- **Offered when**: `viewItem =~ /^database(\.excluded)?$/`: not on a read-only connection.
+- **Asks**: an input box `Rename the database <database>`, `New name`, with the current name; refused: an invalid
+  name (`manage.name-rules`), `Enter another name`, `This database already exists`. Then the modal `Rename the
+  database <database> of <connection> to <name>?` with the names moved, the counts of `transfer.paste`, `MongoDB can't
+  rename a database: its collections are moved to the new database <name>, then <database> is dropped.` and the two
+  lines of `transfer.move`; button `Rename`.
+- **Reads**: `listDatabases`; `listCollections` of the database, without the `system.` ones;
+  `estimatedDocumentCount()` of each collection.
+- **Writes**: what `transfer.move` writes on the same connection: `renameCollection` across databases for each
+  collection (copy and drop for one the server refuses), each view created in the new database and dropped from the
+  old, then `dropDatabase()` of the old one when nothing but `system.` collections is left in it.
+- **Danger**: Confirm: the modal above. Destructive only for what fails halfway: the database is then in two parts,
+  and the result names what stayed.
+- **Read-only**: Refused on a read-only connection: `The connection <name> is read-only: the database <database>
+  can't be renamed.`
+- **Undo**: Cannot be undone, and the confirmation says so; renaming it back undoes it.
+- **redis-oplog**: Not published: no document is written, as `manage.rename-collection`.
+- **After**: what `transfer.move` does for each collection, and for the dropped database. `Renamed the database
+  <database> to <name>: moved <n> collection[s] (<d> document[s])[ and <k> view[s]] in <s> s.`
+- **Refuses**: `admin`, `local` and `config`: `The database <name> is the server's own: it can't be renamed.`; a
+  database without collections: `The database <database> has no collections: there is nothing to rename.`; a
+  connection that cannot be reached: `Could not connect to <name>: <error>`.
+- **Uses**: `transfer.move`, `tree.paste-plan`, `manage.name-rules`, `connection.read-only`.
+- **Tested by**: `test/integration/paste.test.ts › 'moving instead of copying' › 'renames the collections into the
+  other database on the same deployment, and moves the views'` (the move); the command and the drop of the old
+  database: *none*.
+- **Differs**: the database's own color, its exclusion from searches and its formatting rules are forgotten with the
+  old name instead of following the new one, unlike a renamed collection's.
+
+Acceptance:
+
+- [ ] `shop` renamed to `store`: `store` has every collection of `shop` with its documents, indexes and options, and
+  every view; `shop` is no longer listed.
+- [ ] The documents are not copied: each collection is moved by `renameCollection`.
+- [ ] A name that exists on the connection is refused in the input box.
+- [ ] The open tabs of `shop`'s collections are closed; opened again from `store`, they have their columns and saved
+  queries.
+- [ ] (differs) The color given to `shop` is on `store`.
+
 ### `manage.drop-collection` — Drop a collection or a view
 
 Drops a collection, with its documents and indexes, after the user types its name; or drops a view after a

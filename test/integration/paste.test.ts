@@ -1,8 +1,10 @@
 // Pasting collections and views against the standalone mongod: whole collections with their indexes and options,
-// views as views, what exists in the destination by the mode chosen, and cancelling.
+// views as views, what exists in the destination by the mode chosen, cancelling, moving instead of copying, and the
+// events for redis-oplog.
 import { Int32, Long, MongoClient } from 'mongodb';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
-import { PasteHooks, existingNames, pasteCollections, pasteSources } from '../../src/copy';
+import { MoveOptions, PasteHooks, existingNames, pasteCollections, pasteSources } from '../../src/copy';
+import { OplogEvent, meteorId } from '../../src/shared/oplog';
 import { ExistingMode, planPaste } from '../../src/shared/paste';
 
 const FROM = 'mongoster_paste_from';
@@ -38,10 +40,11 @@ const hooks = (cancelled: () => boolean = () => false): PasteHooks & { started: 
   return { started, starting: (item) => started.push(item.target), progress: () => undefined, cancelled };
 };
 
-async function paste(to: string, mode: ExistingMode, sources?: { name: string; isView: boolean }[], h = hooks(), batchSize?: number) {
+async function paste(to: string, mode: ExistingMode, sources?: { name: string; isView: boolean }[], h = hooks(), batchSize?: number, move?: MoveOptions) {
   const items = planPaste(sources ?? (await pasteSources(client, FROM)), await existingNames(client, to), to === FROM);
-  return { ...(await pasteCollections(client, FROM, client, to, items, mode, h, batchSize)), started: h.started };
+  return { ...(await pasteCollections(client, FROM, client, to, items, mode, h, batchSize, move)), started: h.started };
 }
+const names = async (database: string) => [...(await existingNames(client, database))].filter(([name]) => !name.startsWith('system.')).sort();
 
 describe('pasting a database', () => {
   it('lists its collections and views, without the system ones', async () => {
@@ -158,5 +161,110 @@ describe('pasting collections', () => {
     expect(run.started).toEqual(['orders']);
     expect(await client.db(TO).collection('orders').countDocuments()).toBe(2);
     expect(await existingNames(client, TO)).toEqual(new Map([['orders', 'collection']]));
+  });
+});
+
+describe('moving instead of copying', () => {
+  it('renames the collections into the other database on the same deployment, and moves the views', async () => {
+    const run = await paste(TO, 'skip', undefined, hooks(), undefined, { sameDeployment: true });
+    expect(run.outcomes.map((o) => [o.item.target, o.moved, o.error])).toEqual([
+      ['orders', 'renamed', undefined],
+      ['people', 'renamed', undefined],
+      ['open', 'copied', undefined],
+    ]);
+    expect(await names(FROM)).toEqual([]);
+    expect(await names(TO)).toEqual([
+      ['open', 'view'],
+      ['orders', 'collection'],
+      ['people', 'collection'],
+    ]);
+    // Renamed whole: the index and the validation rules came along.
+    const to = client.db(TO);
+    expect((await to.collection('orders').listIndexes().toArray()).map((i) => i.name)).toEqual(['_id_', 'byStatus']);
+    expect((await to.listCollections({ name: 'orders' }, { nameOnly: false }).toArray())[0].options).toHaveProperty('validator');
+    expect(await to.collection('open').countDocuments()).toBe(2);
+  });
+
+  it('copies and drops between deployments, with the documents, the indexes and the options', async () => {
+    const run = await paste(TO, 'skip', [{ name: 'orders', isView: false }], hooks(), undefined, { sameDeployment: false });
+    expect(run.outcomes.map((o) => [o.moved, o.result?.copied])).toEqual([['copied', 3]]);
+    expect(await names(FROM)).toEqual([
+      ['open', 'view'],
+      ['people', 'collection'],
+    ]);
+    expect((await client.db(TO).collection('orders').listIndexes().toArray()).map((i) => i.name)).toEqual(['_id_', 'byStatus']);
+  });
+
+  it('replaces what exists with Drop and recreate, and leaves source and destination with Skip', async () => {
+    await client.db(TO).collection('orders').insertOne({ _id: 9 as never, status: 'kept' });
+    const skipped = await paste(TO, 'skip', [{ name: 'orders', isView: false }], hooks(), undefined, { sameDeployment: true });
+    expect(skipped.outcomes.map((o) => [o.action, o.moved])).toEqual([['skip', undefined]]);
+    expect(await client.db(FROM).collection('orders').countDocuments()).toBe(3);
+
+    const dropped = await paste(TO, 'drop', [{ name: 'orders', isView: false }], hooks(), undefined, { sameDeployment: true });
+    expect(dropped.outcomes.map((o) => [o.action, o.moved])).toEqual([['drop', 'renamed']]);
+    expect((await client.db(TO).collection('orders').find().toArray()).map((d) => d._id)).toEqual([1, 2, 3]);
+    expect(await names(FROM)).toEqual([
+      ['open', 'view'],
+      ['people', 'collection'],
+    ]);
+  });
+
+  it('appends to what exists by copying, then drops the source', async () => {
+    await client.db(TO).collection('orders').insertOne({ _id: 2 as never, status: 'old' });
+    const run = await paste(TO, 'append', [{ name: 'orders', isView: false }], hooks(), undefined, { sameDeployment: true });
+    expect(run.outcomes[0]).toMatchObject({ action: 'append', moved: 'copied', result: { copied: 2, skipped: 1 } });
+    expect((await names(FROM)).map(([name]) => name)).not.toContain('orders');
+  });
+
+  it('keeps the source when its copy is cancelled', async () => {
+    let cancel = false;
+    const h = hooks(() => cancel);
+    h.progress = () => (cancel = true);
+    const run = await paste(TO, 'skip', [{ name: 'orders', isView: false }], h, 2, { sameDeployment: false });
+    expect(run.cancelled).toBe(true);
+    expect(run.outcomes[0]).toMatchObject({ kept: 'its copy was cancelled' });
+    expect(await client.db(FROM).collection('orders').countDocuments()).toBe(3);
+  });
+});
+
+describe('the events for redis-oplog', () => {
+  const published = () => {
+    const events: Record<string, OplogEvent[]> = {};
+    const h = hooks();
+    // The ids are read with their BSON types (an Int32 stays one): as Meteor reads them, they are the numbers.
+    h.published = (item, batch) => (events[item.target] = [...(events[item.target] ?? []), ...batch.map((e) => ({ ...e, id: meteorId(e.id) }))]);
+    return { h, events };
+  };
+
+  it('are an insert for each document pasted, and none for a view', async () => {
+    const { h, events } = published();
+    await paste(TO, 'skip', undefined, h);
+    expect(events).toEqual({
+      orders: [1, 2, 3].map((id) => ({ e: 'i', id })),
+      people: [{ e: 'i', id: 'a' }],
+    });
+  });
+
+  it('leave out the documents skipped by Append, and say which fields Replace matching wrote', async () => {
+    const seed = () =>
+      client
+        .db(TO)
+        .collection('orders')
+        .insertOne({ _id: 2 as never, status: 'old' });
+    await seed();
+    const appended = published();
+    await paste(TO, 'append', [{ name: 'orders', isView: false }], appended.h);
+    expect(appended.events.orders).toEqual([1, 3].map((id) => ({ e: 'i', id })));
+
+    await client.db(TO).collection('orders').drop();
+    await seed();
+    const replaced = published();
+    await paste(TO, 'upsert', [{ name: 'orders', isView: false }], replaced.h);
+    expect(replaced.events.orders).toEqual([
+      { e: 'i', id: 1 },
+      { e: 'u', id: 2, fields: ['status', 'total'] },
+      { e: 'i', id: 3 },
+    ]);
   });
 });

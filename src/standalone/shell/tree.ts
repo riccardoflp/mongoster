@@ -139,6 +139,7 @@ function row(node: Node): HTMLElement {
     role: 'treeitem',
     title: data.tooltip,
     'data-handle': data.handle,
+    draggable: 'true',
     'aria-level': node.depth + 1,
     'aria-selected': selection.has(data.handle),
     'aria-expanded': data.collapsible === 0 ? undefined : String(open),
@@ -291,6 +292,45 @@ export function initTree(): void {
     else select(node.data.handle);
     render();
     host.send({ type: 'treeContext', handle: node.data.handle, handles: selectedWith(node.data.handle) });
+  });
+  // Dragging rows onto another: the host decides what that does. The row dragged goes with the selection it is part of.
+  let draggedRows: string[] = [];
+  let over: HTMLElement | undefined;
+  const mark = (el: HTMLElement | undefined) => {
+    if (over === el) return;
+    over?.classList.remove('drop-target');
+    over = el;
+    over?.classList.add('drop-target');
+  };
+  list.addEventListener('dragstart', (e) => {
+    const node = nodeOf(e.target);
+    if (!node || !e.dataTransfer) return;
+    draggedRows = selectedWith(node.data.handle) ?? [node.data.handle];
+    e.dataTransfer.effectAllowed = 'copyMove';
+    e.dataTransfer.setData('text/plain', draggedRows.map((h) => findNode(h)?.data.label ?? '').join('\n'));
+  });
+  list.addEventListener('dragover', (e) => {
+    if (!draggedRows.length) return;
+    const row = (e.target as Element | null)?.closest<HTMLElement>('.row') ?? undefined;
+    if (row && draggedRows.includes(row.dataset.handle ?? '')) return mark(undefined);
+    e.preventDefault();
+    mark(row);
+  });
+  list.addEventListener('dragleave', (e) => {
+    if (!list.contains(e.relatedTarget as Element | null)) mark(undefined);
+  });
+  list.addEventListener('drop', (e) => {
+    const target = over?.dataset.handle;
+    const onRow = !!(e.target as Element | null)?.closest('.row');
+    mark(undefined);
+    if (!draggedRows.length || (onRow && target === undefined)) return;
+    e.preventDefault();
+    host.send({ type: 'treeDrop', handles: draggedRows, target });
+    draggedRows = [];
+  });
+  list.addEventListener('dragend', () => {
+    draggedRows = [];
+    mark(undefined);
   });
   list.addEventListener('keydown', (e) => {
     const nodes = visible();

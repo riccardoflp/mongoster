@@ -42,6 +42,9 @@ import { ScheduledTasksPanel } from './scheduledTasks';
 import type { QueryText } from './shared/messages';
 import { hostOf } from './shared/connectionsFile';
 
+/** The type of the nodes dragged in the connections view, as VS Code names a tree's own. */
+const TREE_MIME = 'application/vnd.code.tree.mongoster.connections';
+
 export function activate(context: vscode.ExtensionContext): void {
   ThemeColors.init(context);
   const connections = new ConnectionManager(context);
@@ -50,7 +53,18 @@ export function activate(context: vscode.ExtensionContext): void {
   const backups = new Backups(context, connections);
   const projectQueries = ProjectQueries.init(context);
   const tree = new MongoTreeProvider(connections);
-  const treeView = vscode.window.createTreeView('mongoster.connections', { treeDataProvider: tree, showCollapseAll: true, canSelectMany: true });
+  /** Dragging nodes of the tree onto another: the nodes go by this variable, the transfer only says there are some. */
+  let dragged: readonly TreeNode[] = [];
+  const dragAndDropController: vscode.TreeDragAndDropController<TreeNode> = {
+    dragMimeTypes: [TREE_MIME],
+    dropMimeTypes: [TREE_MIME],
+    handleDrag: (source, data) => {
+      dragged = source;
+      data.set(TREE_MIME, new vscode.DataTransferItem(source.length));
+    },
+    handleDrop: (target, data) => (data.get(TREE_MIME) ? clipboard.drop(dragged, target) : undefined),
+  };
+  const treeView = vscode.window.createTreeView('mongoster.connections', { treeDataProvider: tree, showCollapseAll: true, canSelectMany: true, dragAndDropController });
   const documents = new DocumentFileSystem(connections);
   const manager = new Manager(connections);
   const definitions = new DefinitionFileSystem(connections);
@@ -80,7 +94,42 @@ export function activate(context: vscode.ExtensionContext): void {
       locked: !!info.readOnly,
     });
   };
-  const clipboard = new TreeClipboard(connections, openCopied, (ref) => CollectionPanel.refresh(ref));
+  const clipboard = new TreeClipboard(connections, {
+    opened: openCopied,
+    changed: (ref) => CollectionPanel.refresh(ref),
+    // As after a rename: the columns, queries, color and exclusion follow the collection, and its tab closes.
+    moved: async (from, to) => {
+      await moveCollectionState(context.globalState, from, to);
+      const [was, is] = [namespaceOf(from.database, from.collection), namespaceOf(to.database, to.collection)];
+      if (from.connectionId === to.connectionId) {
+        await changeCollectionColors(
+          from.connectionId,
+          (colors) => renameCollectionColor(colors, was, is),
+          (exclusions) => renameExclusion(exclusions, was, is),
+        );
+      } else {
+        await changeCollectionColors(
+          from.connectionId,
+          (colors) => dropCollectionColors(colors, from.database, from.collection),
+          (exclusions) => dropExclusions(exclusions, from.database, from.collection),
+        );
+      }
+      RelationsCache.invalidate(from.connectionId, from.database);
+      RelationsCache.invalidate(to.connectionId, to.database);
+      CollectionPanel.close((t) => sameCollection(t, from));
+    },
+    databaseGone: async (connectionId, database) => {
+      await changeCollectionColors(
+        connectionId,
+        (colors) => dropCollectionColors(colors, database),
+        (exclusions) => dropExclusions(exclusions, database),
+        database,
+      );
+      RelationsCache.invalidate(connectionId, database);
+      CollectionPanel.close((t) => t.connectionId === connectionId && t.database === database);
+      GridFSPanel.close(connectionId, database);
+    },
+  });
   /** Saves the connection form: options first (they reconnect), then name and connection string. */
   const saveConnection: SaveConnection = async (id, name, uri, options, redis) => {
     await connections.setOptions(id, options);
@@ -607,6 +656,12 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mongoster.copyNode', (node?: TreeNode, nodes?: TreeNode[]) =>
       clipboard.copy(nodes?.length ? nodes : node ? [node] : treeView.selection),
     ),
+
+    vscode.commands.registerCommand('mongoster.cutNode', (node?: TreeNode, nodes?: TreeNode[]) =>
+      clipboard.copy(nodes?.length ? nodes : node ? [node] : treeView.selection, true),
+    ),
+
+    vscode.commands.registerCommand('mongoster.renameDatabase', (node?: DatabaseNode) => (node instanceof DatabaseNode ? clipboard.renameDatabase(node) : undefined)),
 
     vscode.commands.registerCommand('mongoster.pasteNode', (node?: TreeNode) => clipboard.paste(node ?? treeView.selection[0])),
 

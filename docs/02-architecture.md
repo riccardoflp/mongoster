@@ -253,8 +253,8 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 
 ### Data operations without a tab
 - `src/transfer.ts` – export (JSON, JSON Lines, CSV) and import
-- `src/copy.ts` – copying a collection to another database or connection; `pasteCollections` copies several whole collections and views into a database
-- `src/paste.ts` – `Copy` and `Paste` in the connections view (`TreeClipboard`): a connection again with its settings, a database to a connection, collections and views to a database
+- `src/copy.ts` – copying a collection to another database or connection; `pasteCollections` copies or moves several whole collections and views into a database
+- `src/paste.ts` – `Copy`, `Cut` and `Paste` in the connections view (`TreeClipboard`), dragging its nodes and `Rename Database…`: a connection again with its settings or to another folder, a database to a connection, collections, views and buckets to a database, copied or moved
 - `src/backup.ts`, `src/archive.ts` – backup and restore in mongodump's formats (folders, gzip, `--archive` / `.agz`)
 - `src/backupNames.ts` – the names of a folder backup's files and folders: collection and database names percent-encoded as mongodump does, and read back (also the plain names of earlier backups); no `vscode`
 - `src/generate.ts` – the test documents dialog, target and batches
@@ -280,7 +280,7 @@ Tools that return documents or field values are offered only with `mongoster.mcp
 - `theme.ts` – the base dark and light colors, a theme's variables from its palette, the preset colors Mongoster contributes (`src/shared/colors.ts`), the color theme file the extension reads the syntax colors from
 - `themes.ts` – the seventeen themes as data: id, name, kind, palette or exact colors, syntax colors, the window's color in the islands layout
 - `vscode/` – the `vscode` module: `index.ts` (exports), `base.ts` (value types), `commands.ts`, `contributions.ts` (reads `package.json`), `documents.ts` (text documents, file systems, providers), `tree.ts`, `ui.ts` (messages, quick picks, dialogs, progress), `webview.ts`, `resources.ts` (the URLs of the app's own files), `storage.ts`, `decorations.ts`, `watcher.ts` (`fs.watch`), `appearance.ts`, `bridge.ts`, `runtime.ts`
-- `shell/` – the window: `main.ts`, `workbench.ts` (tabs), `tree.ts` (the side bar's tree: loading, keys, type-ahead, several rows selected, the key bindings of the tree), `editor.ts` (Monaco), `panels.ts` (webview frames), `quickInput.ts`, `notifications.ts`, `settings.ts`, `themePreviews.ts` (the color themes to click in the empty tab area), `titleBar.ts` (the window's own title bar: the menus, opened by the host, the active tab's name, the window's buttons), `dom.ts`, `shell.html`, `shell.css`, `webview-default.css`
+- `shell/` – the window: `main.ts`, `workbench.ts` (tabs), `tree.ts` (the side bar's tree: loading, keys, type-ahead, several rows selected, the key bindings of the tree, dragging rows), `editor.ts` (Monaco), `panels.ts` (webview frames), `quickInput.ts`, `notifications.ts`, `settings.ts`, `themePreviews.ts` (the color themes to click in the empty tab area), `titleBar.ts` (the window's own title bar: the menus, opened by the host, the active tab's name, the window's buttons), `dom.ts`, `shell.html`, `shell.css`, `webview-default.css`
 - `electron-builder.yml`, `build/` – the installers
 
 ### Other files

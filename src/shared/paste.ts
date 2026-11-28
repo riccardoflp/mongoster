@@ -11,6 +11,8 @@ export type Clipboard =
 export interface PasteSource {
   name: string;
   isView: boolean;
+  /** The GridFS bucket the collection is the `.files` or `.chunks` of, when the bucket was copied: they stay together. */
+  bucket?: string;
 }
 
 /** What a tree node gives to `Copy`. */
@@ -18,16 +20,26 @@ export type CopiedNode =
   | { kind: 'connection'; connectionId: string }
   | { kind: 'database'; connectionId: string; database: string }
   | { kind: 'collection'; connectionId: string; database: string; collection: string; isView: boolean }
+  /** A GridFS bucket: its two collections. */
+  | { kind: 'bucket'; connectionId: string; database: string; bucket: string }
   | { kind: 'other' };
 
 /**
  * The clipboard for the selected nodes, or why they can't be copied together: they must be of one kind, databases of
- * one connection, collections of one database.
+ * one connection, collections of one database. A bucket is its `.files` and `.chunks` collections.
  */
-export function clipboardOf(nodes: CopiedNode[]): Clipboard | string {
+export function clipboardOf(selected: CopiedNode[]): Clipboard | string {
+  const bucketOf = new Map<string, string>();
+  const nodes = selected.flatMap((n): CopiedNode[] => {
+    if (n.kind !== 'bucket') return [n];
+    return ['files', 'chunks'].map((part) => {
+      bucketOf.set(`${n.bucket}.${part}`, n.bucket);
+      return { kind: 'collection', connectionId: n.connectionId, database: n.database, collection: `${n.bucket}.${part}`, isView: false };
+    });
+  });
   const first = nodes[0];
   if (!first) return 'Select a connection, a database or a collection to copy it.';
-  if (nodes.some((n) => n.kind === 'other')) return 'Only connections, databases, collections and views can be copied.';
+  if (nodes.some((n) => n.kind === 'other')) return 'Only connections, databases, collections, views and buckets can be copied.';
   if (nodes.some((n) => n.kind !== first.kind)) return 'Copy only connections, only databases or only collections at a time.';
   if (first.kind === 'connection') {
     return { kind: 'connection', connectionIds: [...new Set(nodes.flatMap((n) => (n.kind === 'connection' ? [n.connectionId] : [])))] };
@@ -39,7 +51,9 @@ export function clipboardOf(nodes: CopiedNode[]): Clipboard | string {
   }
   if (first.kind === 'collection') {
     const collections = nodes.flatMap((n) =>
-      n.kind === 'collection' && n.connectionId === first.connectionId && n.database === first.database ? [{ name: n.collection, isView: n.isView }] : [],
+      n.kind === 'collection' && n.connectionId === first.connectionId && n.database === first.database
+        ? [{ name: n.collection, isView: n.isView, ...(bucketOf.has(n.collection) && { bucket: bucketOf.get(n.collection) }) }]
+        : [],
     );
     if (collections.length < nodes.length) return 'Copy the collections of one database at a time.';
     return {
@@ -49,7 +63,7 @@ export function clipboardOf(nodes: CopiedNode[]): Clipboard | string {
       collections: collections.filter((c, i) => collections.findIndex((o) => o.name === c.name) === i),
     };
   }
-  return 'Only connections, databases, collections and views can be copied.';
+  return 'Only connections, databases, collections, views and buckets can be copied.';
 }
 
 /**
@@ -80,13 +94,23 @@ export interface PasteItem {
 
 /**
  * Where each copied collection goes. In another database it keeps its name, and `exists` says what is there under
- * it; in its own database it gets a free `_copy` name.
+ * it; in its own database it gets a free `_copy` name. The two collections of a copied bucket `fs` become those of
+ * the bucket `fs_copy`.
  */
 export function planPaste(sources: PasteSource[], existing: ReadonlyMap<string, ExistingKind>, sameDatabase: boolean): PasteItem[] {
   const taken = new Set(existing.keys());
+  const buckets = new Map<string, string>();
+  const bucketCopy = (bucket: string) => {
+    if (!buckets.has(bucket)) {
+      // A bucket's name is taken when either of its collections is.
+      const used = [...taken].flatMap((name) => (/\.(files|chunks)$/.test(name) ? [name.replace(/\.(files|chunks)$/, '')] : []));
+      buckets.set(bucket, copyName(bucket, used, 'identifier'));
+    }
+    return buckets.get(bucket)!;
+  };
   return sources.map((s) => {
     if (!sameDatabase) return { source: s.name, target: s.name, isView: s.isView, ...(existing.has(s.name) && { exists: existing.get(s.name) }) };
-    const target = copyName(s.name, taken, 'identifier');
+    const target = s.bucket ? `${bucketCopy(s.bucket)}${s.name.slice(s.bucket.length)}` : copyName(s.name, taken, 'identifier');
     taken.add(target);
     return { source: s.name, target, isView: s.isView };
   });

@@ -11,6 +11,8 @@ import { toBson } from './queries';
 import { errorMessage } from './tree';
 import { Recorder, UndoHistory } from './history';
 import type { HistoryEntry } from './shared/messages';
+import { OplogEvent, documentFields } from './shared/oplog';
+import { RedisOplog } from './redisOplog';
 import { ExistingKind, ExistingMode, PasteAction, PasteItem, PasteSource, pasteAction } from './shared/paste';
 
 export const COPY_BATCH = 1000;
@@ -44,6 +46,8 @@ export interface CopyHooks {
   cancelled(): boolean;
   /** Records the documents written, for the undo history. */
   recorder?: Recorder;
+  /** The events of each batch written, for redis-oplog: an insert, or an update of a replaced document's fields. */
+  published?(events: OplogEvent[]): void;
 }
 
 /** Collection options that make sense on a copy. */
@@ -85,12 +89,15 @@ export async function copyCollection(plan: CopyPlan, src: MongoClient, dst: Mong
 
   const flush = async (batch: Document[]) => {
     const rec = hooks.recorder?.overflow ? undefined : hooks.recorder;
-    if (rec) {
-      // The _id of each document is known before writing it, to delete it (or restore the replaced one) on undo.
-      for (const doc of batch) doc._id ??= new ObjectId();
-      if (plan.mode === 'upsert') await rec.snapshotIds(target, batch.map((doc) => doc._id));
-    }
+    // The _id of each document is known before writing it, to delete it (or restore the replaced one) on undo
+    // and to publish it.
+    if (rec || hooks.published) for (const doc of batch) doc._id ??= new ObjectId();
+    if (rec && plan.mode === 'upsert') await rec.snapshotIds(target, batch.map((doc) => doc._id));
     let failedAt = new Set<number>();
+    /** The positions of the documents an upsert inserted: the others it wrote replaced one. */
+    let insertedAt = new Set<number>();
+    const insertedBy = (res: { upsertedIds?: Record<number, unknown>; insertedIds?: Record<number, unknown> }) =>
+      new Set([...Object.keys(res.upsertedIds ?? {}), ...Object.keys(res.insertedIds ?? {})].map(Number));
     try {
       if (plan.mode === 'upsert') {
         const res = await target.bulkWrite(
@@ -102,6 +109,7 @@ export async function copyCollection(plan: CopyPlan, src: MongoClient, dst: Mong
           { ordered: false },
         );
         result.copied += res.insertedCount + res.upsertedCount + res.matchedCount;
+        insertedAt = insertedBy(res);
       } else {
         const res = await target.insertMany(batch, { ordered: false });
         result.copied += res.insertedCount;
@@ -112,6 +120,7 @@ export async function copyCollection(plan: CopyPlan, src: MongoClient, dst: Mong
       result.copied += res.insertedCount + res.upsertedCount + res.matchedCount;
       const errors = Array.isArray(err.writeErrors) ? err.writeErrors : [err.writeErrors];
       failedAt = new Set(errors.map((e) => e.index));
+      insertedAt = insertedBy(res);
       for (const e of errors) {
         if (e.code === DUPLICATE_KEY && plan.mode === 'append') result.skipped++;
         else {
@@ -121,6 +130,12 @@ export async function copyCollection(plan: CopyPlan, src: MongoClient, dst: Mong
       }
     }
     if (rec && plan.mode !== 'upsert') batch.forEach((doc, i) => failedAt.has(i) || rec.addNew(doc._id));
+    hooks.published?.(
+      batch.flatMap((doc, i): OplogEvent[] => {
+        if (failedAt.has(i)) return [];
+        return plan.mode !== 'upsert' || insertedAt.has(i) ? [{ e: 'i', id: doc._id }] : [{ e: 'u', id: doc._id, fields: documentFields(doc) }];
+      }),
+    );
     hooks.progress(result.copied + result.skipped + result.failed);
   };
 
@@ -355,6 +370,7 @@ export class Copier {
             },
             cancelled: () => token.isCancellationRequested,
             recorder,
+            published: (events) => RedisOplog.sink(destination)?.publish(events),
           });
         },
       );
@@ -395,6 +411,8 @@ export interface PasteHooks {
   cancelled(): boolean;
   /** Records the documents written to the item's target, for the undo history. */
   recorder?(item: PasteItem): Recorder | undefined;
+  /** The events of the documents written to the item's target, for redis-oplog. */
+  published?(item: PasteItem, events: OplogEvent[]): void;
 }
 
 export interface PasteOutcome {
@@ -407,6 +425,16 @@ export interface PasteOutcome {
   error?: string;
   entry?: HistoryEntry;
   recorderOverflow?: string;
+  /** In a move: the source is gone, by a rename on the server or dropped after its copy. */
+  moved?: 'renamed' | 'copied';
+  /** In a move: why the source was left where it was, after a copy that isn't whole. */
+  kept?: string;
+}
+
+/** A move instead of a copy: the sources are removed once they are in the destination. */
+export interface MoveOptions {
+  /** Both databases are on one deployment: a collection is moved by `renameCollection`, without copying it. */
+  sameDeployment: boolean;
 }
 
 /** The collections and views of a database that a paste of the database copies: all but the `system.` ones. */
@@ -428,6 +456,8 @@ export async function existingNames(client: MongoClient, database: string): Prom
  * Copies the items from the database `from` of `src` to the database `to` of `dst`: a collection with all its
  * documents, its indexes and its options, a view as a view with the same definition. The collections go first, so
  * the views find them. An item that fails is reported and the others go on; cancelling stops after the current batch.
+ * With `move` each source is removed after it: renamed into the destination when the server can, otherwise copied
+ * and dropped, and kept when its copy isn't whole.
  */
 export async function pasteCollections(
   src: MongoClient,
@@ -438,6 +468,7 @@ export async function pasteCollections(
   mode: ExistingMode,
   hooks: PasteHooks,
   batchSize = COPY_BATCH,
+  move?: MoveOptions,
 ): Promise<{ outcomes: PasteOutcome[]; cancelled: boolean }> {
   const outcomes: PasteOutcome[] = [];
   const targetDb = dst.db(to);
@@ -458,7 +489,24 @@ export async function pasteCollections(
         if (info?.type !== 'view' || !viewOn) throw new Error(`${item.source} is not a view any more`);
         if (action.do === 'drop') await targetDb.collection(item.target).drop();
         await targetDb.createCollection(item.target, { viewOn, pipeline: pipeline ?? [], ...(collation && { collation }) });
+        if (move) {
+          await src.db(from).collection(item.source).drop();
+          outcome.moved = 'copied';
+        }
         continue;
+      }
+      if (move?.sameDeployment && (action.do === 'create' || action.do === 'drop')) {
+        // The server moves it whole, with its indexes and options. What it can't rename (a time series, a
+        // collection it lacks the rights for) is copied and dropped below.
+        const renamed = await src
+          .db('admin')
+          .command({ renameCollection: `${from}.${item.source}`, to: `${to}.${item.target}`, dropTarget: action.do === 'drop' })
+          .then(() => true)
+          .catch(() => false);
+        if (renamed) {
+          outcome.moved = 'renamed';
+          continue;
+        }
       }
       // A dropped destination can't be put back: nothing is recorded for it.
       const recorder = action.do === 'drop' ? undefined : hooks.recorder?.(item);
@@ -471,13 +519,23 @@ export async function pasteCollections(
         options: true,
       };
       try {
-        outcome.result = await copyCollection(plan, src, dst, { progress: (done) => hooks.progress(item, done), cancelled: hooks.cancelled, recorder }, batchSize);
+        outcome.result = await copyCollection(plan, src, dst, { progress: (done) => hooks.progress(item, done), cancelled: hooks.cancelled, recorder, published: hooks.published && ((events) => hooks.published!(item, events)) }, batchSize);
       } finally {
         // What was written before a failure can be undone too.
         outcome.entry = await recorder?.commit(targetDb.collection(item.target)).catch(() => undefined);
         outcome.recorderOverflow = recorder?.overflow;
       }
-      if (outcome.result.cancelled) return { outcomes, cancelled: true };
+      if (outcome.result.cancelled) {
+        if (move) outcome.kept = 'its copy was cancelled';
+        return { outcomes, cancelled: true };
+      }
+      if (move) {
+        if (outcome.result.failed) outcome.kept = 'some of its documents were not copied';
+        else {
+          await src.db(from).collection(item.source).drop();
+          outcome.moved = 'copied';
+        }
+      }
     } catch (err) {
       outcome.error = errorMessage(err);
     }

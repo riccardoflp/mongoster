@@ -377,6 +377,34 @@ export interface TreeDataProvider<T> {
   getChildren(element?: T): T[] | undefined | null | Thenable<T[] | undefined | null>;
 }
 
+/** What is dragged: values by type. Only what a tree's own drag sets is here; nothing comes from outside the app. */
+export class DataTransferItem {
+  constructor(readonly value: unknown) {}
+
+  asString(): Thenable<string> {
+    return Promise.resolve(typeof this.value === 'string' ? this.value : JSON.stringify(this.value));
+  }
+}
+
+export class DataTransfer {
+  private readonly items = new Map<string, DataTransferItem>();
+
+  get(mimeType: string): DataTransferItem | undefined {
+    return this.items.get(mimeType.toLowerCase());
+  }
+
+  set(mimeType: string, value: DataTransferItem): void {
+    this.items.set(mimeType.toLowerCase(), value);
+  }
+}
+
+export interface TreeDragAndDropController<T> {
+  readonly dragMimeTypes: readonly string[];
+  readonly dropMimeTypes: readonly string[];
+  handleDrag?(source: readonly T[], dataTransfer: DataTransfer, token: CancellationToken): Thenable<void> | void;
+  handleDrop?(target: T | undefined, dataTransfer: DataTransfer, token: CancellationToken): Thenable<void> | void;
+}
+
 // ---- files
 
 export interface FileStat {
