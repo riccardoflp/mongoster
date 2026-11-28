@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.12.0
 
 - **Copy, Cut and Paste in the connections view**: `Cut`, `Copy` and `Paste` in the context menu of a connection, a database, a collection, a view or a GridFS bucket, and `Ctrl+X` / `Ctrl+C` / `Ctrl+V` (`Cmd` on macOS) on the selected nodes. A connection pasted on a folder or a connection is a second connection with the same settings (`Production copy`); a database pasted on a connection is copied there, under a name you choose; collections, views and buckets pasted on a database (or on a connection, which asks for the database) are copied there whole, with their indexes and options, several at once. In their own database they become `orders_copy`; where they exist, you choose `Skip`, `Append`, `Replace matching` or `Drop and recreate`. After `Cut`, `Paste` moves instead: a connection to the folder, collections and databases to where they are pasted, without copying the documents when both are on the same connection. `Copy` also puts the names on the system's clipboard.
 - **Dragging in the connections view**: drag a connection onto a folder (or onto another connection, or out of its folder) to move it there; drag collections, views, buckets or a database onto a database or a connection to copy them there, after the same confirmation as `Paste`.
